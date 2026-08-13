@@ -1,0 +1,49 @@
+﻿// Copyright (c) andy840119 <andy840119@gmail.com>. Licensed under the GPL Licence.
+// See the LICENCE file in the repository root for full licence text.
+
+using osu.Framework.Graphics;
+using osu.Framework.Graphics.Containers;
+using osu.Framework.Localisation;
+using osu.Game.Graphics;
+using osu.Game.Graphics.Sprites;
+using osuTK;
+
+namespace osu.Game.Rulesets.Karaoke.Screens;
+
+public abstract partial class Section : Container
+{
+    protected const float SECTION_PADDING = 10;
+
+    protected const float SECTION_SPACING = 10;
+
+    private readonly FillFlowContainer flow;
+
+    protected override Container<Drawable> Content => flow;
+
+    protected abstract LocalisableString Title { get; }
+
+    protected Section()
+    {
+        RelativeSizeAxes = Axes.X;
+        AutoSizeAxes = Axes.Y;
+
+        Padding = new MarginPadding(SECTION_PADDING);
+
+        InternalChildren = new Drawable[]
+        {
+            new OsuSpriteText
+            {
+                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 18),
+                Text = Title,
+            },
+            flow = new FillFlowContainer
+            {
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+                Spacing = new Vector2(SECTION_SPACING),
+                Direction = FillDirection.Vertical,
+                Margin = new MarginPadding { Top = 30 },
+            },
+        };
+    }
+}

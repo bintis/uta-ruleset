@@ -1,0 +1,30 @@
+﻿// Copyright (c) andy840119 <andy840119@gmail.com>. Licensed under the GPL Licence.
+// See the LICENCE file in the repository root for full licence text.
+
+using NUnit.Framework;
+using osu.Framework.Graphics;
+using osu.Framework.Input;
+using osu.Game.Rulesets.Karaoke.Screens.Settings.Previews.Input;
+using osu.Game.Tests.Visual;
+
+namespace osu.Game.Rulesets.Karaoke.Tests.Screens.Settings.Previews;
+
+[TestFixture]
+public partial class TestSceneMicrophoneSoundVisualizer : OsuTestScene
+{
+    private MicrophoneSoundVisualizer preview = null!;
+
+    [SetUp]
+    public void SetUp() => Schedule(() =>
+    {
+        Child = new MicrophoneInputManager
+        {
+            Child = preview = new MicrophoneSoundVisualizer
+            {
+                Anchor = Anchor.Centre,
+                Origin = Anchor.Centre,
+                DeviceName = "Super large microphone device name : )",
+            },
+        };
+    });
+}

@@ -1,0 +1,23 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet restore osu.Game.Rulesets.Karaoke.sln
+      - run: dotnet build osu.Game.Rulesets.Karaoke/osu.Game.Rulesets.Karaoke.csproj --no-restore --configuration Release
+      - name: Uta integration and scoring tests
+        run: >-
+          dotnet test osu.Game.Rulesets.Karaoke.Tests/osu.Game.Rulesets.Karaoke.Tests.csproj
+          --no-restore --configuration Release
+          --filter "FullyQualifiedName~UtzBeatmapSetConverterTest|FullyQualifiedName~UtzPackageTest|FullyQualifiedName~UtaPitch|FullyQualifiedName~KaraokeScoreMultiplierCalculatorTest"

@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet restore osu.Game.Rulesets.Karaoke/osu.Game.Rulesets.Karaoke.csproj
+      - run: dotnet build osu.Game.Rulesets.Karaoke/osu.Game.Rulesets.Karaoke.csproj --no-restore --configuration Release
+      - name: Package ruleset
+        run: |
+          cd osu.Game.Rulesets.Karaoke/bin/Release/net8.0/DLLs
+          zip -r ../../../../../uta-ruleset-${GITHUB_REF_NAME}.zip .
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: uta-ruleset-${{ github.ref_name }}.zip

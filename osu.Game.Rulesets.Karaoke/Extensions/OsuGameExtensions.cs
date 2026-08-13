@@ -1,0 +1,38 @@
+﻿// Copyright (c) andy840119 <andy840119@gmail.com>. Licensed under the GPL Licence.
+// See the LICENCE file in the repository root for full licence text.
+
+using System.Linq;
+using osu.Framework.Allocation;
+using osu.Framework.Graphics.Containers;
+using osu.Framework.Testing;
+using osu.Game.Overlays;
+
+namespace osu.Game.Rulesets.Karaoke.Extensions;
+
+/// <summary>
+/// Collect dirty logic to get target drawable from <see cref="OsuGame"/>
+/// </summary>
+public static class OsuGameExtensions
+{
+    public static KaraokeRuleset GetRuleset(this DependencyContainer dependencies)
+    {
+        var rulesets = dependencies.Get<RulesetStore>().AvailableRulesets.Select(info => info.CreateInstance());
+        return rulesets.OfType<KaraokeRuleset>().First();
+    }
+
+    private static Container? getBasePlacementContainer(this OsuGame game)
+        => game.Children.OfType<Container>().FirstOrDefault(c => c.ChildrenOfType<WaveOverlayContainer>().Any());
+
+    public static Container? GetChangelogPlacementContainer(this OsuGame game)
+    {
+        // will place the container where components of an WaveOverlayContainer type exist
+        return game.getBasePlacementContainer()?.Children.OfType<Container>().FirstOrDefault(c => c.Children.OfType<WaveOverlayContainer>().Any());
+    }
+
+    public static SettingsOverlay? GetSettingsOverlay(this OsuGame game)
+        => game.getBasePlacementContainer()?.ChildrenOfType<SettingsOverlay>().FirstOrDefault();
+
+    public static Container? GetSettingsPlacementContainer(this OsuGame game)
+        => game.getBasePlacementContainer()?.Children.OfType<Container>()
+               .FirstOrDefault(container => container.ChildrenOfType<SettingsOverlay>().Any());
+}
