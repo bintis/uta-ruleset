@@ -6,11 +6,20 @@ packages. It deliberately contains only the playback path:
 - `.utz` validation and import through lazer's public file-import API;
 - word-timed lyrics with progressive highlighting;
 - target notes, live microphone pitch and pitch feedback;
-- Linux microphone support through the BASS runtime already shipped by lazer.
+- Linux microphone support through the BASS runtime already shipped by lazer;
+- optional lyrics, pitch-guide and original-vocals mods;
+- a `P` quick-settings panel and independent BGM, vocal and microphone-monitor
+  output routing, with one shared mix bus per selected hardware device.
+- lazer-native skip prompts for long intro, inter-phrase and trailing gaps;
+- lazer's volume overlay remapped to microphone monitor, BGM and original vocals
+  while playing;
+- configurable lyric placement, typeface and scale, plus native score placement;
+- a colour-blind-friendly dark pitch guide with distinct target and live-voice
+  visual layers.
 
 There is no editor, online layer, custom skin system, bundled icon pack, font,
-or standalone media stack. Audio, video, artwork, song select, pausing, volume,
-and results remain owned by osu!lazer.
+or standalone media stack. Video, artwork, song select, the gameplay clock and
+results remain owned by osu!lazer; Uta only owns its three gameplay audio routes.
 
 ## Build and test
 
@@ -21,9 +30,10 @@ dotnet build osu.Game.Rulesets.Uta/osu.Game.Rulesets.Uta.csproj -c Release
 dotnet test osu.Game.Rulesets.Uta.Tests/osu.Game.Rulesets.Uta.Tests.csproj -c Release
 ```
 
-Copy `osu.Game.Rulesets.Uta.dll` from `bin/Release/net8.0` into lazer's
-`rulesets` directory. The host installation provides osu! and BASS assemblies;
-the ruleset does not ship duplicate runtime libraries.
+Copy `osu.Game.Rulesets.Uta.dll`, `libbassflac.so`, and `BASSFLAC.txt` from
+`bin/Release/net8.0` into lazer's `rulesets` directory. The host installation
+provides osu! and BASS; Uta bundles only the official BASSFLAC Linux x64 add-on
+needed by the `.utz` FLAC audio contract.
 
 Select `uta!` once after launch to register native `.utz` drag-and-drop import.
 Imported packages are validated in memory and handed to lazer's beatmap manager

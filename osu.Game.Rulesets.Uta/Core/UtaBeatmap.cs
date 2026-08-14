@@ -21,6 +21,10 @@ public sealed class UtaBeatmap : Beatmap<UtaHitObject>
 
     public int CentreMidi { get; set; } = 60;
 
+    public string? GuideVocalsFile { get; set; }
+
+    public string? OriginalAudioFile { get; set; }
+
     public IReadOnlyList<UtaTranscriptSegment> Transcript { get; set; } = Array.Empty<UtaTranscriptSegment>();
 }
 
@@ -69,6 +73,8 @@ public sealed class UtaBeatmapConverter : BeatmapConverter<UtaHitObject>
 
         converted.PackageId = carrier.Metadata.PackageId;
         converted.OctaveTolerance = carrier.Metadata.OctaveTolerance;
+        converted.GuideVocalsFile = carrier.Metadata.GuideVocalsFile;
+        converted.OriginalAudioFile = carrier.Metadata.OriginalAudioFile;
         converted.CentreMidi = carrier.Metadata.CentreMidi;
         converted.Transcript = carrier.Metadata.Transcript;
         converted.HitObjects.Remove(carrier);

@@ -4,11 +4,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using osu.Framework.Allocation;
+using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Sprites;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Sprites;
+using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Formats;
 using osuTK;
 using osuTK.Graphics;
@@ -22,6 +25,9 @@ public partial class UtaLyricsDisplay : CompositeDrawable
     private readonly Container currentContainer;
     private readonly Container nextContainer;
     private readonly OsuSpriteText countdown;
+    private readonly Bindable<UtaLyricsPosition> lyricsPosition = new();
+    private readonly Bindable<UtaLyricsSize> lyricsSize = new();
+    private readonly Bindable<UtaLyricsTypeface> lyricsTypeface = new();
 
     private IReadOnlyList<UtaTranscriptSegment> segments = Array.Empty<UtaTranscriptSegment>();
     private UtaWordToken[] currentTokens = Array.Empty<UtaWordToken>();
@@ -59,6 +65,53 @@ public partial class UtaLyricsDisplay : CompositeDrawable
             Shadow = true,
             ShadowColour = Color4.Black,
         });
+    }
+
+    [BackgroundDependencyLoader]
+    private void load(UtaRulesetConfigManager config)
+    {
+        lyricsPosition.BindTo(config.GetBindable<UtaLyricsPosition>(UtaRulesetSetting.LyricsPosition));
+        lyricsSize.BindTo(config.GetBindable<UtaLyricsSize>(UtaRulesetSetting.LyricsSize));
+        lyricsTypeface.BindTo(config.GetBindable<UtaLyricsTypeface>(UtaRulesetSetting.LyricsTypeface));
+
+        lyricsPosition.BindValueChanged(_ => updateLayout(), true);
+        lyricsSize.BindValueChanged(_ => updateTypography(), true);
+        lyricsTypeface.BindValueChanged(_ => updateTypography(), true);
+    }
+
+    private void updateLayout()
+    {
+        Width = lyricsSize.Value switch
+        {
+            UtaLyricsSize.Compact => 0.72f,
+            UtaLyricsSize.Large => 0.90f,
+            _ => 0.80f,
+        };
+
+        switch (lyricsPosition.Value)
+        {
+            case UtaLyricsPosition.Top:
+                Anchor = Origin = Anchor.TopCentre;
+                Y = 210;
+                break;
+
+            case UtaLyricsPosition.Centre:
+                Anchor = Origin = Anchor.Centre;
+                Y = 36;
+                break;
+
+            default:
+                Anchor = Origin = Anchor.BottomCentre;
+                Y = -42;
+                break;
+        }
+    }
+
+    private void updateTypography()
+    {
+        updateLayout();
+        countdown.Font = createFont(18 * sizeMultiplier, FontWeight.Bold);
+        rebuild(segmentIndex);
     }
 
     public void SetSegments(IReadOnlyList<UtaTranscriptSegment> value)
@@ -103,21 +156,21 @@ public partial class UtaLyricsDisplay : CompositeDrawable
             return;
 
         var current = segments[index];
-        currentTokens = createTokens(current, false).ToArray();
+        currentTokens = createTokens(current, false, sizeMultiplier, typeface).ToArray();
         currentLine.AddRange(currentTokens);
 
         if (index + 1 < segments.Count)
-            nextLine.AddRange(createTokens(segments[index + 1], true));
+            nextLine.AddRange(createTokens(segments[index + 1], true, sizeMultiplier, typeface));
     }
 
-    private static IEnumerable<UtaWordToken> createTokens(UtaTranscriptSegment segment, bool next)
+    private static IEnumerable<UtaWordToken> createTokens(UtaTranscriptSegment segment, bool next, float sizeMultiplier, Typeface typeface)
     {
         bool showReading = segment.Words.Any(word => !string.IsNullOrWhiteSpace(word.Reading));
         bool addSpacing = segment.Text.Contains(' ');
 
         for (int i = 0; i < segment.Words.Count; i++)
         {
-            yield return new UtaWordToken(segment.Words[i], showReading, next)
+            yield return new UtaWordToken(segment.Words[i], showReading, next, sizeMultiplier, typeface)
             {
                 Margin = new MarginPadding { Right = addSpacing && i < segment.Words.Count - 1 ? next ? 6 : 10 : 0 },
             };
@@ -149,7 +202,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
         private readonly OsuSpriteText readingText;
         private readonly OsuSpriteText wordText;
 
-        public UtaWordToken(UtaTranscriptWord word, bool showReading, bool next)
+        public UtaWordToken(UtaTranscriptWord word, bool showReading, bool next, float sizeMultiplier, Typeface typeface)
         {
             this.next = next;
             estimated = word.Estimated;
@@ -165,7 +218,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
                     readingText = new OsuSpriteText
                     {
                         Text = showReading ? word.Reading ?? " " : string.Empty,
-                        Font = OsuFont.Default.With(size: next ? 9.5f : 11.5f, weight: FontWeight.SemiBold),
+                        Font = OsuFont.GetFont(typeface, (next ? 9.5f : 11.5f) * sizeMultiplier, FontWeight.SemiBold),
                         Colour = colour,
                         Alpha = showReading ? 0.75f : 0,
                         Shadow = true,
@@ -174,7 +227,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
                     wordText = new OsuSpriteText
                     {
                         Text = word.Word,
-                        Font = OsuFont.Default.With(size: next ? 18 : 31, weight: next ? FontWeight.Medium : FontWeight.SemiBold),
+                        Font = OsuFont.GetFont(typeface, (next ? 18 : 31) * sizeMultiplier, next ? FontWeight.Medium : FontWeight.SemiBold),
                         Colour = colour,
                         Shadow = true,
                         ShadowColour = Color4.Black,
@@ -206,5 +259,29 @@ public partial class UtaLyricsDisplay : CompositeDrawable
             from.G + (to.G - from.G) * amount,
             from.B + (to.B - from.B) * amount,
             1);
+    }
+
+    private float sizeMultiplier => lyricsSize.Value switch
+    {
+        UtaLyricsSize.Compact => 0.78f,
+        UtaLyricsSize.Large => 1.28f,
+        _ => 1,
+    };
+
+    private Typeface typeface => lyricsTypeface.Value switch
+    {
+        UtaLyricsTypeface.TorusAlternate => Typeface.TorusAlternate,
+        UtaLyricsTypeface.Inter => Typeface.Inter,
+        _ => Typeface.Torus,
+    };
+
+    private FontUsage createFont(float size, FontWeight weight) => OsuFont.GetFont(typeface, size, weight);
+
+    protected override void Dispose(bool isDisposing)
+    {
+        lyricsPosition.UnbindAll();
+        lyricsSize.UnbindAll();
+        lyricsTypeface.UnbindAll();
+        base.Dispose(isDisposing);
     }
 }

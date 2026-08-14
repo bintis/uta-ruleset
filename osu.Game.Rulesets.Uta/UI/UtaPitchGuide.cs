@@ -13,9 +13,7 @@ using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Sprites;
-using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.Uta.Core;
-using osuTK;
 using osuTK.Graphics;
 
 namespace osu.Game.Rulesets.Uta.UI;
@@ -26,39 +24,32 @@ namespace osu.Game.Rulesets.Uta.UI;
 /// </summary>
 public partial class UtaPitchGuide : CompositeDrawable
 {
-    private const double look_behind = 1750;
-    private const double look_ahead = 5250;
-    private const double window = look_behind + look_ahead;
-    private const float view_span = 19;
+    internal const double LOOK_BEHIND = 1750;
+    internal const double LOOK_AHEAD = 5250;
+    internal const float VIEW_SPAN = 19;
+    internal const float PLAYHEAD_POSITION = (float)(LOOK_BEHIND / (LOOK_BEHIND + LOOK_AHEAD));
+
+    private const double window = LOOK_BEHIND + LOOK_AHEAD;
     private const float base_low_midi = 48;
     private const float base_high_midi = 67;
     private const float edge_margin = 1.5f;
-    private const float view_move_rate = 2.4f;
-    private const float playhead_position = (float)(look_behind / window);
     private const float axis_width = 50;
-    private const double trace_gap = 140;
+
+    private static readonly Color4 panel_background = new(13, 15, 26, 255);
+    private static readonly Color4 target_pitch = new(126, 124, 181, 255);
 
     private readonly Container noteLayer;
     private readonly Container gridLayer;
-    private readonly Container traceLayer;
     private readonly Container axisLayer;
-    private readonly CircularContainer voiceMarker;
-    private readonly CircularContainer feedbackPill;
-    private readonly Box feedbackBackground;
-    private readonly OsuSpriteText feedbackText;
     private readonly List<TargetNote> targetNotes = new();
     private readonly List<Box> gridLines = new();
-    private readonly List<Box> traceSegments = new();
-    private readonly List<PitchSample> traceSamples = new();
     private readonly Dictionary<int, OsuSpriteText> pitchLabels = new();
     private readonly BindableFloat pitchDeviation = new();
-    private readonly BindableFloat detectedPitchMidi = new();
     private readonly BindableFloat pitchSimilarity = new();
     private readonly BindableBool voiceActive = new();
 
     private UtaNote[] notes = Array.Empty<UtaNote>();
     private float centreMidi = (base_low_midi + base_high_midi) / 2;
-    private double lastTraceSampleTime = double.NegativeInfinity;
     private double lastUpdateTime = double.NegativeInfinity;
 
     public UtaPitchGuide()
@@ -73,67 +64,25 @@ public partial class UtaPitchGuide : CompositeDrawable
 
         InternalChildren = new Drawable[]
         {
+            new Box
+            {
+                RelativeSizeAxes = Axes.Both,
+                Colour = panel_background,
+            },
             gridLayer = new Container { RelativeSizeAxes = Axes.Both },
+            new UtaPitchCurveGraph(),
             noteLayer = new Container { RelativeSizeAxes = Axes.Both },
-            traceLayer = new Container { RelativeSizeAxes = Axes.Both },
+            new UtaPitchGuideTrail(),
             new Box
             {
                 Anchor = Anchor.TopLeft,
                 Origin = Anchor.TopCentre,
                 RelativePositionAxes = Axes.X,
-                X = playhead_position,
+                X = PLAYHEAD_POSITION,
                 RelativeSizeAxes = Axes.Y,
                 Width = 2,
-                Colour = new Color4(198, 178, 255, 255),
-                Alpha = 0.72f,
-            },
-            voiceMarker = new CircularContainer
-            {
-                Anchor = Anchor.TopLeft,
-                Origin = Anchor.Centre,
-                RelativePositionAxes = Axes.Both,
-                X = playhead_position,
-                Width = 32,
-                Height = 6,
-                Masking = true,
-                Alpha = 0,
-                EdgeEffect = new EdgeEffectParameters
-                {
-                    Type = EdgeEffectType.Glow,
-                    Colour = new Color4(105, 226, 255, 100),
-                    Radius = 7,
-                },
-                Child = new Box
-                {
-                    RelativeSizeAxes = Axes.Both,
-                    Colour = new Color4(105, 226, 255, 255),
-                },
-            },
-            feedbackPill = new CircularContainer
-            {
-                Anchor = Anchor.TopLeft,
-                Origin = Anchor.CentreLeft,
-                RelativePositionAxes = Axes.Both,
-                X = playhead_position + 0.014f,
-                Width = 92,
-                Height = 24,
-                Masking = true,
-                Alpha = 0,
-                Children = new Drawable[]
-                {
-                    feedbackBackground = new Box
-                    {
-                        RelativeSizeAxes = Axes.Both,
-                        Colour = new Color4(13, 20, 32, 255),
-                        Alpha = 0.56f,
-                    },
-                    feedbackText = new OsuSpriteText
-                    {
-                        Anchor = Anchor.Centre,
-                        Origin = Anchor.Centre,
-                        Font = OsuFont.Default.With(size: 10.5f, weight: FontWeight.Bold),
-                    },
-                },
+                Colour = new Color4(172, 164, 218, 255),
+                Alpha = 0.56f,
             },
             axisLayer = new Container
             {
@@ -144,8 +93,8 @@ public partial class UtaPitchGuide : CompositeDrawable
                     new Box
                     {
                         RelativeSizeAxes = Axes.Both,
-                        Colour = new Color4(8, 14, 24, 255),
-                        Alpha = 0.12f,
+                        Colour = new Color4(8, 10, 20, 255),
+                        Alpha = 0.46f,
                     },
                     new Box
                     {
@@ -153,31 +102,21 @@ public partial class UtaPitchGuide : CompositeDrawable
                         Origin = Anchor.TopRight,
                         RelativeSizeAxes = Axes.Y,
                         Width = 1,
-                        Colour = Color4.White,
-                        Alpha = 0.08f,
+                        Colour = new Color4(174, 177, 210, 255),
+                        Alpha = 0.12f,
                     },
                 },
             },
-            new OsuSpriteText
-            {
-                Anchor = Anchor.TopLeft,
-                Origin = Anchor.TopLeft,
-                Margin = new MarginPadding { Left = axis_width + 11, Top = 9 },
-                Text = "PITCH  •  LIVE",
-                Font = OsuFont.Default.With(size: 10, weight: FontWeight.Bold),
-                Colour = new Color4(196, 183, 255, 255),
-                Alpha = 0.76f,
-            },
         };
 
-        for (int i = 0; i <= (int)view_span; i++)
+        for (int i = 0; i <= (int)VIEW_SPAN; i++)
         {
             var line = new Box
             {
                 RelativePositionAxes = Axes.Y,
                 RelativeSizeAxes = Axes.X,
                 Height = i % 12 == 0 ? 1.2f : 0.65f,
-                Colour = Color4.White,
+                Colour = new Color4(166, 169, 202, 255),
                 Alpha = i % 12 == 0 ? 0.16f : 0.06f,
             };
             gridLines.Add(line);
@@ -194,7 +133,7 @@ public partial class UtaPitchGuide : CompositeDrawable
                 X = axis_width - 7,
                 Text = midiName(midi),
                 Font = OsuFont.Default.With(size: 9, weight: FontWeight.SemiBold),
-                Colour = new Color4(224, 226, 240, 255),
+                Colour = new Color4(202, 204, 225, 255),
                 Alpha = 0,
             };
             pitchLabels.Add(midi, label);
@@ -203,7 +142,7 @@ public partial class UtaPitchGuide : CompositeDrawable
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaBeatmap beatmap, DrawableRuleset drawableRuleset)
+    private void load(UtaBeatmap beatmap, osu.Game.Rulesets.UI.DrawableRuleset drawableRuleset)
     {
         if (string.IsNullOrEmpty(beatmap.PackageId))
         {
@@ -215,6 +154,7 @@ public partial class UtaPitchGuide : CompositeDrawable
                        .Where(note => note.Midi != null)
                        .OrderBy(note => note.StartTime)
                        .ToArray();
+        centreMidi = CalculateFixedCentre(notes);
 
         foreach (var note in notes)
         {
@@ -223,15 +163,14 @@ public partial class UtaPitchGuide : CompositeDrawable
             noteLayer.Add(drawable);
         }
 
-        if (drawableRuleset is not DrawableUtaRuleset utaRuleset)
-            return;
+        if (drawableRuleset is DrawableUtaRuleset utaRuleset)
+        {
+            UtaInputManager microphone = utaRuleset.KeyBindingInputManager;
+            pitchDeviation.BindTo(microphone.LivePitchDeviation);
+            pitchSimilarity.BindTo(microphone.LivePitchSimilarity);
+            voiceActive.BindTo(microphone.LiveVoiceActive);
+        }
 
-        UtaInputManager microphone = utaRuleset.KeyBindingInputManager;
-        pitchDeviation.BindTo(microphone.LivePitchDeviation);
-        detectedPitchMidi.BindTo(microphone.LiveDetectedPitchMidi);
-        pitchSimilarity.BindTo(microphone.LivePitchSimilarity);
-        voiceActive.BindTo(microphone.LiveVoiceActive);
-        voiceActive.BindValueChanged(active => voiceMarker.FadeTo(active.NewValue ? 1 : 0, 90, Easing.OutQuint), true);
     }
 
     protected override void Update()
@@ -242,14 +181,13 @@ public partial class UtaPitchGuide : CompositeDrawable
             return;
 
         double current = Time.Current;
-
-        if (double.IsFinite(lastUpdateTime) && Math.Abs(current - lastUpdateTime) > 550)
-            clearTrace();
+        double elapsedSeconds = double.IsFinite(lastUpdateTime) && Math.Abs(current - lastUpdateTime) <= 550
+            ? Math.Clamp((current - lastUpdateTime) / 1000, 0, 0.1)
+            : 0;
         lastUpdateTime = current;
 
-        updateViewport(current);
-        float low = centreMidi - view_span / 2;
-        float high = centreMidi + view_span / 2;
+        float low = centreMidi - VIEW_SPAN / 2;
+        float high = centreMidi + VIEW_SPAN / 2;
 
         int firstGridMidi = (int)MathF.Floor(low);
         for (int i = 0; i < gridLines.Count; i++)
@@ -257,14 +195,14 @@ public partial class UtaPitchGuide : CompositeDrawable
             int midi = firstGridMidi + i;
             int pitchClass = ((midi % 12) + 12) % 12;
             bool labelled = pitchLabels.ContainsKey(midi);
-            gridLines[i].Y = (high - midi) / view_span;
+            gridLines[i].Y = (high - midi) / VIEW_SPAN;
             gridLines[i].Height = labelled ? 1.2f : 0.65f;
             gridLines[i].Alpha = labelled ? 0.16f : pitchClass is 1 or 3 or 6 or 8 or 10 ? 0.032f : 0.055f;
         }
 
         foreach (var (midi, label) in pitchLabels)
         {
-            float y = (high - midi) / view_span;
+            float y = (high - midi) / VIEW_SPAN;
             label.Y = y;
             label.Alpha = y is >= 0.035f and <= 0.965f ? 0.66f : 0;
         }
@@ -272,8 +210,8 @@ public partial class UtaPitchGuide : CompositeDrawable
         foreach (var target in targetNotes)
         {
             var note = target.Note;
-            float start = (float)((note.StartTime - current + look_behind) / window);
-            float end = (float)((note.EndTime - current + look_behind) / window);
+            float start = (float)((note.StartTime - current + LOOK_BEHIND) / window);
+            float end = (float)((note.EndTime - current + LOOK_BEHIND) / window);
             bool visible = end >= 0 && start <= 1;
             target.Alpha = visible ? 1 : 0;
             if (!visible)
@@ -281,132 +219,21 @@ public partial class UtaPitchGuide : CompositeDrawable
 
             target.X = start;
             target.Width = Math.Max(2 / DrawWidth, end - start);
-            target.Y = (high - note.Midi!.Value) / view_span;
+            target.Y = (high - note.Midi!.Value) / VIEW_SPAN;
         }
 
-        UtaNote? active = findNoteAt(current);
-        updateTrace(current, low, high);
-
-        if (voiceActive.Value)
-            voiceMarker.Y = Math.Clamp((high - detectedPitchMidi.Value) / view_span, 0, 1);
-
-        updateFeedback(active, high);
-    }
-
-    private void updateTrace(double current, float low, float high)
-    {
-        if (voiceActive.Value && current - lastTraceSampleTime >= 20)
+        TargetNote? active = targetNotes.FirstOrDefault(target => current >= target.Note.StartTime && current <= target.Note.EndTime);
+        if (active != null)
         {
-            traceSamples.Add(new PitchSample(current, detectedPitchMidi.Value, pitchSimilarity.Value));
-            lastTraceSampleTime = current;
+            active.ColourState.Accumulate(elapsedSeconds, voiceActive.Value, pitchSimilarity.Value, pitchDeviation.Value);
+            active.PreviewColour();
         }
 
-        traceSamples.RemoveAll(sample => sample.Time < current - look_behind - 200 || sample.Time > current + 100);
-
-        int segmentIndex = 0;
-        for (int i = 1; i < traceSamples.Count; i++)
+        foreach (TargetNote target in targetNotes)
         {
-            PitchSample previous = traceSamples[i - 1];
-            PitchSample sample = traceSamples[i];
-            if (sample.Time - previous.Time > trace_gap || Math.Abs(sample.Midi - previous.Midi) > 5.5f)
-                continue;
-
-            float x1 = (float)((previous.Time - current + look_behind) / window) * DrawWidth;
-            float x2 = (float)((sample.Time - current + look_behind) / window) * DrawWidth;
-            float y1 = (high - previous.Midi) / view_span * DrawHeight;
-            float y2 = (high - sample.Midi) / view_span * DrawHeight;
-            if (x2 < axis_width || x1 > DrawWidth || (y1 < 0 && y2 < 0) || (y1 > DrawHeight && y2 > DrawHeight))
-                continue;
-
-            Vector2 start = new(x1, y1);
-            Vector2 delta = new Vector2(x2, y2) - start;
-            Box segment = getTraceSegment(segmentIndex++);
-            segment.Position = start;
-            segment.Width = Math.Max(1, delta.Length);
-            segment.Rotation = MathF.Atan2(delta.Y, delta.X) * 180 / MathF.PI;
-            segment.Colour = traceColour((previous.Similarity + sample.Similarity) / 2, findNoteAt(sample.Time) != null);
-            segment.Alpha = 1;
+            if (!target.ColourCommitted && current > target.Note.EndTime)
+                target.CommitColour();
         }
-
-        for (int i = segmentIndex; i < traceSegments.Count; i++)
-            traceSegments[i].Alpha = 0;
-    }
-
-    private Box getTraceSegment(int index)
-    {
-        while (traceSegments.Count <= index)
-        {
-            var segment = new Box
-            {
-                Anchor = Anchor.TopLeft,
-                Origin = Anchor.CentreLeft,
-                Height = 3.8f,
-                Alpha = 0,
-            };
-            traceSegments.Add(segment);
-            traceLayer.Add(segment);
-        }
-
-        return traceSegments[index];
-    }
-
-    private void updateFeedback(UtaNote? active, float high)
-    {
-        if (active?.Midi is not { } targetMidi)
-        {
-            feedbackPill.Alpha = 0;
-            return;
-        }
-
-        float midi = voiceActive.Value ? detectedPitchMidi.Value : targetMidi;
-        feedbackPill.Y = Math.Clamp((high - midi) / view_span, 0.1f, 0.9f);
-        feedbackPill.Alpha = 1;
-
-        if (!voiceActive.Value)
-        {
-            setFeedback("SING", new Color4(203, 213, 225, 255));
-            return;
-        }
-
-        float error = pitchDeviation.Value;
-        if (Math.Abs(error) <= 0.35f)
-            setFeedback("PERFECT", new Color4(254, 240, 138, 255));
-        else if (Math.Abs(error) <= 0.75f)
-            setFeedback("GOOD", new Color4(134, 239, 172, 255));
-        else if (error > 0)
-            setFeedback("HIGH ↓", new Color4(253, 186, 116, 255));
-        else
-            setFeedback("LOW ↑", new Color4(147, 197, 253, 255));
-    }
-
-    private void setFeedback(string text, Color4 colour)
-    {
-        feedbackText.Text = text;
-        feedbackText.Colour = colour;
-        feedbackBackground.Colour = colour;
-        feedbackBackground.Alpha = 0.20f;
-        voiceMarker.Child.Colour = colour;
-    }
-
-    private static Color4 traceColour(float similarity, bool hasTarget)
-    {
-        if (!hasTarget)
-            return new Color4(82, 225, 255, 255);
-        if (similarity >= 0.94f)
-            return new Color4(254, 240, 138, 255);
-        if (similarity >= 0.7f)
-            return new Color4(134, 239, 172, 255);
-        if (similarity >= 0.3f)
-            return new Color4(251, 146, 60, 255);
-        return new Color4(251, 113, 133, 255);
-    }
-
-    private void clearTrace()
-    {
-        traceSamples.Clear();
-        lastTraceSampleTime = double.NegativeInfinity;
-        foreach (var segment in traceSegments)
-            segment.Alpha = 0;
     }
 
     private static string midiName(int midi)
@@ -415,56 +242,30 @@ public partial class UtaPitchGuide : CompositeDrawable
         return $"{names[((midi % 12) + 12) % 12]}{midi / 12 - 1}";
     }
 
-    private void updateViewport(double current)
+    internal static float CalculateFixedCentre(IReadOnlyList<UtaNote> songNotes)
     {
         float targetCentre = (base_low_midi + base_high_midi) / 2;
-        var upcoming = notes.Where(note => note.EndTime >= current - 200 && note.StartTime <= current + look_ahead * 0.72).ToArray();
+        UtaNote[] pitched = songNotes.Where(note => note.Midi != null).ToArray();
 
-        if (upcoming.Length > 0)
+        if (pitched.Length > 0)
         {
-            float low = upcoming.Min(note => (float)note.Midi!.Value);
-            float high = upcoming.Max(note => (float)note.Midi!.Value);
+            float low = pitched.Min(note => (float)note.Midi!.Value);
+            float high = pitched.Max(note => (float)note.Midi!.Value);
 
-            if (high - low > view_span - edge_margin * 2)
+            if (high - low > VIEW_SPAN - edge_margin * 2)
                 targetCentre = (low + high) / 2;
             else if (low < base_low_midi)
-                targetCentre = low - edge_margin + view_span / 2;
+                targetCentre = low - edge_margin + VIEW_SPAN / 2;
             else if (high > base_high_midi)
-                targetCentre = high + edge_margin - view_span / 2;
+                targetCentre = high + edge_margin - VIEW_SPAN / 2;
         }
 
-        targetCentre = MathF.Round(Math.Clamp(targetCentre, 40 + view_span / 2, 88 - view_span / 2) * 2) / 2;
-        float dt = Math.Clamp((float)(Time.Elapsed / 1000), 0, 0.05f);
-        float alpha = 1 - MathF.Exp(-dt / 0.85f);
-        float desired = (targetCentre - centreMidi) * alpha;
-
-        if (Math.Abs(targetCentre - centreMidi) >= 0.2f)
-            centreMidi += Math.Clamp(desired, -view_move_rate * dt, view_move_rate * dt);
-    }
-
-    private UtaNote? findNoteAt(double time)
-    {
-        int low = 0;
-        int high = notes.Length - 1;
-        while (low <= high)
-        {
-            int middle = (low + high) / 2;
-            UtaNote note = notes[middle];
-            if (time < note.StartTime)
-                high = middle - 1;
-            else if (time > note.EndTime)
-                low = middle + 1;
-            else
-                return note;
-        }
-
-        return null;
+        return MathF.Round(Math.Clamp(targetCentre, 40 + VIEW_SPAN / 2, 88 - VIEW_SPAN / 2) * 2) / 2;
     }
 
     protected override void Dispose(bool isDisposing)
     {
         pitchDeviation.UnbindAll();
-        detectedPitchMidi.UnbindAll();
         pitchSimilarity.UnbindAll();
         voiceActive.UnbindAll();
         base.Dispose(isDisposing);
@@ -473,6 +274,11 @@ public partial class UtaPitchGuide : CompositeDrawable
     private partial class TargetNote : CircularContainer
     {
         public UtaNote Note { get; }
+        public UtaNoteColourState ColourState { get; } = new();
+        public bool ColourCommitted { get; private set; }
+
+        private readonly Box fill;
+        private UtaNoteColourGrade? previewGrade;
 
         public TargetNote(UtaNote note)
         {
@@ -485,23 +291,57 @@ public partial class UtaPitchGuide : CompositeDrawable
             Masking = true;
             BorderThickness = 1;
 
-            Color4 colour = note.NoteKind switch
-            {
-                "golden" or "golden_rap" => new Color4(250, 204, 21, 255),
-                "rap" => new Color4(192, 132, 252, 255),
-                "freestyle" => new Color4(148, 163, 184, 255),
-                _ => new Color4(92, 218, 255, 255),
-            };
-
-            BorderColour = new Color4(colour.R, colour.G, colour.B, 0.8f);
-            Child = new Box
+            BorderColour = new Color4(target_pitch.R, target_pitch.G, target_pitch.B, 0.68f);
+            Child = fill = new Box
             {
                 RelativeSizeAxes = Axes.Both,
-                Colour = colour,
-                Alpha = 0.28f,
+                Colour = target_pitch,
+                Alpha = note.NoteKind == "freestyle" ? 0.25f : 0.42f,
             };
         }
-    }
 
-    private readonly record struct PitchSample(double Time, float Midi, float Similarity);
+        public void CommitColour()
+        {
+            UtaNoteColourGrade? grade = ColourState.Grade();
+            if (grade == null)
+                return;
+
+            ColourCommitted = true;
+            (Color4 colour, float alpha, float glow) = styleFor(grade.Value);
+
+            fill.FadeColour(colour, 180, Easing.OutQuint);
+            fill.FadeTo(alpha, 180, Easing.OutQuint);
+            BorderColour = colour;
+            EdgeEffect = glow > 0
+                ? new EdgeEffectParameters
+                {
+                    Type = EdgeEffectType.Glow,
+                    Colour = new Color4(colour.R, colour.G, colour.B, grade == UtaNoteColourGrade.Perfect ? 0.45f : 0.24f),
+                    Radius = glow,
+                }
+                : default;
+        }
+
+        public void PreviewColour()
+        {
+            UtaNoteColourGrade? grade = ColourState.Grade();
+            if (grade == null || grade == previewGrade)
+                return;
+
+            previewGrade = grade;
+            (Color4 colour, float alpha, _) = styleFor(grade.Value);
+            fill.FadeColour(colour, 140, Easing.OutQuint);
+            fill.FadeTo(alpha * 0.58f, 140, Easing.OutQuint);
+        }
+
+        private static (Color4 Colour, float Alpha, float Glow) styleFor(UtaNoteColourGrade grade)
+            => grade switch
+            {
+                UtaNoteColourGrade.Perfect => (new Color4(253, 224, 71, 255), 0.88f, 8),
+                UtaNoteColourGrade.Good => (new Color4(74, 222, 128, 255), 0.76f, 3),
+                UtaNoteColourGrade.High => (new Color4(251, 146, 60, 255), 0.68f, 0),
+                UtaNoteColourGrade.Low => (new Color4(96, 165, 250, 255), 0.68f, 0),
+                _ => (new Color4(251, 113, 133, 255), 0.58f, 0),
+            };
+    }
 }

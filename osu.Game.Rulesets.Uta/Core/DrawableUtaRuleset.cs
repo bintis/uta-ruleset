@@ -2,6 +2,7 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System.Collections.Generic;
+using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Input;
@@ -11,46 +12,68 @@ using osu.Game.Rulesets.Judgements;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Objects.Drawables;
 using osu.Game.Rulesets.UI;
+using osu.Game.Rulesets.Uta.Configuration;
+using osu.Game.Rulesets.Uta.Mods;
+using osu.Game.Rulesets.Uta.Skinning;
 using osu.Game.Rulesets.Uta.UI;
 
 namespace osu.Game.Rulesets.Uta.Core;
 
 public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
 {
+    private readonly UtaAudioRouter audioRouter = new();
+    private readonly UtaAudioSettingsState audioSettings = new();
+
     public new UtaInputManager KeyBindingInputManager => (UtaInputManager)base.KeyBindingInputManager;
 
     public DrawableUtaRuleset(Ruleset ruleset, IBeatmap beatmap, IReadOnlyList<Mod>? mods)
         : base(ruleset, beatmap, mods)
     {
+        Overlays.Add(new UtaQuickSettingsContainer());
+        Overlays.Add(new UtaAudioController());
+        Overlays.Add(new UtaGapSkipController((UtaBeatmap)beatmap));
+        Overlays.Add(new UtaVolumeOverlayExtension());
     }
 
     protected override IReadOnlyDependencyContainer CreateChildDependencies(IReadOnlyDependencyContainer parent)
     {
         var dependencies = new DependencyContainer(base.CreateChildDependencies(parent));
+        audioSettings.Initialise((UtaRulesetConfigManager)Config);
         dependencies.CacheAs((UtaBeatmap)Beatmap);
+        dependencies.CacheAs(audioRouter);
+        dependencies.CacheAs(audioSettings);
         return dependencies;
     }
 
-    protected override Playfield CreatePlayfield() => new UtaPlayfield();
+    protected override Playfield CreatePlayfield() => new UtaPlayfield(Mods);
 
     protected override PassThroughInputManager CreateInputManager() => new UtaInputManager(Ruleset.RulesetInfo);
 
     public override DrawableHitObject<UtaHitObject> CreateDrawableRepresentation(UtaHitObject hitObject)
         => new DrawableUtaHitObject(hitObject);
+
+    protected override void Dispose(bool isDisposing)
+    {
+        base.Dispose(isDisposing);
+        audioSettings.Dispose();
+        audioRouter.Dispose();
+    }
 }
 
 internal sealed partial class UtaPlayfield : Playfield
 {
-    private readonly UtaLyricsDisplay lyrics;
+    private readonly UtaLyricsDisplay? lyrics;
 
-    public UtaPlayfield()
+    public UtaPlayfield(IReadOnlyList<Mod> mods)
     {
-        AddInternal(new UtaPitchGuide());
-        AddInternal(lyrics = new UtaLyricsDisplay());
+        if (mods.All(mod => mod is not UtaModHidePitchGuide))
+            AddInternal(new UtaPitchGuide());
+        if (mods.All(mod => mod is not UtaModHideLyrics))
+            AddInternal(lyrics = new UtaLyricsDisplay());
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaBeatmap beatmap) => lyrics.SetSegments(beatmap.Transcript);
+    private void load(UtaBeatmap beatmap) => lyrics?.SetSegments(beatmap.Transcript);
 }
 
 internal sealed partial class DrawableUtaHitObject : DrawableHitObject<UtaHitObject>

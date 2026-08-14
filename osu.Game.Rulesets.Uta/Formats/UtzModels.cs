@@ -312,6 +312,12 @@ public sealed class UtaBeatmapMetadata
     [JsonPropertyName("octave_tolerance")]
     public bool OctaveTolerance { get; init; }
 
+    [JsonPropertyName("guide_vocals_file")]
+    public string? GuideVocalsFile { get; init; }
+
+    [JsonPropertyName("original_audio_file")]
+    public string? OriginalAudioFile { get; init; }
+
     [JsonRequired]
     [JsonPropertyName("centre_midi")]
     public int CentreMidi { get; init; }

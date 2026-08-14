@@ -2,18 +2,22 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using System.ComponentModel;
 using System.Linq;
 using osu.Framework.Allocation;
+using osu.Framework.Audio;
 using osu.Framework.Bindables;
 using osu.Framework.Input.Bindings;
 using osu.Game.Rulesets.UI;
+using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Pitch;
 
 namespace osu.Game.Rulesets.Uta.Core;
 
 public enum UtaAction
 {
-    None,
+    [Description("Open Uta settings")]
+    OpenSettings,
 }
 
 public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
@@ -27,26 +31,58 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
     private UtaNote[] notes = Array.Empty<UtaNote>();
     private UtaMicrophoneHandler? microphone;
     private double? smoothedMidi;
+    private readonly object pending_pitch_lock = new();
+    private double? pendingPitch;
+    private bool pitchUpdateScheduled;
 
     public UtaInputManager(RulesetInfo ruleset)
         : base(ruleset, 0, SimultaneousBindingMode.All)
     {
-        UseParentInput = false;
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaBeatmap beatmap)
+    private void load(UtaBeatmap beatmap, UtaAudioSettingsState audioSettings, AudioManager audioManager, UtaAudioRouter audioRouter)
     {
+        audioRouter.Initialise(audioManager);
         this.beatmap = beatmap;
         notes = beatmap.HitObjects.OfType<UtaNote>().OrderBy(note => note.StartTime).ToArray();
-        microphone = new UtaMicrophoneHandler();
+        microphone = new UtaMicrophoneHandler(UtaMicrophoneDevices.Resolve(audioSettings.MicrophoneDevice.Value), audioRouter);
+        microphone.InputGain.BindTo(audioSettings.MicrophoneInputGain);
+        microphone.MonitorVolume.BindTo(audioSettings.MicrophoneMonitorVolume);
+        microphone.OutputDevice.BindTo(audioSettings.MicrophoneOutputDevice);
         microphone.PitchDetected += onPitchDetected;
         AddHandler(microphone);
     }
 
     private void onPitchDetected(double? hertz)
     {
-        Schedule(() => updatePitch(hertz));
+        // The recording callback runs independently of lazer's update thread.
+        // Never enqueue every microphone window: if the update thread stalls,
+        // stale pitch samples otherwise grow without bound and prevent recovery.
+        lock (pending_pitch_lock)
+        {
+            pendingPitch = hertz;
+
+            if (pitchUpdateScheduled)
+                return;
+
+            pitchUpdateScheduled = true;
+        }
+
+        Schedule(processLatestPitch);
+    }
+
+    private void processLatestPitch()
+    {
+        double? hertz;
+
+        lock (pending_pitch_lock)
+        {
+            hertz = pendingPitch;
+            pitchUpdateScheduled = false;
+        }
+
+        updatePitch(hertz);
     }
 
     private void updatePitch(double? hertz)

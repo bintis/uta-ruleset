@@ -11,13 +11,22 @@
 
   <ItemGroup>
     <PackageReference Include="ppy.osu.Game" Version="2026.730.0" />
+    <InternalsVisibleTo Include="osu.Game.Rulesets.Uta.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="native\linux-x64\libbassflac.so" CopyToOutputDirectory="PreserveNewest" TargetPath="libbassflac.so" />
+    <None Update="native\BASSFLAC.txt" CopyToOutputDirectory="PreserveNewest" TargetPath="BASSFLAC.txt" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="UtaRuleset.cs" />
+    <Compile Include="Configuration\**\*.cs" />
     <Compile Include="Core\**\*.cs" />
     <Compile Include="Formats\*.cs" />
+    <Compile Include="Mods\*.cs" />
     <Compile Include="Pitch\*.cs" />
+    <Compile Include="Skinning\*.cs" />
     <Compile Include="UI\*.cs" />
   </ItemGroup>
 

@@ -7,17 +7,26 @@ using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Sprites;
+using osu.Framework.Input.Bindings;
 using osu.Game;
 using osu.Game.Beatmaps;
+using osu.Game.Configuration;
 using osu.Game.Database;
+using osu.Game.Input.Bindings;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Notifications;
+using osu.Game.Overlays.Settings;
+using osu.Game.Rulesets.Configuration;
 using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Filter;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.UI;
+using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Formats;
+using osu.Game.Rulesets.Uta.Mods;
+using osu.Game.Rulesets.Uta.Skinning;
+using osu.Game.Skinning;
 using osuTK;
 
 namespace osu.Game.Rulesets.Uta;
@@ -32,6 +41,7 @@ public sealed partial class UtaRuleset : Ruleset
     public UtaRuleset()
     {
         UtaBeatmapDecoder.Register();
+        UtaAudioRouter.LoadBundledFlacPlugin();
         RulesetInfo.OnlineID = 111;
     }
 
@@ -54,7 +64,33 @@ public sealed partial class UtaRuleset : Ruleset
 
     public override IRulesetFilterCriteria CreateRulesetFilterCriteria() => new UtaFilterCriteria();
 
-    public override IEnumerable<Mod> GetModsFor(ModType type) => Array.Empty<Mod>();
+    public override IEnumerable<RulesetBeatmapAttribute> GetBeatmapAttributesForDisplay(IBeatmapInfo beatmapInfo, IReadOnlyCollection<Mod> mods)
+        => Array.Empty<RulesetBeatmapAttribute>();
+
+    public override IEnumerable<KeyBinding> GetDefaultKeyBindings(int variant = 0)
+        => new[] { new KeyBinding(InputKey.P, UtaAction.OpenSettings) };
+
+    public override IEnumerable<Mod> GetModsFor(ModType type)
+        => type switch
+        {
+            ModType.DifficultyIncrease => new Mod[]
+            {
+                new UtaModHidePitchGuide(),
+                new UtaModHideLyrics(),
+            },
+            ModType.DifficultyReduction => new Mod[]
+            {
+                new UtaModOriginalVocals(),
+            },
+            _ => Array.Empty<Mod>(),
+        };
+
+    public override IRulesetConfigManager CreateConfig(SettingsStore? settings)
+        => new UtaRulesetConfigManager(settings, RulesetInfo);
+
+    public override RulesetSettingsSubsection CreateSettings() => new UtaSettingsSubsection(this);
+
+    public override ISkin? CreateSkinTransformer(ISkin skin, IBeatmap beatmap) => new UtaSkinTransformer(skin);
 
     public override Drawable CreateIcon() => new UtaRulesetIcon();
 
@@ -65,12 +101,23 @@ public sealed partial class UtaRuleset : Ruleset
             Anchor = Anchor.Centre;
             Origin = Anchor.Centre;
             Size = new Vector2(32);
-            InternalChild = new SpriteIcon
+            InternalChildren = new Drawable[]
             {
-                Anchor = Anchor.Centre,
-                Origin = Anchor.Centre,
-                RelativeSizeAxes = Axes.Both,
-                Icon = FontAwesome.Solid.Microphone,
+                new SpriteIcon
+                {
+                    Anchor = Anchor.Centre,
+                    Origin = Anchor.Centre,
+                    RelativeSizeAxes = Axes.Both,
+                    Scale = new Vector2(0.58f),
+                    Icon = FontAwesome.Solid.Microphone,
+                },
+                new SpriteIcon
+                {
+                    Anchor = Anchor.Centre,
+                    Origin = Anchor.Centre,
+                    RelativeSizeAxes = Axes.Both,
+                    Icon = FontAwesome.Regular.Circle,
+                },
             };
         }
 

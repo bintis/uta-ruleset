@@ -98,6 +98,9 @@ public static class UtzBeatmapSetConverter
         if (cover != null)
             lines.Add($"0,0,\"{safeEventPath(cover)}\",0,0");
 
+        foreach (var gap in UtaGapSkipController.FindSkippableGaps(segments, package.PitchNotes))
+            lines.Add($"2,{(int)Math.Round(gap.StartTime)},{(int)Math.Round(gap.EndTime)}");
+
         lines.AddRange(new[]
         {
             string.Empty,
@@ -113,6 +116,8 @@ public static class UtzBeatmapSetConverter
         {
             PackageId = manifest.PackageId,
             OctaveTolerance = manifest.Scoring.OctaveTolerance,
+            GuideVocalsFile = manifest.Audio.GuideVocals?.Path,
+            OriginalAudioFile = manifest.Audio.Original?.Path,
             CentreMidi = centreMidi,
             Transcript = segments,
         };
