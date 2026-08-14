@@ -1,82 +1,38 @@
-# uta-ruleset
+# uta!
 
-`uta-ruleset` is the osu!lazer implementation of the Uta karaoke ecosystem. It is a hard fork of
-[`karaoke-dev/karaoke`](https://github.com/karaoke-dev/karaoke), focused on singing packaged `.utz`
-songs rather than preserving the original ruleset's editor and legacy DLL interfaces.
+`uta!` is a small osu!lazer ruleset for playing Uta Studio `.utz` song
+packages. It deliberately contains only the playback path:
 
-Version `0.1.0` is the first playable preview.
+- `.utz` validation and import through lazer's public file-import API;
+- word-timed lyrics with progressive highlighting;
+- target notes, live microphone pitch and pitch feedback;
+- Linux microphone support through the BASS runtime already shipped by lazer.
 
-## Uta family
+There is no editor, online layer, custom skin system, bundled icon pack, font,
+or standalone media stack. Audio, video, artwork, song select, pausing, volume,
+and results remain owned by osu!lazer.
 
-The projects share the same song package and singing model, but target different parts of the workflow:
+## Build and test
 
-```text
-uta-studio ──exports──> .utz <──specified/tooling── utz
-                          │
-                          ├──played directly──> uta
-                          │                    Independent, simplified Web/desktop player
-                          │
-                          └──imported into────> uta-ruleset
-                                               Full osu!lazer ruleset integration
-```
-
-- **[uta-studio](https://github.com/bintis/uta-studio)** creates and analyses songs, lyrics, pitch notes,
-  stems, artwork and video, then exports them as `.utz` packages.
-- **[utz](https://github.com/bintis/utz)** owns the portable package format and related tooling. `.utz`
-  is the stable boundary between authoring tools and players.
-- **[uta](https://github.com/bintis/uta)** is the independent simplified Uta player. It does not require
-  osu!lazer and is intended to provide a focused Web/desktop karaoke experience.
-- **uta-ruleset** imports the same `.utz` packages into osu!lazer and reuses lazer's song select, MOD
-  selector, settings, volume HUD, pause flow and results infrastructure.
-
-`uta` and `uta-ruleset` are sibling players. Neither replaces the other, and both consume packages
-produced by `uta-studio` using the `utz` format.
-
-## Version 0.1.0
-
-- Drag-and-drop `.utz` import through lazer's native import flow.
-- Packaged artwork, video backgrounds, instrumental audio and optional guide/original vocal stems.
-- FLAC playback through an optional native BASSFLAC plugin.
-- Low-latency microphone capture, independent input gain and microphone monitoring on Linux.
-- Uta's live pitch detection, flowing full-width pitch guide and sung-pitch trace.
-- Word-timed lyrics with readings and progressive highlighting.
-- Uta-derived pitch scoring presented as a compact `0–1000` score and `S/A/B/C/D` rank.
-- Native lazer gap skipping for long intros, breaks and outros.
-- Karaoke MODs for guide vocals, hiding the pitch guide, hiding lyrics and enabling failure.
-- Native lazer visual settings and remapped volume HUD for **My Voice**, **BGM** and
-  **Original Vocals**.
-- Karaoke-only song filtering while this ruleset is selected.
-
-## Build
-
-The project targets .NET 8 and the current osu!lazer ruleset API:
+Requires .NET 8:
 
 ```sh
-dotnet build osu.Game.Rulesets.Karaoke/osu.Game.Rulesets.Karaoke.csproj -c Release
+dotnet build osu.Game.Rulesets.Uta/osu.Game.Rulesets.Uta.csproj -c Release
+dotnet test osu.Game.Rulesets.Uta.Tests/osu.Game.Rulesets.Uta.Tests.csproj -c Release
 ```
 
-Copy `osu.Game.Rulesets.Karaoke.dll` and the contents of the generated `DLLs` directory into your
-osu!lazer `rulesets` directory.
+Copy `osu.Game.Rulesets.Uta.dll` from `bin/Release/net8.0` into lazer's
+`rulesets` directory. The host installation provides osu! and BASS assemblies;
+the ruleset does not ship duplicate runtime libraries.
 
-Some Linux/Nix osu! packages omit the FLAC decoder. For `.utz` songs containing FLAC, place the
-official x86-64 `libbassflac.so` from [BASSFLAC](https://www.un4seen.com/bass.html#addons) beside the
-ruleset DLL. The ruleset detects and registers it at startup.
+Select `uta!` once after launch to register native `.utz` drag-and-drop import.
+Imported packages are validated in memory and handed to lazer's beatmap manager
+as a standard archive, so lazer owns storage and media decoding.
 
-## Credits
+## Scope
 
-This project would not exist without **Andy/andy840119 and all contributors to
-[`karaoke-dev/karaoke`](https://github.com/karaoke-dev/karaoke)**. Their osu!lazer ruleset,
-karaoke object model, editor work and years of infrastructure form the foundation of this hard fork.
+The accepted package contract is `uta.song` format `0.1.x` with the
+`uta.pitch` scoring schema version 1. Package paths, sizes, hashes, transcript
+timing, and note intervals are validated before import.
 
-Thanks also to:
-
-- [ppy/osu](https://github.com/ppy/osu) and [ppy/osu-framework](https://github.com/ppy/osu-framework)
-  for lazer and its ruleset APIs.
-- The Uta project family for the `.utz` format, lyric timing, microphone pitch detection and scoring
-  model brought into this ruleset.
-- [Un4seen Developments](https://www.un4seen.com/) for BASS and BASSFLAC.
-
-## License
-
-The ruleset is distributed under the [GNU GPL v3](LICENSE), following the original project. Embedded
-components retain their respective copyright notices.
+Licensed under GPL-3.0; see [LICENSE](LICENSE).
