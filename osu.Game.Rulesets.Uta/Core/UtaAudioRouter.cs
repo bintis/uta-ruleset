@@ -169,10 +169,9 @@ internal sealed class UtaRoutedAudioStream : IDisposable
     private readonly float baseFrequency;
     private int device;
     private float volume = 1;
+    private float appliedFrequency = float.NaN;
     public int Handle { get; }
     public bool IsRunning { get; private set; }
-
-    public double CurrentTime => onDevice(() => Bass.ChannelBytes2Seconds(Handle, Bass.ChannelGetPosition(Handle)) * 1000);
 
     internal UtaRoutedAudioStream(UtaAudioRouter router, int handle, int device)
     {
@@ -197,7 +196,14 @@ internal sealed class UtaRoutedAudioStream : IDisposable
     }
 
     public void SetRate(double rate)
-        => onDevice(() => Bass.ChannelSetAttribute(Handle, ChannelAttribute.Frequency, baseFrequency * (float)Math.Abs(rate)));
+    {
+        float frequency = baseFrequency * (float)Math.Abs(rate);
+        if (frequency.Equals(appliedFrequency))
+            return;
+
+        if (onDevice(() => Bass.ChannelSetAttribute(Handle, ChannelAttribute.Frequency, frequency)))
+            appliedFrequency = frequency;
+    }
 
     public void Seek(double time)
         => onDevice(() => Bass.ChannelSetPosition(Handle, Bass.ChannelSeconds2Bytes(Handle, Math.Max(0, time) / 1000)));

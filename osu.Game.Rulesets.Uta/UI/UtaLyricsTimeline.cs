@@ -54,6 +54,12 @@ public static class UtaLyricsTimeline
     }
 
     public static UtaLyricsFrame Evaluate(IReadOnlyList<UtaTranscriptSegment> segments, double time, int hint = 0)
+        => evaluate(segments, time, hint, null);
+
+    internal static UtaLyricsFrame Evaluate(IReadOnlyList<UtaTranscriptSegment> segments, double time, int hint, double[] progressBuffer)
+        => evaluate(segments, time, hint, progressBuffer);
+
+    private static UtaLyricsFrame evaluate(IReadOnlyList<UtaTranscriptSegment> segments, double time, int hint, double[]? progressBuffer)
     {
         int index = FindCurrentSegment(segments, time, hint);
         if (index < 0)
@@ -71,7 +77,11 @@ public static class UtaLyricsTimeline
         bool showUpcoming = time < segment.Start - LYRICS_LEAD;
         bool visible = active || countdown != null || bridgeShortGap || showUpcoming;
         bool highlight = active || bridgeShortGap;
-        double[] progress = segment.Words.Select(word => WordProgress(word, time, highlight)).ToArray();
+        double[] progress = progressBuffer?.Length == segment.Words.Count
+            ? progressBuffer
+            : new double[segment.Words.Count];
+        for (int i = 0; i < progress.Length; i++)
+            progress[i] = WordProgress(segment.Words[i], time, highlight);
 
         return new UtaLyricsFrame(index, visible, countdown, progress);
     }

@@ -32,6 +32,7 @@ internal sealed partial class UtaGapSkipController : CompositeDrawable
     private readonly Activity[] activities;
     private IReadOnlyList<SkippableGap> gaps = Array.Empty<SkippableGap>();
     private GameplayClockContainer gameplayClock = null!;
+    private DrawableRuleset drawableRuleset = null!;
     private SkipOverlay? activeOverlay;
     private int gapIndex;
 
@@ -48,15 +49,11 @@ internal sealed partial class UtaGapSkipController : CompositeDrawable
     private void load(GameplayClockContainer clock, DrawableRuleset drawableRuleset, IBindable<WorkingBeatmap> workingBeatmap)
     {
         gameplayClock = clock;
+        this.drawableRuleset = drawableRuleset;
         gaps = findSkippableGaps(activities, workingBeatmap.Value.Track.Length);
 
-        // Uta has no replay or score judgements which need intermediate frames.
-        // Keeping frame stability enabled after a gap seek can leave the ruleset
-        // frozen forever when lazer rejects a later transient BASS clock jump.
         if (frame_stable_playback == null)
-            Logger.Log("Uta could not disable lazer's frame-stable playback.", level: LogLevel.Error);
-        else
-            frame_stable_playback.SetValue(drawableRuleset, false);
+            Logger.Log("Uta could not access lazer's frame-stable playback setting.", level: LogLevel.Error);
     }
 
     protected override void Update()
@@ -90,13 +87,27 @@ internal sealed partial class UtaGapSkipController : CompositeDrawable
         if (gameplayClock.IsPaused.Value || !gameplayClock.IsRunning || target - current < 50)
             return;
 
+        bool restoreFrameStability = frame_stable_playback?.GetValue(drawableRuleset) is true;
         try
         {
+            // A real gap skip exceeds lazer's invalid-BASS-jump threshold. Turn
+            // frame stability off only until its container consumes this seek,
+            // then restore it on the following child update. Leaving it off for
+            // the whole play session exposes ordinary clock jitter to the UI.
+            if (restoreFrameStability)
+                frame_stable_playback!.SetValue(drawableRuleset, false);
+
             gameplayClock.Seek(target);
+            if (restoreFrameStability)
+                Schedule(() => frame_stable_playback!.SetValue(drawableRuleset, true));
+
             Logger.Log($"Uta gap skip: {current:N0} ms -> {target:N0} ms.");
         }
         catch (Exception ex)
         {
+            if (restoreFrameStability)
+                frame_stable_playback!.SetValue(drawableRuleset, true);
+
             Logger.Log($"Uta gap skip failed: {ex.GetBaseException().Message}", level: LogLevel.Error);
         }
     }

@@ -37,7 +37,6 @@ internal sealed partial class UtaAudioController : Component
     private GameplayClockContainer gameplayClock = null!;
     private UtaRoutedAudioStream? backgroundMusic;
     private UtaRoutedAudioStream? vocals;
-    private double nextResyncAllowedTime;
 
     [BackgroundDependencyLoader]
     private void load(AudioManager audioManager, UtaAudioRouter router, IBindable<WorkingBeatmap> workingBeatmap,
@@ -74,6 +73,7 @@ internal sealed partial class UtaAudioController : Component
         // temporary adjustment avoids leaking a zero base volume after gameplay.
         mainTrackVolumeAdjustment.Value = backgroundMusic != null ? 0 : backgroundMusicVolume.Value;
         mainTrack.AddAdjustment(AdjustableProperty.Volume, mainTrackVolumeAdjustment);
+
         backgroundMusicVolume.BindValueChanged(value =>
         {
             backgroundMusic?.SetVolume((float)value.NewValue);
@@ -103,10 +103,7 @@ internal sealed partial class UtaAudioController : Component
             vocals?.Stop();
         }
         else
-        {
             synchroniseAfterSeek();
-            nextResyncAllowedTime = 0;
-        }
     }
 
     protected override void Update()
@@ -115,28 +112,25 @@ internal sealed partial class UtaAudioController : Component
         if (backgroundMusic == null && vocals == null)
             return;
 
-        updateSource(backgroundMusic);
-        updateSource(vocals);
+        double current = gameplayClock.CurrentTime;
+        bool shouldRun = !gameplayPaused.Value && gameplayClock.IsRunning && current >= 0;
+        double rate = gameplayClock.Rate;
+        updateSource(backgroundMusic, current, rate, shouldRun);
+        updateSource(vocals, current, rate, shouldRun);
     }
 
-    private void updateSource(UtaRoutedAudioStream? source)
+    private static void updateSource(UtaRoutedAudioStream? source, double current, double rate, bool shouldRun)
     {
         if (source == null)
             return;
 
-        source.SetRate(mainTrack.Rate);
-        if (!gameplayPaused.Value && gameplayClock.IsRunning && gameplayClock.CurrentTime >= 0)
+        source.SetRate(rate);
+        if (shouldRun)
         {
             if (!source.IsRunning)
             {
-                source.Seek(gameplayClock.CurrentTime);
+                source.Seek(current);
                 source.Start();
-                nextResyncAllowedTime = Time.Current + 1000;
-            }
-            else if (Time.Current >= nextResyncAllowedTime && Math.Abs(source.CurrentTime - gameplayClock.CurrentTime) > 180)
-            {
-                source.Seek(gameplayClock.CurrentTime);
-                nextResyncAllowedTime = Time.Current + 1000;
             }
         }
         else if (source.IsRunning)
@@ -149,7 +143,6 @@ internal sealed partial class UtaAudioController : Component
     {
         synchroniseSource(backgroundMusic);
         synchroniseSource(vocals);
-        nextResyncAllowedTime = 0;
     }
 
     private void synchroniseSource(UtaRoutedAudioStream? source)

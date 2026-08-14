@@ -39,6 +39,35 @@ Select `uta!` once after launch to register native `.utz` drag-and-drop import.
 Imported packages are validated in memory and handed to lazer's beatmap manager
 as a standard archive, so lazer owns storage and media decoding.
 
+## Roadmap / TODO
+
+### Singing and practice
+
+- key and pitch shifting;
+- playback speed control;
+- microphone, accompaniment and lyrics latency calibration;
+- a device setup page for input level, detected pitch, monitor latency and output routing;
+- A-B section looping, per-phrase retry and quick navigation;
+- automatic vocal-range detection with recommended transposition;
+- voice recording, playback, original-vocal comparison and export;
+- live gameplay scoring;
+- post-song grading, rating and detailed feedback;
+- selectable performance-quality levels and live diagnostics.
+
+### osu! mods
+
+- Double Time (DT) and Nightcore (NC);
+- Half Time (HT);
+- Auto play;
+- a Fail mode where pitch-scoring mistakes drain health and the performance fails at zero health.
+
+### Controls and presentation
+
+- securely paired QR-code-based mobile web controls;
+- ruleset-aware video playback controls;
+- selectable particle effects;
+- interface and control improvements.
+
 ## Scope
 
 The accepted package contract is `uta.song` format `0.1.x` with the

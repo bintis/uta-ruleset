@@ -31,6 +31,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
 
     private IReadOnlyList<UtaTranscriptSegment> segments = Array.Empty<UtaTranscriptSegment>();
     private UtaWordToken[] currentTokens = Array.Empty<UtaWordToken>();
+    private double[] wordProgress = Array.Empty<double>();
     private int segmentIndex = -1;
 
     public UtaLyricsDisplay()
@@ -133,7 +134,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
         }
 
         double seconds = Time.Current / 1000;
-        var frame = UtaLyricsTimeline.Evaluate(segments, seconds, Math.Max(0, segmentIndex));
+        var frame = UtaLyricsTimeline.Evaluate(segments, seconds, Math.Max(0, segmentIndex), wordProgress);
         if (frame.SegmentIndex != segmentIndex)
             rebuild(frame.SegmentIndex);
 
@@ -143,6 +144,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
 
         for (int i = 0; i < currentTokens.Length && i < frame.WordProgress.Count; i++)
             currentTokens[i].SetProgress(frame.WordProgress[i]);
+
     }
 
     private void rebuild(int index)
@@ -151,12 +153,14 @@ public partial class UtaLyricsDisplay : CompositeDrawable
         currentLine.Clear();
         nextLine.Clear();
         currentTokens = Array.Empty<UtaWordToken>();
+        wordProgress = Array.Empty<double>();
 
         if (index < 0 || index >= segments.Count)
             return;
 
         var current = segments[index];
         currentTokens = createTokens(current, false, sizeMultiplier, typeface).ToArray();
+        wordProgress = new double[currentTokens.Length];
         currentLine.AddRange(currentTokens);
 
         if (index + 1 < segments.Count)

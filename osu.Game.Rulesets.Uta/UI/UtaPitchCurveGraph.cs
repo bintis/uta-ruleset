@@ -32,6 +32,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 {
     private const int buffer_size = 200;
     private const double sample_interval = 20;
+    private const double reference_rebuild_interval = 100;
     private const float line_width = 2.25f;
 
     private static readonly Color4 reference_colour = new(128, 179, 255, 255);
@@ -53,8 +54,13 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     private UtaNote[] notes = Array.Empty<UtaNote>();
     private ReferenceFrame[] referenceFrames = Array.Empty<ReferenceFrame>();
     private float centreMidi;
+    private double timelineEndTime;
     private double lastSampleTime = double.NegativeInfinity;
     private double lastPlaybackTime = double.NegativeInfinity;
+    private double referenceGeometryTime = double.NaN;
+    private bool userGeometryReady;
+    private float geometryWidth = -1;
+    private float geometryHeight = -1;
 
     public UtaPitchCurveGraph()
     {
@@ -62,8 +68,8 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 
         InternalChildren = new Drawable[]
         {
-            referenceLayer = new Container { RelativeSizeAxes = Axes.Both },
-            userLayer = new Container { RelativeSizeAxes = Axes.Both },
+            referenceLayer = new Container { RelativeSizeAxes = Axes.Y },
+            userLayer = new Container { RelativeSizeAxes = Axes.Y },
         };
     }
 
@@ -77,6 +83,14 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                        .ToArray();
         centreMidi = UtaPitchGuide.CalculateFixedCentre(notes);
         referenceFrames = loadReferenceFrames(workingBeatmap.Value);
+        timelineEndTime = workingBeatmap.Value.Track.Length;
+        if (!double.IsFinite(timelineEndTime))
+            timelineEndTime = 0;
+        if (notes.Length > 0)
+            timelineEndTime = Math.Max(timelineEndTime, notes[^1].EndTime);
+        if (referenceFrames.Length > 0)
+            timelineEndTime = Math.Max(timelineEndTime, referenceFrames[^1].Time);
+        timelineEndTime += UtaPitchGuide.LOOK_AHEAD;
         display.BindTo(config.GetBindable<UtaPitchCurveDisplay>(UtaRulesetSetting.PitchCurveDisplay));
 
         if (drawableRuleset is not DrawableUtaRuleset utaRuleset)
@@ -93,13 +107,25 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         base.Update();
 
         UtaPitchCurveDisplay mode = display.Value;
-        Alpha = mode == UtaPitchCurveDisplay.Off ? 0 : 1;
+        if (mode == UtaPitchCurveDisplay.Off)
+        {
+            if (Alpha != 0)
+            {
+                Alpha = 0;
+                clearSamples();
+            }
+
+            return;
+        }
+
+        Alpha = 1;
 
         double current = Time.Current;
         if (double.IsFinite(lastPlaybackTime) && Math.Abs(current - lastPlaybackTime) > 550)
             clearSamples();
         lastPlaybackTime = current;
 
+        bool sampleAdded = false;
         if (current - lastSampleTime >= sample_interval)
         {
             UtaNote? target = findNoteAt(current);
@@ -111,12 +137,53 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             if (samples.Count > buffer_size)
                 samples.RemoveAt(0);
             lastSampleTime = current;
+            sampleAdded = true;
         }
 
         bool showSong = mode is UtaPitchCurveDisplay.Song or UtaPitchCurveDisplay.Both;
         bool showVoice = mode is UtaPitchCurveDisplay.MyVoice or UtaPitchCurveDisplay.Both;
-        drawReference(showSong, current);
-        drawUser(showVoice, current);
+        bool sizeChanged = DrawWidth != geometryWidth || DrawHeight != geometryHeight;
+        if (sizeChanged)
+        {
+            float timelineWidth = Math.Max(DrawWidth, TimeToX(timelineEndTime, 0, DrawWidth));
+            referenceLayer.Width = timelineWidth;
+            userLayer.Width = timelineWidth;
+        }
+
+        if (showSong)
+        {
+            referenceLayer.X = TimeOffsetToX(0, current, DrawWidth);
+            if (sizeChanged || !double.IsFinite(referenceGeometryTime) || Math.Abs(current - referenceGeometryTime) >= reference_rebuild_interval)
+            {
+                drawReference(true, current);
+                referenceGeometryTime = current;
+            }
+        }
+        else
+        {
+            referenceLayer.X = 0;
+            referenceGeometryTime = double.NaN;
+            drawReference(false, current);
+        }
+
+        if (showVoice)
+        {
+            userLayer.X = TimeOffsetToX(0, current, DrawWidth);
+            if (sampleAdded || sizeChanged || !userGeometryReady)
+            {
+                drawUser(true);
+                userGeometryReady = true;
+            }
+        }
+        else
+        {
+            userLayer.X = 0;
+            userGeometryReady = false;
+            drawUser(false);
+        }
+
+        geometryWidth = DrawWidth;
+        geometryHeight = DrawHeight;
     }
 
     private void drawReference(bool visible, double currentTime)
@@ -138,7 +205,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                         continue;
 
                     if (setSegment(getSegment(referenceSegments, referenceLayer, used), previous.Time, frame.Time,
-                                   currentTime, previous.Midi, frame.Midi, reference_colour, 0.30f))
+                                   0, previous.Midi, frame.Midi, reference_colour, 0.30f))
                         used++;
                 }
             }
@@ -150,7 +217,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                         continue;
 
                     if (setSegment(getSegment(referenceSegments, referenceLayer, used), note.StartTime, note.EndTime,
-                                   currentTime, midi, midi, reference_colour, 0.30f))
+                                   0, midi, midi, reference_colour, 0.30f))
                         used++;
                 }
             }
@@ -159,7 +226,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         hideUnused(referenceSegments, used);
     }
 
-    private void drawUser(bool visible, double currentTime)
+    private void drawUser(bool visible)
     {
         int used = 0;
         if (visible)
@@ -177,7 +244,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                 float alpha = (previousWeight * AgeAlpha(i - 1, samples.Count)
                                + currentWeight * AgeAlpha(i, samples.Count)) / 2;
                 if (setSegment(getSegment(userSegments, userLayer, used), previous.Time, current.Time,
-                               currentTime, from, to, colour, alpha))
+                               0, from, to, colour, alpha))
                     used++;
             }
         }
@@ -190,7 +257,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     {
         Vector2 start = new(TimeToX(fromTime, currentTime, DrawWidth), MidiToY(fromMidi, centreMidi, DrawHeight));
         Vector2 end = new(TimeToX(toTime, currentTime, DrawWidth), MidiToY(toMidi, centreMidi, DrawHeight));
-        if (end.X < 0 || start.X > DrawWidth || (start.Y < 0 && end.Y < 0) || (start.Y > DrawHeight && end.Y > DrawHeight))
+        if ((start.Y < 0 && end.Y < 0) || (start.Y > DrawHeight && end.Y > DrawHeight))
         {
             segment.Alpha = 0;
             return false;
@@ -228,6 +295,10 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 
     internal static float TimeToX(double sampleTime, double currentTime, float width)
         => (float)((sampleTime - currentTime + UtaPitchGuide.LOOK_BEHIND)
+                   / (UtaPitchGuide.LOOK_BEHIND + UtaPitchGuide.LOOK_AHEAD)) * width;
+
+    internal static float TimeOffsetToX(double geometryTime, double currentTime, float width)
+        => (float)((geometryTime - currentTime)
                    / (UtaPitchGuide.LOOK_BEHIND + UtaPitchGuide.LOOK_AHEAD)) * width;
 
     private static Color4 blend(Color4 from, Color4 to, float amount) => new(
@@ -325,6 +396,8 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     {
         samples.Clear();
         lastSampleTime = double.NegativeInfinity;
+        referenceGeometryTime = double.NaN;
+        userGeometryReady = false;
         hideUnused(referenceSegments, 0);
         hideUnused(userSegments, 0);
     }
@@ -338,18 +411,16 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         base.Dispose(isDisposing);
     }
 
-    private sealed partial class CurveSegment : CircularContainer
+    private sealed partial class CurveSegment : Box
     {
         public CurveSegment()
         {
             Anchor = Anchor.TopLeft;
             Origin = Anchor.CentreLeft;
             Height = line_width;
-            Masking = true;
-            Child = new Box { RelativeSizeAxes = Axes.Both };
         }
     }
 
     private readonly record struct CurveSample(double Time, float? ReferenceMidi, float? UserMidi, float Similarity);
-    private readonly record struct ReferenceFrame(double Time, float Midi);
+    internal readonly record struct ReferenceFrame(double Time, float Midi);
 }

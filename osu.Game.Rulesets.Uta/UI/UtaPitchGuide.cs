@@ -42,6 +42,7 @@ public partial class UtaPitchGuide : CompositeDrawable
     private readonly Container gridLayer;
     private readonly Container axisLayer;
     private readonly List<TargetNote> targetNotes = new();
+    private TargetNote[] commitOrder = Array.Empty<TargetNote>();
     private readonly List<Box> gridLines = new();
     private readonly Dictionary<int, OsuSpriteText> pitchLabels = new();
     private readonly BindableFloat pitchDeviation = new();
@@ -50,7 +51,11 @@ public partial class UtaPitchGuide : CompositeDrawable
 
     private UtaNote[] notes = Array.Empty<UtaNote>();
     private float centreMidi = (base_low_midi + base_high_midi) / 2;
+    private double maximumNoteDuration;
     private double lastUpdateTime = double.NegativeInfinity;
+    private int previousRangeStart;
+    private int previousRangeEnd;
+    private int nextCommitIndex;
 
     public UtaPitchGuide()
     {
@@ -155,6 +160,7 @@ public partial class UtaPitchGuide : CompositeDrawable
                        .OrderBy(note => note.StartTime)
                        .ToArray();
         centreMidi = CalculateFixedCentre(notes);
+        maximumNoteDuration = notes.Length == 0 ? 0 : notes.Max(note => note.Duration);
 
         foreach (var note in notes)
         {
@@ -162,6 +168,9 @@ public partial class UtaPitchGuide : CompositeDrawable
             targetNotes.Add(drawable);
             noteLayer.Add(drawable);
         }
+
+        commitOrder = targetNotes.OrderBy(target => target.Note.EndTime).ToArray();
+        updateStaticPitchLayout();
 
         if (drawableRuleset is DrawableUtaRuleset utaRuleset)
         {
@@ -189,7 +198,53 @@ public partial class UtaPitchGuide : CompositeDrawable
         float low = centreMidi - VIEW_SPAN / 2;
         float high = centreMidi + VIEW_SPAN / 2;
 
-        int firstGridMidi = (int)MathF.Floor(low);
+        int rangeStart = lowerBoundStart(current - LOOK_BEHIND - maximumNoteDuration);
+        int rangeEnd = upperBoundStart(current + LOOK_AHEAD);
+
+        for (int i = previousRangeStart; i < previousRangeEnd; i++)
+        {
+            if (i < rangeStart || i >= rangeEnd)
+                targetNotes[i].Alpha = 0;
+        }
+
+        for (int i = rangeStart; i < rangeEnd; i++)
+        {
+            TargetNote target = targetNotes[i];
+            UtaNote note = target.Note;
+            float start = (float)((note.StartTime - current + LOOK_BEHIND) / window);
+            float end = (float)((note.EndTime - current + LOOK_BEHIND) / window);
+            bool visible = end >= 0 && start <= 1;
+            target.Alpha = visible ? 1 : 0;
+            if (!visible)
+                continue;
+
+            target.X = start;
+            target.Width = Math.Max(2 / DrawWidth, end - start);
+            target.Y = (high - note.Midi!.Value) / VIEW_SPAN;
+        }
+        previousRangeStart = rangeStart;
+        previousRangeEnd = rangeEnd;
+
+        TargetNote? active = findTargetAt(current);
+        if (active != null)
+        {
+            active.ColourState.Accumulate(elapsedSeconds, voiceActive.Value, pitchSimilarity.Value, pitchDeviation.Value);
+            active.PreviewColour();
+        }
+
+        while (nextCommitIndex < commitOrder.Length && current > commitOrder[nextCommitIndex].Note.EndTime)
+        {
+            commitOrder[nextCommitIndex].CommitColour();
+            nextCommitIndex++;
+        }
+
+    }
+
+    private void updateStaticPitchLayout()
+    {
+        float high = centreMidi + VIEW_SPAN / 2;
+        int firstGridMidi = (int)MathF.Floor(centreMidi - VIEW_SPAN / 2);
+
         for (int i = 0; i < gridLines.Count; i++)
         {
             int midi = firstGridMidi + i;
@@ -206,34 +261,54 @@ public partial class UtaPitchGuide : CompositeDrawable
             label.Y = y;
             label.Alpha = y is >= 0.035f and <= 0.965f ? 0.66f : 0;
         }
+    }
 
-        foreach (var target in targetNotes)
+    private int lowerBoundStart(double time)
+    {
+        int low = 0;
+        int high = notes.Length;
+        while (low < high)
         {
-            var note = target.Note;
-            float start = (float)((note.StartTime - current + LOOK_BEHIND) / window);
-            float end = (float)((note.EndTime - current + LOOK_BEHIND) / window);
-            bool visible = end >= 0 && start <= 1;
-            target.Alpha = visible ? 1 : 0;
-            if (!visible)
-                continue;
-
-            target.X = start;
-            target.Width = Math.Max(2 / DrawWidth, end - start);
-            target.Y = (high - note.Midi!.Value) / VIEW_SPAN;
+            int middle = (low + high) / 2;
+            if (notes[middle].StartTime < time)
+                low = middle + 1;
+            else
+                high = middle;
         }
 
-        TargetNote? active = targetNotes.FirstOrDefault(target => current >= target.Note.StartTime && current <= target.Note.EndTime);
-        if (active != null)
+        return low;
+    }
+
+    private int upperBoundStart(double time)
+    {
+        int low = 0;
+        int high = notes.Length;
+        while (low < high)
         {
-            active.ColourState.Accumulate(elapsedSeconds, voiceActive.Value, pitchSimilarity.Value, pitchDeviation.Value);
-            active.PreviewColour();
+            int middle = (low + high) / 2;
+            if (notes[middle].StartTime <= time)
+                low = middle + 1;
+            else
+                high = middle;
         }
 
-        foreach (TargetNote target in targetNotes)
+        return low;
+    }
+
+    private TargetNote? findTargetAt(double time)
+    {
+        for (int i = upperBoundStart(time) - 1; i >= 0 && notes[i].StartTime <= time; i--)
         {
-            if (!target.ColourCommitted && current > target.Note.EndTime)
-                target.CommitColour();
+            if (notes[i].EndTime >= time)
+                return targetNotes[i];
+
+            // Pitch notes are normally non-overlapping. This keeps overlap
+            // support without turning the common case into a full-song scan.
+            if (time - notes[i].StartTime > maximumNoteDuration)
+                break;
         }
+
+        return null;
     }
 
     private static string midiName(int midi)
@@ -288,6 +363,7 @@ public partial class UtaPitchGuide : CompositeDrawable
             RelativePositionAxes = Axes.Both;
             RelativeSizeAxes = Axes.X;
             Height = 9;
+            Alpha = 0;
             Masking = true;
             BorderThickness = 1;
 
@@ -302,12 +378,12 @@ public partial class UtaPitchGuide : CompositeDrawable
 
         public void CommitColour()
         {
-            UtaNoteColourGrade? grade = ColourState.Grade();
-            if (grade == null)
+            if (ColourCommitted)
                 return;
 
             ColourCommitted = true;
-            (Color4 colour, float alpha, float glow) = styleFor(grade.Value);
+            UtaNoteColourGrade grade = ColourState.Grade() ?? UtaNoteColourGrade.Miss;
+            (Color4 colour, float alpha, float glow) = styleFor(grade);
 
             fill.FadeColour(colour, 180, Easing.OutQuint);
             fill.FadeTo(alpha, 180, Easing.OutQuint);

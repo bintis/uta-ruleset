@@ -68,6 +68,9 @@ public class UtaCoreTests
             Assert.That(UtaPitchCurveGraph.AgeAlpha(199, 200), Is.EqualTo(1).Within(0.0001));
             Assert.That(UtaPitchCurveGraph.TimeToX(8250, 10000, 400), Is.EqualTo(0).Within(0.0001));
             Assert.That(UtaPitchCurveGraph.TimeToX(10000, 10000, 400), Is.EqualTo(100).Within(0.0001));
+            Assert.That(UtaPitchCurveGraph.TimeOffsetToX(10000, 10020, 400), Is.EqualTo(-8f / 7).Within(0.0001));
+            Assert.That(UtaPitchCurveGraph.TimeToX(12000, 0, 400) + UtaPitchCurveGraph.TimeOffsetToX(0, 10000, 400),
+                Is.EqualTo(UtaPitchCurveGraph.TimeToX(12000, 10000, 400)).Within(0.0001));
             Assert.That(UtaPitchCurveGraph.MidiToY(57.5f, 57.5f, 168), Is.EqualTo(84).Within(0.0001));
             Assert.That(UtaPitchGuide.CalculateFixedCentre(baseRange), Is.EqualTo(57.5f));
             Assert.That(UtaPitchGuide.CalculateFixedCentre(highSong), Is.EqualTo(68));
@@ -204,6 +207,25 @@ public class UtaCoreTests
         Assert.That(UtaPitchMath.FrequencyToMidi(440), Is.EqualTo(69).Within(0.001));
     }
 
+    [TestCase(110)]
+    [TestCase(220)]
+    [TestCase(880)]
+    public void DetectsRepresentativeVoicePitches(double hertz)
+    {
+        const int sample_rate = 48000;
+        float[] signal = Enumerable.Range(0, 4096)
+                                   .Select(index => (float)(0.2 * Math.Sin(2 * Math.PI * hertz * index / sample_rate)))
+                                   .ToArray();
+
+        Assert.That(UtaPitchDetector.Detect(signal, sample_rate), Is.EqualTo(hertz).Within(2));
+    }
+
+    [Test]
+    public void PitchDetectorRejectsSilence()
+    {
+        Assert.That(UtaPitchDetector.Detect(new float[2048], 48000), Is.Null);
+    }
+
     [Test]
     public void LyricsEstimateMissingWordTiming()
     {
@@ -213,11 +235,14 @@ public class UtaCoreTests
         });
 
         UtaLyricsFrame frame = UtaLyricsTimeline.Evaluate(segments, 1.5);
+        var reusableProgress = new double[3];
+        UtaLyricsFrame reusableFrame = UtaLyricsTimeline.Evaluate(segments, 1.5, 0, reusableProgress);
         Assert.Multiple(() =>
         {
             Assert.That(segments[0].Words, Has.Count.EqualTo(3));
             Assert.That(frame.Visible, Is.True);
             Assert.That(frame.WordProgress, Has.Count.EqualTo(3));
+            Assert.That(reusableFrame.WordProgress, Is.SameAs(reusableProgress));
         });
     }
 

@@ -25,7 +25,6 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
 {
     private const double sample_interval = 20;
     private const double trace_gap = 140;
-    private const float axis_width = 50;
 
     private static readonly Color4 accurate_voice = new(112, 242, 211, 255);
     private static readonly Color4 close_voice = new(241, 181, 98, 255);
@@ -43,16 +42,20 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
 
     private UtaNote[] notes = Array.Empty<UtaNote>();
     private float centreMidi;
+    private double timelineEndTime;
     private double lastSampleTime = double.NegativeInfinity;
     private double lastPlaybackTime = double.NegativeInfinity;
+    private bool geometryReady;
+    private float geometryWidth = -1;
+    private float geometryHeight = -1;
 
     public UtaPitchGuideTrail()
     {
         RelativeSizeAxes = Axes.Both;
         InternalChildren = new Drawable[]
         {
-            glowLayer = new Container { RelativeSizeAxes = Axes.Both },
-            traceLayer = new Container { RelativeSizeAxes = Axes.Both },
+            glowLayer = new Container { RelativeSizeAxes = Axes.Y },
+            traceLayer = new Container { RelativeSizeAxes = Axes.Y },
         };
     }
 
@@ -64,6 +67,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
                        .OrderBy(note => note.StartTime)
                        .ToArray();
         centreMidi = UtaPitchGuide.CalculateFixedCentre(notes);
+        timelineEndTime = (notes.Length > 0 ? notes[^1].EndTime : 0) + UtaPitchGuide.LOOK_AHEAD;
         enabled.BindTo(config.GetBindable<bool>(UtaRulesetSetting.ShowPitchGuideTrail));
 
         if (drawableRuleset is not DrawableUtaRuleset utaRuleset)
@@ -87,14 +91,54 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
             clear();
         lastPlaybackTime = current;
 
+        bool samplesChanged = false;
         if (voiceActive.Value && current - lastSampleTime >= sample_interval)
         {
             samples.Add(new TrailSample(current, detectedPitchMidi.Value, pitchSimilarity.Value));
             lastSampleTime = current;
+            samplesChanged = true;
         }
 
-        samples.RemoveAll(sample => sample.Time < current - UtaPitchGuide.LOOK_BEHIND - 200 || sample.Time > current + 100);
-        draw(current);
+        int removeCount = 0;
+        double oldestVisibleTime = current - UtaPitchGuide.LOOK_BEHIND - 200;
+        while (removeCount < samples.Count && samples[removeCount].Time < oldestVisibleTime)
+            removeCount++;
+
+        if (removeCount > 0)
+        {
+            samples.RemoveRange(0, removeCount);
+            samplesChanged = true;
+        }
+
+        // Future samples only remain after a backwards seek. Remove them
+        // without a capturing predicate so normal frames allocate nothing.
+        int futureStart = samples.Count;
+        while (futureStart > 0 && samples[futureStart - 1].Time > current + 100)
+            futureStart--;
+
+        if (futureStart < samples.Count)
+        {
+            samples.RemoveRange(futureStart, samples.Count - futureStart);
+            samplesChanged = true;
+        }
+
+        bool sizeChanged = DrawWidth != geometryWidth || DrawHeight != geometryHeight;
+        if (sizeChanged)
+        {
+            float timelineWidth = Math.Max(DrawWidth, UtaPitchCurveGraph.TimeToX(timelineEndTime, 0, DrawWidth));
+            glowLayer.Width = timelineWidth;
+            traceLayer.Width = timelineWidth;
+        }
+        glowLayer.X = UtaPitchCurveGraph.TimeOffsetToX(0, current, DrawWidth);
+        traceLayer.X = glowLayer.X;
+        if (samplesChanged || sizeChanged || !geometryReady)
+        {
+            draw(0);
+            geometryReady = true;
+        }
+
+        geometryWidth = DrawWidth;
+        geometryHeight = DrawHeight;
     }
 
     private void draw(double current)
@@ -113,7 +157,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
             Vector2 end = new(
                 UtaPitchCurveGraph.TimeToX(sample.Time, current, DrawWidth),
                 UtaPitchCurveGraph.MidiToY(sample.Midi, centreMidi, DrawHeight));
-            if (end.X < axis_width || start.X > DrawWidth || (start.Y < 0 && end.Y < 0) || (start.Y > DrawHeight && end.Y > DrawHeight))
+            if ((start.Y < 0 && end.Y < 0) || (start.Y > DrawHeight && end.Y > DrawHeight))
                 continue;
 
             Vector2 delta = end - start;
@@ -205,6 +249,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
     {
         samples.Clear();
         lastSampleTime = double.NegativeInfinity;
+        geometryReady = false;
         hideUnused(traceSegments, 0);
         hideUnused(glowSegments, 0);
     }
