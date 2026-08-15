@@ -483,26 +483,64 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 
             using Stream manifestStream = working.GetStream(manifestPath);
             UtzManifest? manifest = JsonSerializer.Deserialize<UtzManifest>(manifestStream, UtzPackage.JsonOptions);
-            string? pitchPath = manifest?.Charts.PitchTrack.Path;
-            string? pitchStoragePath = pitchPath == null ? null : working.BeatmapSetInfo.GetPathForFile(pitchPath);
-            if (pitchStoragePath == null)
+            if (manifest == null)
                 return Array.Empty<ReferenceFrame>();
 
-            using Stream pitchStream = working.GetStream(pitchStoragePath);
-            UtaPitchTrack? track = JsonSerializer.Deserialize<UtaPitchTrack>(pitchStream, UtzPackage.JsonOptions);
-            if (track == null)
-                return Array.Empty<ReferenceFrame>();
-
-            return track.Frames.Where(frame => frame.Hertz is { } hertz && UtaPitchMath.IsFinitePitch(hertz))
-                        .Select(frame => new ReferenceFrame(frame.Time * 1000,
-                            (float)UtaPitchMath.FrequencyToMidi(frame.Hertz!.Value)))
-                        .ToArray();
+            return manifest.IsFormatV2
+                ? loadPitchEvidenceFrames(working, manifest)
+                : loadLegacyPitchTrackFrames(working, manifest);
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
         {
             Logger.Log($"Uta could not load the song pitch-analysis curve: {ex.GetBaseException().Message}");
             return Array.Empty<ReferenceFrame>();
         }
+    }
+
+    private static ReferenceFrame[] loadLegacyPitchTrackFrames(WorkingBeatmap working, UtzManifest manifest)
+    {
+        string? pitchStoragePath = manifest.Charts.PitchTrack?.Path is { } path ? working.BeatmapSetInfo.GetPathForFile(path) : null;
+        if (pitchStoragePath == null)
+            return Array.Empty<ReferenceFrame>();
+
+        using Stream pitchStream = working.GetStream(pitchStoragePath);
+        UtaPitchTrack? track = JsonSerializer.Deserialize<UtaPitchTrack>(pitchStream, UtzPackage.JsonOptions);
+        if (track == null)
+            return Array.Empty<ReferenceFrame>();
+
+        return track.Frames.Where(frame => frame.Hertz is { } hertz && UtaPitchMath.IsFinitePitch(hertz))
+                    .Select(frame => new ReferenceFrame(frame.Time * 1000,
+                        (float)UtaPitchMath.FrequencyToMidi(frame.Hertz!.Value)))
+                    .ToArray();
+    }
+
+    /// <summary>
+    /// UTZ 0.2 demotes frame-level pitch data to optional evidence stored as a
+    /// fixed-hop frequency series rather than the 0.1 pitch track's frame list.
+    /// </summary>
+    private static ReferenceFrame[] loadPitchEvidenceFrames(WorkingBeatmap working, UtzManifest manifest)
+    {
+        string? evidenceStoragePath = manifest.Analysis?.PitchEvidence?.Path is { } path ? working.BeatmapSetInfo.GetPathForFile(path) : null;
+        if (evidenceStoragePath == null)
+            return Array.Empty<ReferenceFrame>();
+
+        using Stream evidenceStream = working.GetStream(evidenceStoragePath);
+        UtaPitchEvidence? evidence = JsonSerializer.Deserialize<UtaPitchEvidence>(evidenceStream, UtzPackage.JsonOptions);
+        if (evidence == null || evidence.Timebase <= 0 || evidence.Hop <= 0)
+            return Array.Empty<ReferenceFrame>();
+
+        var frames = new List<ReferenceFrame>(evidence.FrequencyHz.Count);
+
+        for (int i = 0; i < evidence.FrequencyHz.Count; i++)
+        {
+            if (evidence.FrequencyHz[i] is not { } hertz || !UtaPitchMath.IsFinitePitch(hertz))
+                continue;
+
+            double timeMs = (evidence.Start + (long)i * evidence.Hop) / (double)evidence.Timebase * 1000;
+            frames.Add(new ReferenceFrame(timeMs, (float)UtaPitchMath.FrequencyToMidi(hertz)));
+        }
+
+        return frames.ToArray();
     }
 
     private void clearSamples(string reason)

@@ -53,6 +53,7 @@ public static class UtzBeatmapSetConverter
         double bpm = manifest.Song.Bpm.GetValueOrDefault(120);
         if (!double.IsFinite(bpm) || bpm <= 0)
             bpm = 120;
+        double? previewSeconds = manifest.Song.PreviewStartSeconds ?? segments.FirstOrDefault()?.Start;
 
         var lines = new List<string>
         {
@@ -60,8 +61,8 @@ public static class UtzBeatmapSetConverter
             string.Empty,
             "[General]",
             $"AudioFilename: {safeValue(manifest.Audio.Instrumental.Path)}",
-            $"AudioLeadIn: {(int)Math.Round(manifest.Audio.AudioOffsetSeconds * 1000)}",
-            $"PreviewTime: {(int)Math.Round(segments.FirstOrDefault()?.Start * 1000 ?? 0)}",
+            $"AudioLeadIn: {(int)Math.Round(manifest.Audio.AudioOffsetSeconds.GetValueOrDefault() * 1000)}",
+            $"PreviewTime: {(int)Math.Round((previewSeconds ?? 0) * 1000)}",
             "Countdown: 0",
             "SampleSet: Normal",
             "StackLeniency: 0.7",
@@ -74,7 +75,7 @@ public static class UtzBeatmapSetConverter
             $"TitleUnicode:{safeValue(manifest.Song.Title)}",
             $"Artist:{safeValue(manifest.Song.Artist)}",
             $"ArtistUnicode:{safeValue(manifest.Song.Artist)}",
-            $"Creator:{safeValue(manifest.Provenance.Generator ?? "Uta Studio")}",
+            $"Creator:{safeValue(manifest.Song.Creator ?? manifest.Provenance.Generator ?? "Uta Studio")}",
             "Version:Uta",
             $"Source:{safeValue(manifest.Song.Album ?? manifest.Song.Key ?? string.Empty)}",
             "Tags:uta utz",
@@ -115,7 +116,7 @@ public static class UtzBeatmapSetConverter
         var config = new UtaBeatmapMetadata
         {
             PackageId = manifest.PackageId,
-            OctaveTolerance = manifest.Scoring.OctaveTolerance,
+            OctaveTolerance = manifest.Scoring?.OctaveTolerance ?? false,
             GuideVocalsFile = manifest.Audio.GuideVocals?.Path,
             OriginalAudioFile = manifest.Audio.Original?.Path,
             CentreMidi = centreMidi,
@@ -131,10 +132,11 @@ public static class UtzBeatmapSetConverter
 
     private static int calculateCentreMidi(IReadOnlyList<UtaPitchNote> notes)
     {
-        if (notes.Count == 0)
+        int[] pitched = notes.Where(note => note.Midi.HasValue).Select(note => note.Midi!.Value).Order().ToArray();
+        if (pitched.Length == 0)
             return 60;
 
-        int median = notes.Select(note => note.Midi).Order().ElementAt(notes.Count / 2);
+        int median = pitched[pitched.Length / 2];
         return (int)Math.Round(median / 12.0) * 12;
     }
 

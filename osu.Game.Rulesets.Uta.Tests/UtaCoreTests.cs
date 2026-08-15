@@ -185,6 +185,50 @@ public class UtaCoreTests
     }
 
     [Test]
+    public void PackageConvertsUtz02VocalChartToNativePlayableBeatmap()
+    {
+        using var source = createV2Package();
+        using var converted = new MemoryStream();
+        UtzBeatmapSetConverter.Convert(source, converted);
+        converted.Position = 0;
+
+        using var archive = new ZipArchive(converted, ZipArchiveMode.Read, true);
+        using var reader = new LineBufferedReader(archive.GetEntry("uta.osu")!.Open());
+        Beatmap decoded = new UtaBeatmapDecoder().Decode(reader);
+        var playable = (UtaBeatmap)new UtaBeatmapConverter(decoded, new UtaRuleset()).Convert();
+        UtaNote[] notes = playable.HitObjects.OfType<UtaNote>().OrderBy(note => note.StartTime).ToArray();
+
+        Assert.Multiple(() =>
+        {
+            // Duet parts 1 and 2 both use role "lead"; part 1 (three notes) must win over part 2 (one note).
+            Assert.That(playable.PackageId, Is.EqualTo("org.example.v2test"));
+            Assert.That(notes, Has.Length.EqualTo(3));
+
+            Assert.That(notes[0].Midi, Is.EqualTo(69));
+            Assert.That(notes[0].StartTime, Is.EqualTo(0));
+            Assert.That(notes[0].Duration, Is.EqualTo(300));
+            Assert.That(notes[0].NoteKind, Is.EqualTo("normal"));
+
+            Assert.That(notes[1].Midi, Is.EqualTo(71));
+            Assert.That(notes[1].StartTime, Is.EqualTo(300));
+            Assert.That(notes[1].Duration, Is.EqualTo(200));
+
+            // Rhythm-scored rap note carries no pitch target even though the chart is pitched-capable.
+            Assert.That(notes[2].Midi, Is.Null);
+            Assert.That(notes[2].StartTime, Is.EqualTo(600));
+            Assert.That(notes[2].Duration, Is.EqualTo(400));
+            Assert.That(notes[2].NoteKind, Is.EqualTo("golden_rap"));
+
+            Assert.That(playable.Transcript, Has.Count.EqualTo(1));
+            Assert.That(playable.Transcript[0].Text, Is.EqualTo("歌 姫"));
+            Assert.That(playable.Transcript[0].Words, Has.Count.EqualTo(2));
+            // The continuation token on note n2 must extend word w1's end into n2's span (melisma).
+            Assert.That(playable.Transcript[0].Words[0].End, Is.EqualTo(0.5).Within(0.0001));
+            Assert.That(playable.Transcript[0].Words[1].Start, Is.EqualTo(0.6).Within(0.0001));
+        });
+    }
+
+    [Test]
     public void PackageWritesBreakForSkippableVocalGap()
     {
         using var source = createPackage(includeGap: true);
@@ -303,6 +347,145 @@ public class UtaCoreTests
                 video = asset("video/background.mp4", "video/mp4"),
             },
             scoring = new { engine = "uta.pitch", version = 1, octave_tolerance = false },
+        };
+
+        var output = new MemoryStream();
+        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
+        {
+            add(archive, "manifest.json", JsonSerializer.SerializeToUtf8Bytes(manifest));
+            foreach ((string path, byte[] bytes) in files)
+                add(archive, path, bytes);
+        }
+
+        output.Position = 0;
+        return output;
+    }
+
+    private static MemoryStream createV2Package()
+    {
+        object textToken(string id, string text, string joinBefore, string? reading = null)
+            => new { id, text, join_before = joinBefore, reading };
+        object continuationToken(string continuationOf)
+            => new { continuation_of = continuationOf };
+
+        // Part 1 (lead) carries the notes that actually get played; part 2 exists only to prove
+        // selectPlayableTrack() picks part 1 over another "lead"-role track when both are eligible.
+        var vocalChart = new
+        {
+            format = "uta.vocal-chart",
+            format_version = "1.1.0",
+            timebase = 1_000_000,
+            language = "ja",
+            tracks = new object[]
+            {
+                new
+                {
+                    id = "lead",
+                    role = "lead",
+                    part = 1,
+                    phrases = new object[]
+                    {
+                        new
+                        {
+                            id = "phrase-1",
+                            notes = new object[]
+                            {
+                                new
+                                {
+                                    id = "n1",
+                                    start = 0,
+                                    duration = 300_000,
+                                    pitch = new { midi = 69, cents = 0 },
+                                    vocal_mode = "pitched",
+                                    bonus = "normal",
+                                    scoring = new { mode = "pitch", weight = 1 },
+                                    lyrics = new[] { textToken("w1", "歌", "none") },
+                                },
+                                new
+                                {
+                                    id = "n2",
+                                    start = 300_000,
+                                    duration = 200_000,
+                                    pitch = new { midi = 71, cents = 0 },
+                                    vocal_mode = "pitched",
+                                    bonus = "normal",
+                                    scoring = new { mode = "pitch", weight = 1 },
+                                    lyrics = new object[] { continuationToken("w1") },
+                                },
+                                new
+                                {
+                                    id = "n3",
+                                    start = 600_000,
+                                    duration = 400_000,
+                                    pitch = (object?)null,
+                                    vocal_mode = "rap",
+                                    bonus = "golden",
+                                    scoring = new { mode = "rhythm", weight = 1 },
+                                    lyrics = new[] { textToken("w2", "姫", "space") },
+                                },
+                            },
+                        },
+                    },
+                },
+                new
+                {
+                    id = "lead-p2",
+                    role = "lead",
+                    part = 2,
+                    singer = "Partner",
+                    phrases = new object[]
+                    {
+                        new
+                        {
+                            id = "phrase-2-1",
+                            notes = new object[]
+                            {
+                                new
+                                {
+                                    id = "n2-1",
+                                    start = 0,
+                                    duration = 1_000_000,
+                                    pitch = new { midi = 60, cents = 0 },
+                                    vocal_mode = "pitched",
+                                    bonus = "normal",
+                                    scoring = new { mode = "pitch", weight = 1 },
+                                    lyrics = new[] { textToken("w2-1", "duet", "none") },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        var files = new Dictionary<string, byte[]>
+        {
+            ["audio/instrumental.ogg"] = new byte[] { 10, 20, 30 },
+            ["charts/vocal.json"] = JsonSerializer.SerializeToUtf8Bytes(vocalChart),
+        };
+
+        object asset(string path, string mediaType)
+        {
+            byte[] bytes = files[path];
+            return new
+            {
+                path,
+                media_type = mediaType,
+                sha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
+                bytes = bytes.Length,
+            };
+        }
+
+        var manifest = new
+        {
+            format = "uta.song",
+            format_version = "0.2.1",
+            package_id = "org.example.v2test",
+            revision = 1,
+            song = new { title = "Test", artist = "Uta", duration_seconds = 1.0 },
+            audio = new { instrumental = asset("audio/instrumental.ogg", "audio/ogg") },
+            charts = new { vocal = asset("charts/vocal.json", "application/vnd.uta.vocal-chart+json;version=1") },
+            required_features = new[] { "vocal-chart/1" },
         };
 
         var output = new MemoryStream();

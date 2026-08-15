@@ -77,6 +77,8 @@ public sealed class UtaBeatmapDecoder : LegacyBeatmapDecoder
                 NoteKind = source.Kind switch
                 {
                     UtaPitchNoteKind.GoldenRap => "golden_rap",
+                    UtaPitchNoteKind.GoldenFreestyle => "golden_freestyle",
+                    UtaPitchNoteKind.GoldenSpoken => "golden_spoken",
                     _ => source.Kind.ToString().ToLowerInvariant(),
                 },
             });
