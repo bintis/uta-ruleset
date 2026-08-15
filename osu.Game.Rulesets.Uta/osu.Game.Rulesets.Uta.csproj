@@ -3,14 +3,23 @@
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyTitle>osu.Game.Rulesets.Uta</AssemblyTitle>
     <RootNamespace>osu.Game.Rulesets.Uta</RootNamespace>
-    <Version>0.2.1</Version>
+    <Version>0.2.2</Version>
     <OutputType>Library</OutputType>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(OsuNixDir)' != ''">
+    <Reference Include="$(OsuNixDir)/*.dll">
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(OsuNixDir)' == ''">
     <PackageReference Include="ppy.osu.Game" Version="2026.730.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="osu.Game.Rulesets.Uta.Tests" />
   </ItemGroup>
 

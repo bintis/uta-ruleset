@@ -77,6 +77,7 @@ public class UtaCoreTests
             Assert.That(config.GetBindable<UtaPitchCurveDisplay>(UtaRulesetSetting.PitchCurveDisplay).Value,
                 Is.EqualTo(UtaPitchCurveDisplay.Both));
             Assert.That(config.GetBindable<bool>(UtaRulesetSetting.ShowPitchGuideTrail).Value, Is.False);
+            Assert.That(config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval).Value, Is.EqualTo(10));
         });
     }
 
@@ -125,7 +126,8 @@ public class UtaCoreTests
             Assert.That(ruleset.GetModsFor(ModType.Fun), Is.Empty);
             Assert.That(difficultyIncreaseMods,
                 Has.Exactly(1).TypeOf<UtaModHideLyrics>().And.Exactly(1).TypeOf<UtaModHidePitchGuide>());
-            Assert.That(difficultyReductionMods, Has.Exactly(1).TypeOf<UtaModOriginalVocals>());
+            Assert.That(difficultyReductionMods, Has.Exactly(1).TypeOf<UtaModOriginalVocals>()
+                                                       .And.Exactly(1).TypeOf<UtaModOctaveFold>());
             Assert.That(difficultyIncreaseMods.Concat(difficultyReductionMods).All(mod => mod.HasImplementation), Is.True);
             Assert.That(ruleset.GetBeatmapAttributesForDisplay(new BeatmapInfo(ruleset.RulesetInfo), Array.Empty<Mod>()), Is.Empty);
             Assert.That(filter.Matches(new BeatmapInfo(ruleset.RulesetInfo), criteria), Is.True);

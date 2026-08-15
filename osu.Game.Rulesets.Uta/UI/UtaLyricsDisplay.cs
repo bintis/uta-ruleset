@@ -28,6 +28,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
     private readonly Bindable<UtaLyricsPosition> lyricsPosition = new();
     private readonly Bindable<UtaLyricsSize> lyricsSize = new();
     private readonly Bindable<UtaLyricsTypeface> lyricsTypeface = new();
+    private readonly BindableFloat lyricsLatency = new();
 
     private IReadOnlyList<UtaTranscriptSegment> segments = Array.Empty<UtaTranscriptSegment>();
     private UtaWordToken[] currentTokens = Array.Empty<UtaWordToken>();
@@ -69,11 +70,12 @@ public partial class UtaLyricsDisplay : CompositeDrawable
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaRulesetConfigManager config)
+    private void load(UtaRulesetConfigManager config, UtaAudioSettingsState audioSettings)
     {
         lyricsPosition.BindTo(config.GetBindable<UtaLyricsPosition>(UtaRulesetSetting.LyricsPosition));
         lyricsSize.BindTo(config.GetBindable<UtaLyricsSize>(UtaRulesetSetting.LyricsSize));
         lyricsTypeface.BindTo(config.GetBindable<UtaLyricsTypeface>(UtaRulesetSetting.LyricsTypeface));
+        lyricsLatency.BindTo(audioSettings.LyricsLatency);
 
         lyricsPosition.BindValueChanged(_ => updateLayout(), true);
         lyricsSize.BindValueChanged(_ => updateTypography(), true);
@@ -133,7 +135,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
             return;
         }
 
-        double seconds = Time.Current / 1000;
+        double seconds = (Time.Current - lyricsLatency.Value) / 1000;
         var frame = UtaLyricsTimeline.Evaluate(segments, seconds, Math.Max(0, segmentIndex), wordProgress);
         if (frame.SegmentIndex != segmentIndex)
             rebuild(frame.SegmentIndex);
@@ -286,6 +288,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
         lyricsPosition.UnbindAll();
         lyricsSize.UnbindAll();
         lyricsTypeface.UnbindAll();
+        lyricsLatency.UnbindAll();
         base.Dispose(isDisposing);
     }
 }

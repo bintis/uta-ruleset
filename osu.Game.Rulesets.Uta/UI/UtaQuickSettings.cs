@@ -1,15 +1,18 @@
 // Copyright (c) bintis. Licensed under the GPL Licence.
 // See the LICENSE file in the repository root for full licence text.
 
+using System;
 using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Shapes;
 using osu.Framework.Input.Bindings;
 using osu.Framework.Input.Events;
 using osu.Framework.Localisation;
 using osu.Game.Graphics.Containers;
+using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Settings;
@@ -17,6 +20,7 @@ using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Screens.Play.PlayerSettings;
 using osuTK;
+using osuTK.Graphics;
 
 namespace osu.Game.Rulesets.Uta.UI;
 
@@ -81,7 +85,7 @@ public sealed partial class UtaQuickSettingsOverlay : OsuFocusedOverlayContainer
                     new UtaDisplaySettings(),
                     new AudioSettings(),
                     new InputSettings(),
-                    new UtaAudioSettings(),
+                    new UtaPlaybackSettings(),
                 },
             },
         };
@@ -199,28 +203,26 @@ public sealed partial class UtaDisplaySettings : PlayerSettingsGroup
     }
 }
 
-public sealed partial class UtaAudioSettings : PlayerSettingsGroup
+public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
 {
     private readonly AudioOutputDropdown backgroundMusicOutput;
     private readonly AudioOutputDropdown vocalsOutput;
-    private readonly AudioOutputDropdown microphoneOutput;
     private readonly PlayerSliderBar<double> backgroundMusicVolume;
     private readonly PlayerSliderBar<float> originalVocalsVolume;
-    private readonly PlayerSliderBar<float> microphoneInputGain;
-    private readonly PlayerSliderBar<float> microphoneMonitorVolume;
+    private readonly PlayerSliderBar<float> accompanimentLatency;
+    private readonly PlayerSliderBar<float> lyricsLatency;
 
-    public UtaAudioSettings()
-        : base("Uta audio")
+    public UtaPlaybackSettings()
+        : base("Uta playback")
     {
         Children = new Drawable[]
         {
             backgroundMusicOutput = createOutput("BGM output"),
             vocalsOutput = createOutput("Vocals output"),
-            microphoneOutput = createOutput("Mic monitor output"),
             backgroundMusicVolume = createSlider<double>("BGM", "Volume of the instrumental track."),
             originalVocalsVolume = createSlider<float>("Original vocals", "Volume of the vocal track enabled by the VOX mod."),
-            microphoneInputGain = createSlider<float>("Microphone input gain", "Software gain applied before pitch detection."),
-            microphoneMonitorVolume = createSlider<float>("My voice", "Hear your microphone through the active output. Headphones are recommended."),
+            accompanimentLatency = createSlider<float>("Accompaniment latency", "Positive values delay the routed accompaniment and vocals.", false, 1),
+            lyricsLatency = createSlider<float>("Lyrics latency", "Positive values display lyrics later.", false, 1),
         };
     }
 
@@ -229,21 +231,20 @@ public sealed partial class UtaAudioSettings : PlayerSettingsGroup
     {
         backgroundMusicVolume.Current = audioSettings.BackgroundMusicVolume;
         originalVocalsVolume.Current = audioSettings.OriginalVocalsVolume;
-        microphoneInputGain.Current = audioSettings.MicrophoneInputGain;
-        microphoneMonitorVolume.Current = audioSettings.MicrophoneMonitorVolume;
+        accompanimentLatency.Current = audioSettings.AccompanimentLatency;
+        lyricsLatency.Current = audioSettings.LyricsLatency;
         backgroundMusicOutput.Current = audioSettings.BackgroundMusicOutputDevice;
         vocalsOutput.Current = audioSettings.OriginalVocalsOutputDevice;
-        microphoneOutput.Current = audioSettings.MicrophoneOutputDevice;
     }
 
-    private static PlayerSliderBar<T> createSlider<T>(string label, string tooltip)
+    private static PlayerSliderBar<T> createSlider<T>(string label, string tooltip, bool percentage = true, float keyboardStep = 0.05f)
         where T : struct, System.Numerics.INumber<T>, System.Numerics.IMinMaxValue<T>
         => new()
         {
             LabelText = label,
             TooltipText = tooltip,
-            KeyboardStep = 0.05f,
-            DisplayAsPercentage = true,
+            KeyboardStep = keyboardStep,
+            DisplayAsPercentage = percentage,
         };
 
     private static AudioOutputDropdown createOutput(string label)
@@ -262,5 +263,141 @@ public sealed partial class UtaAudioSettings : PlayerSettingsGroup
             protected override LocalisableString GenerateItemText(string item)
                 => string.IsNullOrEmpty(item) ? "Lazer default" : item;
         }
+    }
+}
+
+public sealed partial class UtaDeviceDiagnostics : PlayerSettingsGroup
+{
+    private readonly Box inputLevelFill;
+    private readonly OsuSpriteText inputLevelText;
+    private readonly OsuSpriteText pitchText;
+    private readonly OsuSpriteText latencyText;
+    private readonly OsuSpriteText routeText;
+    private readonly BindableFloat inputLevelDb = new(-90);
+    private readonly BindableFloat detectedPitchMidi = new();
+    private readonly BindableFloat pitchClarity = new();
+    private readonly BindableBool voiceActive = new();
+    private readonly BindableFloat microphoneLatency = new();
+    private readonly Bindable<string> microphoneDevice = new();
+    private readonly Bindable<string> microphoneOutputDevice = new();
+    private UtaAudioRouter audioRouter = null!;
+    private int outputLatency;
+
+    public UtaDeviceDiagnostics()
+        : base("Device diagnostics")
+    {
+        Children = new Drawable[]
+        {
+            inputLevelText = diagnosticText("Input: -90 dBFS"),
+            new Container
+            {
+                RelativeSizeAxes = Axes.X,
+                Height = 8,
+                Masking = true,
+                CornerRadius = 4,
+                Children = new Drawable[]
+                {
+                    new Box
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                        Colour = new Color4(35, 39, 55, 255),
+                    },
+                    inputLevelFill = new Box
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                        Width = 0,
+                        Colour = new Color4(64, 201, 142, 255),
+                    },
+                },
+            },
+            pitchText = diagnosticText("Pitch: waiting for microphone"),
+            latencyText = diagnosticText("Latency: unavailable"),
+            routeText = diagnosticText("Route: system default"),
+        };
+    }
+
+    [BackgroundDependencyLoader]
+    private void load(osu.Game.Rulesets.UI.DrawableRuleset drawableRuleset, UtaAudioSettingsState settings, UtaAudioRouter audioRouter)
+    {
+        this.audioRouter = audioRouter;
+        microphoneLatency.BindTo(settings.MicrophoneLatency);
+        microphoneDevice.BindTo(settings.MicrophoneDevice);
+        microphoneOutputDevice.BindTo(settings.MicrophoneOutputDevice);
+        microphoneOutputDevice.BindValueChanged(_ => refreshOutputLatency(), true);
+
+        if (drawableRuleset is not DrawableUtaRuleset utaRuleset)
+            return;
+
+        UtaInputManager input = utaRuleset.KeyBindingInputManager;
+        inputLevelDb.BindTo(input.LiveInputLevelDb);
+        detectedPitchMidi.BindTo(input.LiveDetectedPitchMidi);
+        pitchClarity.BindTo(input.LivePitchClarity);
+        voiceActive.BindTo(input.LiveVoiceActive);
+    }
+
+    protected override void Update()
+    {
+        base.Update();
+        float level = inputLevelDb.Value;
+        inputLevelFill.Width = Math.Clamp((level + 60) / 60, 0, 1);
+        inputLevelFill.Colour = level > -6
+            ? new Color4(235, 92, 92, 255)
+            : level > -18
+                ? new Color4(236, 190, 72, 255)
+                : new Color4(64, 201, 142, 255);
+        inputLevelText.Text = $"Input level: {level:0.0} dBFS";
+
+        if (voiceActive.Value)
+        {
+            double midi = detectedPitchMidi.Value;
+            double hertz = osu.Game.Rulesets.Uta.Pitch.UtaPitchMath.MidiToFrequency(midi);
+            pitchText.Text = $"Detected pitch: {midiName(midi)}  {hertz:0.0} Hz  clarity {pitchClarity.Value:P0}";
+        }
+        else
+            pitchText.Text = $"Detected pitch: none  clarity {pitchClarity.Value:P0}";
+
+        latencyText.Text = $"Latency: scoring {microphoneLatency.Value:+0;-0;0} ms  output estimate {outputLatency} ms";
+        string input = string.IsNullOrEmpty(microphoneDevice.Value) ? "system default" : microphoneDevice.Value;
+        string output = string.IsNullOrEmpty(microphoneOutputDevice.Value) ? "lazer default" : microphoneOutputDevice.Value;
+        routeText.Text = $"Route: {input} -> {output}";
+    }
+
+    private void refreshOutputLatency()
+    {
+        try
+        {
+            outputLatency = audioRouter.GetOutputLatency(microphoneOutputDevice.Value);
+        }
+        catch
+        {
+            outputLatency = 0;
+        }
+    }
+
+    private static OsuSpriteText diagnosticText(string text) => new()
+    {
+        RelativeSizeAxes = Axes.X,
+        Height = 18,
+        Text = text,
+        Colour = new Color4(205, 208, 225, 255),
+    };
+
+    private static string midiName(double midi)
+    {
+        string[] names = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        int rounded = (int)Math.Round(midi);
+        return $"{names[((rounded % 12) + 12) % 12]}{rounded / 12 - 1}";
+    }
+
+    protected override void Dispose(bool isDisposing)
+    {
+        inputLevelDb.UnbindAll();
+        detectedPitchMidi.UnbindAll();
+        pitchClarity.UnbindAll();
+        voiceActive.UnbindAll();
+        microphoneLatency.UnbindAll();
+        microphoneDevice.UnbindAll();
+        microphoneOutputDevice.UnbindAll();
+        base.Dispose(isDisposing);
     }
 }

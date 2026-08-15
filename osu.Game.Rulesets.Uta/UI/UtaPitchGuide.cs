@@ -14,6 +14,7 @@ using osu.Framework.Graphics.Sprites;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Rulesets.Uta.Core;
+using osu.Game.Rulesets.Uta.Configuration;
 using osuTK.Graphics;
 
 namespace osu.Game.Rulesets.Uta.UI;
@@ -48,6 +49,7 @@ public partial class UtaPitchGuide : CompositeDrawable
     private readonly BindableFloat pitchDeviation = new();
     private readonly BindableFloat pitchSimilarity = new();
     private readonly BindableBool voiceActive = new();
+    private readonly BindableFloat keyShiftSemitones = new();
 
     private UtaNote[] notes = Array.Empty<UtaNote>();
     private float centreMidi = (base_low_midi + base_high_midi) / 2;
@@ -147,7 +149,7 @@ public partial class UtaPitchGuide : CompositeDrawable
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaBeatmap beatmap, osu.Game.Rulesets.UI.DrawableRuleset drawableRuleset)
+    private void load(UtaBeatmap beatmap, osu.Game.Rulesets.UI.DrawableRuleset drawableRuleset, UtaRulesetConfigManager config)
     {
         if (string.IsNullOrEmpty(beatmap.PackageId))
         {
@@ -160,6 +162,12 @@ public partial class UtaPitchGuide : CompositeDrawable
                        .OrderBy(note => note.StartTime)
                        .ToArray();
         centreMidi = CalculateFixedCentre(notes);
+        keyShiftSemitones.BindTo(config.GetBindable<float>(UtaRulesetSetting.KeyShiftSemitones));
+        keyShiftSemitones.BindValueChanged(_ =>
+        {
+            updateStaticPitchLayout();
+            lastUpdateTime = double.NegativeInfinity;
+        });
         maximumNoteDuration = notes.Length == 0 ? 0 : notes.Max(note => note.Duration);
 
         foreach (var note in notes)
@@ -195,8 +203,9 @@ public partial class UtaPitchGuide : CompositeDrawable
             : 0;
         lastUpdateTime = current;
 
-        float low = centreMidi - VIEW_SPAN / 2;
-        float high = centreMidi + VIEW_SPAN / 2;
+        float shiftedCentre = centreMidi + keyShiftSemitones.Value;
+        float low = shiftedCentre - VIEW_SPAN / 2;
+        float high = shiftedCentre + VIEW_SPAN / 2;
 
         int rangeStart = lowerBoundStart(current - LOOK_BEHIND - maximumNoteDuration);
         int rangeEnd = upperBoundStart(current + LOOK_AHEAD);
@@ -220,7 +229,7 @@ public partial class UtaPitchGuide : CompositeDrawable
 
             target.X = start;
             target.Width = Math.Max(2 / DrawWidth, end - start);
-            target.Y = (high - note.Midi!.Value) / VIEW_SPAN;
+            target.Y = (high - note.Midi!.Value - keyShiftSemitones.Value) / VIEW_SPAN;
         }
         previousRangeStart = rangeStart;
         previousRangeEnd = rangeEnd;
@@ -242,8 +251,9 @@ public partial class UtaPitchGuide : CompositeDrawable
 
     private void updateStaticPitchLayout()
     {
-        float high = centreMidi + VIEW_SPAN / 2;
-        int firstGridMidi = (int)MathF.Floor(centreMidi - VIEW_SPAN / 2);
+        float shiftedCentre = centreMidi + keyShiftSemitones.Value;
+        float high = shiftedCentre + VIEW_SPAN / 2;
+        int firstGridMidi = (int)MathF.Floor(shiftedCentre - VIEW_SPAN / 2);
 
         for (int i = 0; i < gridLines.Count; i++)
         {
@@ -343,6 +353,7 @@ public partial class UtaPitchGuide : CompositeDrawable
         pitchDeviation.UnbindAll();
         pitchSimilarity.UnbindAll();
         voiceActive.UnbindAll();
+        keyShiftSemitones.UnbindAll();
         base.Dispose(isDisposing);
     }
 

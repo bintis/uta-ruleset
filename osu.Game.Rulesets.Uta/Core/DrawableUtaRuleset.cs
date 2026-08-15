@@ -23,14 +23,17 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
 {
     private readonly UtaAudioRouter audioRouter = new();
     private readonly UtaAudioSettingsState audioSettings = new();
+    private readonly IReadOnlyList<Mod> selectedMods;
 
     public new UtaInputManager KeyBindingInputManager => (UtaInputManager)base.KeyBindingInputManager;
 
     public DrawableUtaRuleset(Ruleset ruleset, IBeatmap beatmap, IReadOnlyList<Mod>? mods)
         : base(ruleset, beatmap, mods)
     {
+        selectedMods = mods ?? [];
         Overlays.Add(new UtaQuickSettingsContainer());
         Overlays.Add(new UtaAudioController());
+        Overlays.Add(new UtaPerformanceDiagnostics());
         Overlays.Add(new UtaGapSkipController((UtaBeatmap)beatmap));
         Overlays.Add(new UtaVolumeOverlayExtension());
     }
@@ -39,6 +42,7 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
     {
         var dependencies = new DependencyContainer(base.CreateChildDependencies(parent));
         audioSettings.Initialise((UtaRulesetConfigManager)Config);
+        audioSettings.KeyShiftSemitones.Value = selectedMods.OfType<UtaModTranspose>().SingleOrDefault()?.Semitones ?? 0;
         dependencies.CacheAs((UtaBeatmap)Beatmap);
         dependencies.CacheAs(audioRouter);
         dependencies.CacheAs(audioSettings);

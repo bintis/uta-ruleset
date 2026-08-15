@@ -23,7 +23,7 @@ namespace osu.Game.Rulesets.Uta.UI;
 /// </summary>
 internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
 {
-    private const double sample_interval = 20;
+    private const double sample_interval = 30;
     private const double trace_gap = 140;
 
     private static readonly Color4 accurate_voice = new(112, 242, 211, 255);
@@ -39,6 +39,8 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
     private readonly BindableFloat detectedPitchMidi = new();
     private readonly BindableFloat pitchSimilarity = new();
     private readonly BindableBool voiceActive = new();
+    private readonly BindableFloat keyShiftSemitones = new();
+    private readonly BindableDouble detectedPitchTime = new();
 
     private UtaNote[] notes = Array.Empty<UtaNote>();
     private float centreMidi;
@@ -69,6 +71,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         centreMidi = UtaPitchGuide.CalculateFixedCentre(notes);
         timelineEndTime = (notes.Length > 0 ? notes[^1].EndTime : 0) + UtaPitchGuide.LOOK_AHEAD;
         enabled.BindTo(config.GetBindable<bool>(UtaRulesetSetting.ShowPitchGuideTrail));
+        keyShiftSemitones.BindTo(config.GetBindable<float>(UtaRulesetSetting.KeyShiftSemitones));
 
         if (drawableRuleset is not DrawableUtaRuleset utaRuleset)
             return;
@@ -77,6 +80,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         detectedPitchMidi.BindTo(microphone.LiveDetectedPitchMidi);
         pitchSimilarity.BindTo(microphone.LivePitchSimilarity);
         voiceActive.BindTo(microphone.LiveVoiceActive);
+        detectedPitchTime.BindTo(microphone.LiveDetectedPitchTime);
     }
 
     protected override void Update()
@@ -92,10 +96,11 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         lastPlaybackTime = current;
 
         bool samplesChanged = false;
-        if (voiceActive.Value && current - lastSampleTime >= sample_interval)
+        double sampleTime = detectedPitchTime.Value;
+        if (voiceActive.Value && sampleTime - lastSampleTime >= sample_interval)
         {
-            samples.Add(new TrailSample(current, detectedPitchMidi.Value, pitchSimilarity.Value));
-            lastSampleTime = current;
+            samples.Add(new TrailSample(sampleTime, detectedPitchMidi.Value, pitchSimilarity.Value));
+            lastSampleTime = sampleTime;
             samplesChanged = true;
         }
 
@@ -153,10 +158,10 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
 
             Vector2 start = new(
                 UtaPitchCurveGraph.TimeToX(previous.Time, current, DrawWidth),
-                UtaPitchCurveGraph.MidiToY(previous.Midi, centreMidi, DrawHeight));
+                UtaPitchCurveGraph.MidiToY(previous.Midi, centreMidi + keyShiftSemitones.Value, DrawHeight));
             Vector2 end = new(
                 UtaPitchCurveGraph.TimeToX(sample.Time, current, DrawWidth),
-                UtaPitchCurveGraph.MidiToY(sample.Midi, centreMidi, DrawHeight));
+                UtaPitchCurveGraph.MidiToY(sample.Midi, centreMidi + keyShiftSemitones.Value, DrawHeight));
             if ((start.Y < 0 && end.Y < 0) || (start.Y > DrawHeight && end.Y > DrawHeight))
                 continue;
 
@@ -260,6 +265,8 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         detectedPitchMidi.UnbindAll();
         pitchSimilarity.UnbindAll();
         voiceActive.UnbindAll();
+        keyShiftSemitones.UnbindAll();
+        detectedPitchTime.UnbindAll();
         base.Dispose(isDisposing);
     }
 

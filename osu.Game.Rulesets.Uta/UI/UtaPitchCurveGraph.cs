@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -50,6 +51,10 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     private readonly BindableFloat detectedPitchMidi = new();
     private readonly BindableFloat pitchSimilarity = new();
     private readonly BindableBool voiceActive = new();
+    private readonly BindableFloat keyShiftSemitones = new();
+    private readonly BindableFloat microphoneLatency = new();
+    private readonly BindableDouble detectedPitchTime = new();
+    private readonly BindableBool debugDiagnostics = new();
 
     private UtaNote[] notes = Array.Empty<UtaNote>();
     private ReferenceFrame[] referenceFrames = Array.Empty<ReferenceFrame>();
@@ -61,6 +66,16 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     private bool userGeometryReady;
     private float geometryWidth = -1;
     private float geometryHeight = -1;
+    private long diagnosticIntervalStart;
+    private long diagnosticUpdateTicks;
+    private long diagnosticMaximumUpdateTicks;
+    private int diagnosticUpdates;
+    private int diagnosticSamplesAdded;
+    private int diagnosticReferenceRebuilds;
+    private int diagnosticUserRebuilds;
+    private int diagnosticSampleClears;
+    private double diagnosticMaximumPlaybackStep;
+    private string diagnosticLastClearReason = "none";
 
     public UtaPitchCurveGraph()
     {
@@ -92,6 +107,16 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             timelineEndTime = Math.Max(timelineEndTime, referenceFrames[^1].Time);
         timelineEndTime += UtaPitchGuide.LOOK_AHEAD;
         display.BindTo(config.GetBindable<UtaPitchCurveDisplay>(UtaRulesetSetting.PitchCurveDisplay));
+        debugDiagnostics.BindTo(config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics));
+        debugDiagnostics.BindValueChanged(_ => resetDiagnostics(), true);
+        keyShiftSemitones.BindTo(config.GetBindable<float>(UtaRulesetSetting.KeyShiftSemitones));
+        microphoneLatency.BindTo(config.GetBindable<float>(UtaRulesetSetting.MicrophoneLatency));
+        microphoneLatency.BindValueChanged(_ => userGeometryReady = false);
+        keyShiftSemitones.BindValueChanged(_ =>
+        {
+            referenceGeometryTime = double.NaN;
+            userGeometryReady = false;
+        });
 
         if (drawableRuleset is not DrawableUtaRuleset utaRuleset)
             return;
@@ -100,10 +125,12 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         detectedPitchMidi.BindTo(microphone.LiveDetectedPitchMidi);
         pitchSimilarity.BindTo(microphone.LivePitchSimilarity);
         voiceActive.BindTo(microphone.LiveVoiceActive);
+        detectedPitchTime.BindTo(microphone.LiveDetectedPitchTime);
     }
 
     protected override void Update()
     {
+        long updateStart = Stopwatch.GetTimestamp();
         base.Update();
 
         UtaPitchCurveDisplay mode = display.Value;
@@ -112,32 +139,49 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             if (Alpha != 0)
             {
                 Alpha = 0;
-                clearSamples();
+                clearSamples("display-off");
             }
 
+            recordDiagnostics(updateStart);
             return;
         }
 
         Alpha = 1;
 
         double current = Time.Current;
-        if (double.IsFinite(lastPlaybackTime) && Math.Abs(current - lastPlaybackTime) > 550)
-            clearSamples();
+        double playbackStep = double.IsFinite(lastPlaybackTime) ? current - lastPlaybackTime : 0;
+        diagnosticMaximumPlaybackStep = Math.Max(diagnosticMaximumPlaybackStep, Math.Abs(playbackStep));
+        if (double.IsFinite(lastPlaybackTime) && Math.Abs(playbackStep) > 550)
+            clearSamples($"timeline-step={playbackStep:+0.0;-0.0;0.0}ms");
         lastPlaybackTime = current;
 
         bool sampleAdded = false;
-        if (current - lastSampleTime >= sample_interval)
+        bool active = voiceActive.Value;
+        double sampleTime = active ? detectedPitchTime.Value : current;
+        bool shouldAddSample = active
+            ? sampleTime - lastSampleTime >= sample_interval
+            : samples.Count == 0 || samples[^1].UserMidi != null;
+        if (shouldAddSample)
         {
-            UtaNote? target = findNoteAt(current);
+            // Keep silent break markers on the same latency-adjusted timeline as voiced samples.
+            // Advancing them with Time.Current would make newly detected pitch appear older than
+            // the sampling gate and discard roughly one microphone-latency worth of history.
+            if (!active && double.IsFinite(lastSampleTime))
+                sampleTime = Math.Min(current, lastSampleTime + sample_interval);
+
+            UtaNote? target = findNoteAt(sampleTime);
             samples.Add(new CurveSample(
+                sampleTime,
                 current,
-                target?.Midi,
-                voiceActive.Value ? detectedPitchMidi.Value : null,
+                target?.Midi + keyShiftSemitones.Value,
+                active ? detectedPitchMidi.Value : null,
                 pitchSimilarity.Value));
             if (samples.Count > buffer_size)
                 samples.RemoveAt(0);
-            lastSampleTime = current;
+
+            lastSampleTime = sampleTime;
             sampleAdded = true;
+            diagnosticSamplesAdded++;
         }
 
         bool showSong = mode is UtaPitchCurveDisplay.Song or UtaPitchCurveDisplay.Both;
@@ -157,6 +201,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             {
                 drawReference(true, current);
                 referenceGeometryTime = current;
+                diagnosticReferenceRebuilds++;
             }
         }
         else
@@ -173,6 +218,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             {
                 drawUser(true);
                 userGeometryReady = true;
+                diagnosticUserRebuilds++;
             }
         }
         else
@@ -184,6 +230,62 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 
         geometryWidth = DrawWidth;
         geometryHeight = DrawHeight;
+        recordDiagnostics(updateStart);
+    }
+
+    private void recordDiagnostics(long updateStart)
+    {
+        if (!debugDiagnostics.Value)
+            return;
+
+        long now = Stopwatch.GetTimestamp();
+        long ticks = now - updateStart;
+        diagnosticUpdateTicks += ticks;
+        diagnosticMaximumUpdateTicks = Math.Max(diagnosticMaximumUpdateTicks, ticks);
+        diagnosticUpdates++;
+        TimeSpan elapsed = Stopwatch.GetElapsedTime(diagnosticIntervalStart, now);
+        if (elapsed.TotalSeconds < 5)
+            return;
+
+        double averageMs = diagnosticUpdates == 0 ? 0 : diagnosticUpdateTicks * 1000.0 / Stopwatch.Frequency / diagnosticUpdates;
+        double maximumMs = diagnosticMaximumUpdateTicks * 1000.0 / Stopwatch.Frequency;
+        double current = Time.Current;
+        double detectedTime = detectedPitchTime.Value;
+        double detectedAge = current - detectedTime;
+        double newestTime = samples.Count == 0 ? double.NaN : samples[^1].Time;
+        double newestAge = current - newestTime;
+        double newestDisplayTime = samples.Count == 0 ? double.NaN : samples[^1].DisplayTime;
+        double visualAge = current - newestDisplayTime;
+        float newestX = samples.Count == 0 ? float.NaN : TimeToX(newestDisplayTime, current, DrawWidth);
+        Logger.Log(
+            $"Uta debug curve: mode={display.Value} updates={diagnosticUpdates} samples-added={diagnosticSamplesAdded} " +
+            $"samples={samples.Count} reference-frames={referenceFrames.Length} " +
+            $"reference-segments={referenceSegments.Count} user-segments={userSegments.Count} " +
+            $"reference-rebuilds={diagnosticReferenceRebuilds} user-rebuilds={diagnosticUserRebuilds} " +
+            $"update-avg={averageMs:0.000}ms update-max={maximumMs:0.000}ms " +
+            $"timeline={current:0.0}ms detected-time={detectedTime:0.0}ms detected-age={detectedAge:0.0}ms voice={voiceActive.Value} " +
+            $"newest-time={newestTime:0.0}ms newest-age={newestAge:0.0}ms " +
+            $"display-time={newestDisplayTime:0.0}ms visual-age={visualAge:0.0}ms " +
+            $"newest-x={newestX:0.0}px visual-offset={newestDisplayTime - newestTime:0.0}ms mic-latency={microphoneLatency.Value:0.0}ms " +
+            $"reference-x={referenceLayer.X:0.0}px user-x={userLayer.X:0.0}px size={DrawWidth:0.0}x{DrawHeight:0.0} " +
+            $"max-timeline-step={diagnosticMaximumPlaybackStep:0.0}ms clears={diagnosticSampleClears} last-clear='{diagnosticLastClearReason}'");
+        resetDiagnostics(now);
+    }
+
+    private void resetDiagnostics() => resetDiagnostics(Stopwatch.GetTimestamp());
+
+    private void resetDiagnostics(long now)
+    {
+        diagnosticIntervalStart = now;
+        diagnosticUpdateTicks = 0;
+        diagnosticMaximumUpdateTicks = 0;
+        diagnosticUpdates = 0;
+        diagnosticSamplesAdded = 0;
+        diagnosticReferenceRebuilds = 0;
+        diagnosticUserRebuilds = 0;
+        diagnosticSampleClears = 0;
+        diagnosticMaximumPlaybackStep = 0;
+        diagnosticLastClearReason = "none";
     }
 
     private void drawReference(bool visible, double currentTime)
@@ -197,16 +299,23 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             if (referenceFrames.Length > 0)
             {
                 int first = Math.Max(1, lowerBoundReferenceFrame(visibleStart) - 1);
-                for (int i = first; i < referenceFrames.Length && referenceFrames[i - 1].Time <= visibleEnd; i++)
+                ReferenceFrame previous = referenceFrames[first - 1];
+                for (int i = first; i < referenceFrames.Length && previous.Time <= visibleEnd; i++)
                 {
-                    ReferenceFrame previous = referenceFrames[i - 1];
                     ReferenceFrame frame = referenceFrames[i];
-                    if (frame.Time - previous.Time > 140 || Math.Abs(frame.Midi - previous.Midi) > 5.5f)
+                    if (frame.Time - previous.Time < sample_interval)
                         continue;
 
+                    if (frame.Time - previous.Time > 140 || Math.Abs(frame.Midi - previous.Midi) > 5.5f)
+                    {
+                        previous = frame;
+                        continue;
+                    }
+
                     if (setSegment(getSegment(referenceSegments, referenceLayer, used), previous.Time, frame.Time,
-                                   0, previous.Midi, frame.Midi, reference_colour, 0.30f))
+                                   0, previous.Midi + keyShiftSemitones.Value, frame.Midi + keyShiftSemitones.Value, reference_colour, 0.30f))
                         used++;
+                    previous = frame;
                 }
             }
             else
@@ -217,7 +326,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                         continue;
 
                     if (setSegment(getSegment(referenceSegments, referenceLayer, used), note.StartTime, note.EndTime,
-                                   0, midi, midi, reference_colour, 0.30f))
+                                   0, midi + keyShiftSemitones.Value, midi + keyShiftSemitones.Value, reference_colour, 0.30f))
                         used++;
                 }
             }
@@ -243,7 +352,10 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                 Color4 colour = blend(previousColour, currentColour, 0.5f);
                 float alpha = (previousWeight * AgeAlpha(i - 1, samples.Count)
                                + currentWeight * AgeAlpha(i, samples.Count)) / 2;
-                if (setSegment(getSegment(userSegments, userLayer, used), previous.Time, current.Time,
+                // Scoring uses the latency-corrected timestamp while rendering uses the time at
+                // which the result reached gameplay, matching the immediate trace behaviour of 0.21.
+                if (setSegment(getSegment(userSegments, userLayer, used),
+                               previous.DisplayTime, current.DisplayTime,
                                0, from, to, colour, alpha))
                     used++;
             }
@@ -255,8 +367,9 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     private bool setSegment(CurveSegment segment, double fromTime, double toTime, double currentTime,
                             float fromMidi, float toMidi, Color4 colour, float alpha)
     {
-        Vector2 start = new(TimeToX(fromTime, currentTime, DrawWidth), MidiToY(fromMidi, centreMidi, DrawHeight));
-        Vector2 end = new(TimeToX(toTime, currentTime, DrawWidth), MidiToY(toMidi, centreMidi, DrawHeight));
+        float shiftedCentre = centreMidi + keyShiftSemitones.Value;
+        Vector2 start = new(TimeToX(fromTime, currentTime, DrawWidth), MidiToY(fromMidi, shiftedCentre, DrawHeight));
+        Vector2 end = new(TimeToX(toTime, currentTime, DrawWidth), MidiToY(toMidi, shiftedCentre, DrawHeight));
         if ((start.Y < 0 && end.Y < 0) || (start.Y > DrawHeight && end.Y > DrawHeight))
         {
             segment.Alpha = 0;
@@ -392,8 +505,17 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         }
     }
 
-    private void clearSamples()
+    private void clearSamples(string reason)
     {
+        diagnosticSampleClears++;
+        diagnosticLastClearReason = reason;
+        if (debugDiagnostics.Value)
+        {
+            Logger.Log(
+                $"Uta debug curve reset: reason='{reason}' timeline={Time.Current:0.0}ms last-playback={lastPlaybackTime:0.0}ms " +
+                $"detected-time={detectedPitchTime.Value:0.0}ms samples-before={samples.Count}");
+        }
+
         samples.Clear();
         lastSampleTime = double.NegativeInfinity;
         referenceGeometryTime = double.NaN;
@@ -408,6 +530,10 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         detectedPitchMidi.UnbindAll();
         pitchSimilarity.UnbindAll();
         voiceActive.UnbindAll();
+        keyShiftSemitones.UnbindAll();
+        microphoneLatency.UnbindAll();
+        detectedPitchTime.UnbindAll();
+        debugDiagnostics.UnbindAll();
         base.Dispose(isDisposing);
     }
 
@@ -421,6 +547,6 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         }
     }
 
-    private readonly record struct CurveSample(double Time, float? ReferenceMidi, float? UserMidi, float Similarity);
+    private readonly record struct CurveSample(double Time, double DisplayTime, float? ReferenceMidi, float? UserMidi, float Similarity);
     internal readonly record struct ReferenceFrame(double Time, float Midi);
 }

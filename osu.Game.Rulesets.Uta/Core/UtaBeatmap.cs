@@ -59,9 +59,10 @@ public sealed class UtaBeatmapConverter : BeatmapConverter<UtaHitObject>
         source = beatmap;
     }
 
-    public override bool CanConvert()
-        => source.BeatmapInfo.Ruleset.ShortName == UtaRuleset.SHORT_NAME
-           || source.HitObjects.OfType<UtaMetadataHitObject>().Any();
+    // Song select can briefly retain a beatmap from the previous ruleset while
+    // rebuilding filters and the Mods overlay. An empty Uta conversion keeps
+    // that transition valid; UtaFilterCriteria still hides non-Uta beatmaps.
+    public override bool CanConvert() => true;
 
     protected override Beatmap<UtaHitObject> ConvertBeatmap(IBeatmap original, CancellationToken cancellationToken)
     {

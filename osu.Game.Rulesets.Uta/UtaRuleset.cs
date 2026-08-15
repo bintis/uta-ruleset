@@ -81,6 +81,26 @@ public sealed partial class UtaRuleset : Ruleset
             ModType.DifficultyReduction => new Mod[]
             {
                 new UtaModOriginalVocals(),
+                new UtaModOctaveFold(),
+            },
+            ModType.Conversion => new Mod[]
+            {
+                new MultiMod(new UtaModTranspose[]
+                {
+                    new UtaModTransposeMinus6(),
+                    new UtaModTransposeMinus5(),
+                    new UtaModTransposeMinus4(),
+                    new UtaModTransposeMinus3(),
+                    new UtaModTransposeMinus2(),
+                    new UtaModTransposeMinus1(),
+                    new UtaModTransposeOriginal(),
+                    new UtaModTransposePlus1(),
+                    new UtaModTransposePlus2(),
+                    new UtaModTransposePlus3(),
+                    new UtaModTransposePlus4(),
+                    new UtaModTransposePlus5(),
+                    new UtaModTransposePlus6(),
+                }),
             },
             _ => Array.Empty<Mod>(),
         };

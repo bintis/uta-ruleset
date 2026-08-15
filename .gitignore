@@ -5,3 +5,4 @@ TestResults/
 *.suo
 *.user
 *.nupkg
+/karaoke-only-host/

@@ -23,11 +23,24 @@ results remain owned by osu!lazer; Uta only owns its three gameplay audio routes
 
 ## Build and test
 
-Requires .NET 8:
+Requires .NET 8 and the locally installed Nix osu! package. The Nix installation
+is the source of truth for osu! API and dependency versions; the currently
+detected target is osu! `2026.804.2`. Resolve the active store path rather than
+committing a Nix store hash:
 
 ```sh
-dotnet build osu.Game.Rulesets.Uta/osu.Game.Rulesets.Uta.csproj -c Release
-dotnet test osu.Game.Rulesets.Uta.Tests/osu.Game.Rulesets.Uta.Tests.csproj -c Release
+OSU_BIN="$(readlink -f "$(command -v 'osu!')")"
+OSU_ROOT="$(dirname "$(dirname "$OSU_BIN")")"
+OSU_NIX_DIR="$OSU_ROOT/lib/osu-lazer"
+
+dotnet build osu.Game.Rulesets.Uta/osu.Game.Rulesets.Uta.csproj -c Release \
+  -p:OsuNixDir="$OSU_NIX_DIR"
+dotnet test osu.Game.Rulesets.Uta.Tests/osu.Game.Rulesets.Uta.Tests.csproj -c Release \
+  -p:OsuNixDir="$OSU_NIX_DIR"
+
+mkdir -p "$HOME/.local/share/osu/rulesets"
+cp osu.Game.Rulesets.Uta/bin/Release/net8.0/osu.Game.Rulesets.Uta.dll \
+  "$HOME/.local/share/osu/rulesets/osu.Game.Rulesets.Uta.dll"
 ```
 
 Copy `osu.Game.Rulesets.Uta.dll`, `libbassflac.so`, and `BASSFLAC.txt` from
@@ -43,10 +56,7 @@ as a standard archive, so lazer owns storage and media decoding.
 
 ### Singing and practice
 
-- key and pitch shifting;
 - playback speed control;
-- microphone, accompaniment and lyrics latency calibration;
-- a device setup page for input level, detected pitch, monitor latency and output routing;
 - A-B section looping, per-phrase retry and quick navigation;
 - automatic vocal-range detection with recommended transposition;
 - voice recording, playback, original-vocal comparison and export;

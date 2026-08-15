@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using ManagedBass;
+using ManagedBass.Fx;
 using ManagedBass.Mix;
 using osu.Framework.Audio;
 using osu.Framework.Logging;
@@ -47,8 +48,16 @@ internal sealed class UtaAudioRouter : IDisposable
         if (source == 0)
             throw new InvalidOperationException($"Could not decode routed audio: {error}");
 
-        route(source, device, true);
-        return new UtaRoutedAudioStream(this, source, device);
+        int tempo = BassFx.TempoCreate(source, BassFlags.Decode | BassFlags.FxFreeSource);
+        if (tempo == 0)
+        {
+            error = Bass.LastError;
+            Bass.StreamFree(source);
+            throw new InvalidOperationException($"Could not create pitch/tempo stream: {error}");
+        }
+
+        route(tempo, device, true);
+        return new UtaRoutedAudioStream(this, tempo, device);
     }
 
     public int CreateMonitor(int frequency, int channels, string? outputDevice)
@@ -71,6 +80,23 @@ internal sealed class UtaAudioRouter : IDisposable
         int device = resolve(outputDevice);
         route(source, device, paused);
         return device;
+    }
+
+    public int GetOutputLatency(string? outputDevice)
+    {
+        int device = resolve(outputDevice);
+        int previous = Bass.CurrentDevice;
+        try
+        {
+            ensureInitialised(device);
+            Bass.CurrentDevice = device;
+            return Bass.Info.Latency;
+        }
+        finally
+        {
+            if (previous > 0)
+                Bass.CurrentDevice = previous;
+        }
     }
 
     private void route(int source, int device, bool paused)
@@ -166,10 +192,10 @@ internal sealed class UtaAudioRouter : IDisposable
 internal sealed class UtaRoutedAudioStream : IDisposable
 {
     private readonly UtaAudioRouter router;
-    private readonly float baseFrequency;
     private int device;
     private float volume = 1;
-    private float appliedFrequency = float.NaN;
+    private float appliedTempo = float.NaN;
+    private float appliedPitch = float.NaN;
     public int Handle { get; }
     public bool IsRunning { get; private set; }
 
@@ -178,8 +204,6 @@ internal sealed class UtaRoutedAudioStream : IDisposable
         this.router = router;
         Handle = handle;
         this.device = device;
-        Bass.ChannelGetInfo(handle, out ChannelInfo info);
-        baseFrequency = info.Frequency;
     }
 
     public void SetOutput(string? outputDevice)
@@ -197,12 +221,21 @@ internal sealed class UtaRoutedAudioStream : IDisposable
 
     public void SetRate(double rate)
     {
-        float frequency = baseFrequency * (float)Math.Abs(rate);
-        if (frequency.Equals(appliedFrequency))
+        float tempo = ((float)Math.Abs(rate) - 1) * 100;
+        if (tempo.Equals(appliedTempo))
             return;
 
-        if (onDevice(() => Bass.ChannelSetAttribute(Handle, ChannelAttribute.Frequency, frequency)))
-            appliedFrequency = frequency;
+        if (onDevice(() => Bass.ChannelSetAttribute(Handle, ChannelAttribute.Tempo, tempo)))
+            appliedTempo = tempo;
+    }
+
+    public void SetPitch(int semitones)
+    {
+        if ((float)semitones == appliedPitch)
+            return;
+
+        if (onDevice(() => Bass.ChannelSetAttribute(Handle, ChannelAttribute.Pitch, semitones)))
+            appliedPitch = semitones;
     }
 
     public void Seek(double time)

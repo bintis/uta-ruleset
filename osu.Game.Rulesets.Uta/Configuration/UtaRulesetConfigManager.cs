@@ -25,6 +25,12 @@ public sealed class UtaRulesetConfigManager : RulesetConfigManager<UtaRulesetSet
         SetDefault(UtaRulesetSetting.MicrophoneOutputDevice, string.Empty);
         SetDefault(UtaRulesetSetting.MicrophoneInputGain, 1.5f, 0.5f, 3f, 0.05f);
         SetDefault(UtaRulesetSetting.MicrophoneMonitorVolume, 0.35f, 0f, 1f, 0.01f);
+        SetDefault(UtaRulesetSetting.MicrophoneLatency, 0f, -500f, 1000f, 1f);
+        SetDefault(UtaRulesetSetting.KeyShiftSemitones, 0f, -6f, 6f, 1f);
+        SetDefault(UtaRulesetSetting.AccompanimentLatency, 0f, -500f, 1000f, 1f);
+        SetDefault(UtaRulesetSetting.LyricsLatency, 0f, -500f, 1000f, 1f);
+        SetDefault(UtaRulesetSetting.DebugDiagnostics, false);
+        SetDefault(UtaRulesetSetting.PitchSamplingInterval, 10f, 10f, 40f, 1f);
         SetDefault(UtaRulesetSetting.LyricsPosition, UtaLyricsPosition.Bottom);
         SetDefault(UtaRulesetSetting.LyricsSize, UtaLyricsSize.Normal);
         SetDefault(UtaRulesetSetting.LyricsTypeface, UtaLyricsTypeface.Torus);
@@ -48,6 +54,12 @@ public enum UtaRulesetSetting
     LyricsTypeface,
     PitchCurveDisplay,
     ShowPitchGuideTrail,
+    MicrophoneLatency,
+    KeyShiftSemitones,
+    AccompanimentLatency,
+    LyricsLatency,
+    DebugDiagnostics,
+    PitchSamplingInterval,
 }
 
 public enum UtaLyricsPosition

@@ -15,10 +15,12 @@ public static class UtaPitchDetector
     /// <summary>
     /// Detects a monophonic pitch with the normalized-autocorrelation algorithm used by Uta.
     /// </summary>
-    public static double? Detect(ReadOnlySpan<float> samples, double sampleRate)
+    public static double? Detect(ReadOnlySpan<float> samples, double sampleRate) => Analyse(samples, sampleRate).Hertz;
+
+    public static UtaPitchAnalysis Analyse(ReadOnlySpan<float> samples, double sampleRate)
     {
         if (samples.Length < 256 || !double.IsFinite(sampleRate) || sampleRate <= 0)
-            return null;
+            return default;
 
         double mean = 0;
         foreach (float sample in samples)
@@ -38,11 +40,12 @@ public static class UtaPitchDetector
             squareSum += value * value;
         }
 
-        if (Math.Sqrt(squareSum / samples.Length) < RMS_GATE)
+        double rms = Math.Sqrt(squareSum / samples.Length);
+        if (rms < RMS_GATE)
         {
             if (rentedCentred != null)
                 ArrayPool<double>.Shared.Return(rentedCentred);
-            return null;
+            return new UtaPitchAnalysis(null, 0, rms);
         }
 
         int minLag = Math.Max(2, (int)Math.Floor(sampleRate / MAX_PITCH_HZ));
@@ -51,7 +54,7 @@ public static class UtaPitchDetector
         {
             if (rentedCentred != null)
                 ArrayPool<double>.Shared.Return(rentedCentred);
-            return null;
+            return new UtaPitchAnalysis(null, 0, rms);
         }
 
         double[]? rentedCorrelations = null;
@@ -91,7 +94,7 @@ public static class UtaPitchDetector
             }
 
             if (best < 0.55)
-                return null;
+                return new UtaPitchAnalysis(null, best, rms);
 
             double threshold = Math.Max(best * 0.9, 0.58);
             int peak = 0;
@@ -126,7 +129,10 @@ public static class UtaPitchDetector
                 : 0;
             double hertz = sampleRate / (peak + Math.Clamp(adjustment, -0.5, 0.5));
 
-            return hertz is >= MIN_PITCH_HZ and <= MAX_PITCH_HZ ? hertz : null;
+            return new UtaPitchAnalysis(
+                hertz is >= MIN_PITCH_HZ and <= MAX_PITCH_HZ ? hertz : null,
+                Math.Clamp(centreCorrelation, 0, 1),
+                rms);
         }
         finally
         {
@@ -137,3 +143,12 @@ public static class UtaPitchDetector
         }
     }
 }
+
+public readonly record struct UtaPitchAnalysis(double? Hertz, double Clarity, double Rms);
+
+public readonly record struct UtaPitchFrame(
+    double? Hertz,
+    double Clarity,
+    double Rms,
+    long ArrivalTimestamp,
+    double WindowDurationMilliseconds);

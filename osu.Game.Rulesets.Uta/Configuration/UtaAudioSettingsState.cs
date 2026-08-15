@@ -21,6 +21,12 @@ internal sealed class UtaAudioSettingsState : IDisposable
     public readonly Bindable<string> MicrophoneOutputDevice = new();
     public readonly BindableFloat MicrophoneInputGain = new();
     public readonly BindableFloat MicrophoneMonitorVolume = new();
+    public readonly BindableFloat MicrophoneLatency = new();
+    public readonly BindableFloat KeyShiftSemitones = new();
+    public readonly BindableFloat AccompanimentLatency = new();
+    public readonly BindableFloat LyricsLatency = new();
+    public readonly BindableBool DebugDiagnostics = new();
+    public readonly BindableFloat PitchSamplingInterval = new();
 
     private bool initialised;
 
@@ -37,6 +43,12 @@ internal sealed class UtaAudioSettingsState : IDisposable
         MicrophoneOutputDevice.BindTo(config.GetBindable<string>(UtaRulesetSetting.MicrophoneOutputDevice));
         MicrophoneInputGain.BindTo(config.GetBindable<float>(UtaRulesetSetting.MicrophoneInputGain));
         MicrophoneMonitorVolume.BindTo(config.GetBindable<float>(UtaRulesetSetting.MicrophoneMonitorVolume));
+        MicrophoneLatency.BindTo(config.GetBindable<float>(UtaRulesetSetting.MicrophoneLatency));
+        KeyShiftSemitones.BindTo(config.GetBindable<float>(UtaRulesetSetting.KeyShiftSemitones));
+        AccompanimentLatency.BindTo(config.GetBindable<float>(UtaRulesetSetting.AccompanimentLatency));
+        LyricsLatency.BindTo(config.GetBindable<float>(UtaRulesetSetting.LyricsLatency));
+        DebugDiagnostics.BindTo(config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics));
+        PitchSamplingInterval.BindTo(config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval));
         initialised = true;
     }
 
@@ -50,5 +62,11 @@ internal sealed class UtaAudioSettingsState : IDisposable
         MicrophoneOutputDevice.UnbindAll();
         MicrophoneInputGain.UnbindAll();
         MicrophoneMonitorVolume.UnbindAll();
+        MicrophoneLatency.UnbindAll();
+        KeyShiftSemitones.UnbindAll();
+        AccompanimentLatency.UnbindAll();
+        LyricsLatency.UnbindAll();
+        DebugDiagnostics.UnbindAll();
+        PitchSamplingInterval.UnbindAll();
     }
 }

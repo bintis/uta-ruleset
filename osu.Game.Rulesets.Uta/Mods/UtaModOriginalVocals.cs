@@ -11,7 +11,7 @@ public sealed class UtaModOriginalVocals : Mod, IApplicableMod
 {
     public override string Name => "Original Vocals";
     public override string Acronym => "VOX";
-    public override LocalisableString Description => "Prefer the packaged original mix over the isolated guide-vocal stem.";
+    public override LocalisableString Description => "Enable the packaged original vocal track. It is muted unless this mod is selected.";
     public override IconUsage? Icon => FontAwesome.Solid.Microphone;
     public override ModType Type => ModType.DifficultyReduction;
 }

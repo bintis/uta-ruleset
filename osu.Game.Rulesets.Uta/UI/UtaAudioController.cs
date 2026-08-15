@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using osu.Framework.Allocation;
@@ -31,12 +32,16 @@ internal sealed partial class UtaAudioController : Component
     private readonly Bindable<string> backgroundMusicOutput = new();
     private readonly Bindable<string> vocalsOutput = new();
     private readonly BindableDouble mainTrackVolumeAdjustment = new(1);
+    private readonly BindableFloat keyShiftSemitones = new();
+    private readonly BindableFloat accompanimentLatency = new();
     private IBindable<bool> gameplayPaused = null!;
 
     private Track mainTrack = null!;
     private GameplayClockContainer gameplayClock = null!;
     private UtaRoutedAudioStream? backgroundMusic;
     private UtaRoutedAudioStream? vocals;
+    private bool accompanimentLatencyResyncPending;
+    private long accompanimentLatencyChangedAt;
 
     [BackgroundDependencyLoader]
     private void load(AudioManager audioManager, UtaAudioRouter router, IBindable<WorkingBeatmap> workingBeatmap,
@@ -52,17 +57,16 @@ internal sealed partial class UtaAudioController : Component
         backgroundMusicOutput.BindTo(audioSettings.BackgroundMusicOutputDevice);
         vocalsVolume.BindTo(audioSettings.OriginalVocalsVolume);
         vocalsOutput.BindTo(audioSettings.OriginalVocalsOutputDevice);
+        keyShiftSemitones.BindTo(audioSettings.KeyShiftSemitones);
+        accompanimentLatency.BindTo(audioSettings.AccompanimentLatency);
 
         backgroundMusic = tryCreateTrack(router, working, working.Metadata.AudioFile, backgroundMusicOutput.Value, "BGM");
 
-        // Vocal and instrumental playback are separate buses. VOX only chooses
-        // the full original mix over an available isolated guide-vocal stem; it
-        // must not decide whether the vocal bus exists at all.
-        bool preferOriginalMix = mods.Value.Any(mod => mod is UtaModOriginalVocals)
-                                 && !string.IsNullOrWhiteSpace(beatmap.OriginalAudioFile);
-        string? vocalFile = preferOriginalMix
-            ? beatmap.OriginalAudioFile
-            : beatmap.GuideVocalsFile ?? beatmap.OriginalAudioFile;
+        // Original vocals are opt-in. Do not create a vocal bus unless VOX is selected.
+        bool originalVocalsEnabled = mods.Value.Any(mod => mod is UtaModOriginalVocals);
+        string? vocalFile = originalVocalsEnabled
+            ? beatmap.OriginalAudioFile ?? beatmap.GuideVocalsFile
+            : null;
 
         if (string.IsNullOrWhiteSpace(vocalFile))
             Logger.Log("This UTZ package has no guide-vocal or original audio track; the vocals control is unavailable.");
@@ -90,6 +94,17 @@ internal sealed partial class UtaAudioController : Component
         }, true);
         backgroundMusicOutput.BindValueChanged(value => backgroundMusic?.SetOutput(value.NewValue));
         vocalsOutput.BindValueChanged(value => vocals?.SetOutput(value.NewValue));
+        keyShiftSemitones.BindValueChanged(value =>
+        {
+            int semitones = (int)MathF.Round(value.NewValue);
+            backgroundMusic?.SetPitch(semitones);
+            vocals?.SetPitch(semitones);
+        }, true);
+        accompanimentLatency.BindValueChanged(_ =>
+        {
+            accompanimentLatencyChangedAt = Stopwatch.GetTimestamp();
+            accompanimentLatencyResyncPending = true;
+        });
         gameplayPaused = gameplayClock.IsPaused;
         gameplayPaused.BindValueChanged(onGameplayPausedChanged, true);
         gameplayClock.OnSeek += synchroniseAfterSeek;
@@ -109,14 +124,22 @@ internal sealed partial class UtaAudioController : Component
     protected override void Update()
     {
         base.Update();
+        if (accompanimentLatencyResyncPending
+            && Stopwatch.GetElapsedTime(accompanimentLatencyChangedAt).TotalMilliseconds >= 100)
+        {
+            accompanimentLatencyResyncPending = false;
+            synchroniseAfterSeek();
+        }
+
         if (backgroundMusic == null && vocals == null)
             return;
 
         double current = gameplayClock.CurrentTime;
-        bool shouldRun = !gameplayPaused.Value && gameplayClock.IsRunning && current >= 0;
+        double sourceTime = current - accompanimentLatency.Value;
+        bool shouldRun = !gameplayPaused.Value && gameplayClock.IsRunning && sourceTime >= 0;
         double rate = gameplayClock.Rate;
-        updateSource(backgroundMusic, current, rate, shouldRun);
-        updateSource(vocals, current, rate, shouldRun);
+        updateSource(backgroundMusic, sourceTime, rate, shouldRun);
+        updateSource(vocals, sourceTime, rate, shouldRun);
     }
 
     private static void updateSource(UtaRoutedAudioStream? source, double current, double rate, bool shouldRun)
@@ -151,7 +174,7 @@ internal sealed partial class UtaAudioController : Component
             return;
 
         source.Stop();
-        source.Seek(gameplayClock.CurrentTime);
+        source.Seek(gameplayClock.CurrentTime - accompanimentLatency.Value);
     }
 
     private static UtaRoutedAudioStream? createTrack(UtaAudioRouter router, WorkingBeatmap working, string? file, string output)
@@ -197,6 +220,8 @@ internal sealed partial class UtaAudioController : Component
         vocalsVolume.UnbindAll();
         backgroundMusicOutput.UnbindAll();
         vocalsOutput.UnbindAll();
+        keyShiftSemitones.UnbindAll();
+        accompanimentLatency.UnbindAll();
         if (gameplayPaused != null)
             gameplayPaused.ValueChanged -= onGameplayPausedChanged;
         base.Dispose(isDisposing);
