@@ -229,7 +229,7 @@ public partial class UtaPitchGuide : CompositeDrawable
 
             target.X = start;
             target.Width = Math.Max(2 / DrawWidth, end - start);
-            target.Y = (high - note.Midi!.Value - keyShiftSemitones.Value) / VIEW_SPAN;
+            target.Y = (high - note.Midi!.Value) / VIEW_SPAN;
         }
         previousRangeStart = rangeStart;
         previousRangeEnd = rangeEnd;

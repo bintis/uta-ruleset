@@ -173,7 +173,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             samples.Add(new CurveSample(
                 sampleTime,
                 current,
-                target?.Midi + keyShiftSemitones.Value,
+                target?.Midi,
                 active ? detectedPitchMidi.Value : null,
                 pitchSimilarity.Value));
             if (samples.Count > buffer_size)
@@ -313,7 +313,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                     }
 
                     if (setSegment(getSegment(referenceSegments, referenceLayer, used), previous.Time, frame.Time,
-                                   0, previous.Midi + keyShiftSemitones.Value, frame.Midi + keyShiftSemitones.Value, reference_colour, 0.30f))
+                                   0, previous.Midi, frame.Midi, reference_colour, 0.30f))
                         used++;
                     previous = frame;
                 }
@@ -326,7 +326,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                         continue;
 
                     if (setSegment(getSegment(referenceSegments, referenceLayer, used), note.StartTime, note.EndTime,
-                                   0, midi + keyShiftSemitones.Value, midi + keyShiftSemitones.Value, reference_colour, 0.30f))
+                                   0, midi, midi, reference_colour, 0.30f))
                         used++;
                 }
             }
