@@ -1,27 +1,64 @@
 # uta!
 
-`uta!` is a small osu!lazer ruleset for playing Uta Studio `.utz` song
-packages. It deliberately contains only the playback path:
+`uta!` is a karaoke game distributed as a custom ruleset for osu!lazer. It
+turns `.utz` song packages into a native lazer gameplay experience, combining
+timed lyrics, reference notes, live microphone Pitch and flexible audio
+routing in one lightweight ruleset.
+
+The project follows a simple development principle: provide the features a
+karaoke game needs while keeping the ruleset as small and efficient as
+possible. Wherever practical, uta! reuses osu!lazer's existing interfaces,
+gameplay clock, media playback, song library and platform support instead of
+building a second application stack.
+
+Song editing is intentionally kept outside the ruleset. Songs, lyrics,
+reference Pitch and package metadata are created and exported as `.utz` files
+with **Uta Studio**; uta! is responsible for importing and playing those
+packages inside osu!lazer.
 
 See [CHANGELOG.md](CHANGELOG.md) for released version history.
 
-- `.utz` validation and import through lazer's public file-import API;
-- word-timed lyrics with progressive highlighting;
-- target notes, live microphone pitch and pitch feedback;
-- Linux microphone support through the BASS runtime already shipped by lazer;
-- optional lyrics, pitch-guide and original-vocals mods;
-- a `P` quick-settings panel and independent BGM, vocal and microphone-monitor
-  output routing, with one shared mix bus per selected hardware device.
-- lazer-native skip prompts for long intro, inter-phrase and trailing gaps;
-- lazer's volume overlay remapped to microphone monitor, BGM and original vocals
-  while playing;
-- configurable lyric placement, typeface and scale, plus native score placement;
-- a colour-blind-friendly dark pitch guide with distinct target and live-voice
-  visual layers.
+## Current features
 
-There is no editor, online layer, custom skin system, bundled icon pack, font,
-or standalone media stack. Video, artwork, song select, the gameplay clock and
-results remain owned by osu!lazer; Uta only owns its three gameplay audio routes.
+- Native `.utz` validation, drag-and-drop import and library integration through
+  osu!lazer's public file-import API.
+- Word-timed lyrics with progressive highlighting and configurable placement,
+  typeface and scale.
+- Reference notes, real-time microphone Pitch detection, singing history and
+  clear visual feedback for whether the voice is high, low or on target.
+- A colour-blind-friendly dark Pitch guide with distinct target, packaged-vocal
+  and live-microphone layers.
+- Independent BGM, packaged-vocal and microphone-monitor volume controls and
+  output routing, with one shared mix bus per selected hardware device.
+- Configurable microphone device, input gain, monitoring, analysis sampling and
+  latency compensation through native ruleset settings.
+- Independent accompaniment and lyrics latency adjustments available during
+  gameplay for fast synchronisation corrections.
+- Transpose support that shifts BGM, packaged vocals and reference notes
+  together while preserving synchronisation.
+- Optional Lyrics, Pitch Guide, Original Vocals and Octave Folding MODs using
+  osu!lazer's native MOD interface.
+- Octave Folding can match equivalent notes across octaves without altering the
+  detected microphone signal.
+- Native skip prompts for long introductions, gaps between phrases and trailing
+  silence.
+- osu!lazer's volume overlay remapped to microphone monitor, BGM and packaged
+  vocals during gameplay.
+- Debug diagnostics for Pitch capture, analysis, rendering, routed audio and
+  latency investigation.
+- Linux microphone and FLAC support built on the BASS runtime shipped with
+  osu!lazer.
+
+## Project boundaries
+
+This repository contains the gameplay ruleset, not a song editor or standalone
+karaoke application. Uta Studio owns song authoring, while video, artwork, song
+selection, the gameplay clock and results remain owned by osu!lazer. uta! adds
+only the karaoke-specific playback, microphone, Pitch and audio-routing layers.
+
+There is currently no online service or separate custom-skin package system.
+Those areas are tracked explicitly in the roadmap rather than being added to
+the runtime without a defined release target.
 
 ## Build and test
 
@@ -177,5 +214,20 @@ After 1.0, additional song formats, online services, editor features and experim
 
 - osu!lazer compatibility target: Nix-installed `2026.804.2`.
 - Accepted package contract: `uta.song` format `0.1.x` with `uta.pitch` scoring schema version 1.
+
+## Acknowledgements
+
+uta! is based on and has adapted substantial work from the original
+[karaoke ruleset](https://github.com/karaoke-dev/karaoke). We thank its authors
+and contributors for making their work available to the osu! community.
+
+The real-time Pitch detector is adapted from open-source Pitch-analysis work
+and uses a normalised-autocorrelation approach. We thank the developers and
+researchers who made these techniques and their implementations openly
+available.
+
+uta! is built on [osu!](https://github.com/ppy/osu) and osu!lazer's ruleset and
+framework APIs. We thank ppy and every osu! contributor for the game, framework
+and tooling that make this project possible.
 
 Licensed under GPL-3.0; see [LICENSE](LICENSE).
