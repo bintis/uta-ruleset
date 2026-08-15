@@ -168,14 +168,14 @@ as a standard archive, so lazer owns storage and media decoding.
 - [ ] Verify remote control is disabled by default and leaves no active listener after it is turned off.
 - [ ] Complete a long-session soak run covering gameplay, practice, scoring, recording and remote control.
 - [ ] Resolve all known crash, data-loss, unsafe-network-access and persistent desynchronisation defects.
+- [ ] Build and verify a portable ruleset DLL against official NuGet API references without depending on Nix store paths.
 - [ ] Publish versioned installation assets and release notes for the supported platform matrix.
 
 After 1.0, additional song formats, online services, editor features and experimental MODs should be planned independently rather than expanding the stable playback contract implicitly.
 
 ## Scope
 
-The accepted package contract is `uta.song` format `0.1.x` with the
-`uta.pitch` scoring schema version 1. Package paths, sizes, hashes, transcript
-timing, and note intervals are validated before import.
+- osu!lazer compatibility target: Nix-installed `2026.804.2`.
+- Accepted package contract: `uta.song` format `0.1.x` with `uta.pitch` scoring schema version 1.
 
 Licensed under GPL-3.0; see [LICENSE](LICENSE).
