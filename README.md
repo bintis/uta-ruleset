@@ -95,20 +95,20 @@ as a standard archive, so lazer owns storage and media decoding.
 
 ### 0.4.0 - Playback and practice control
 
-- [ ] Add pitch-preserving playback speed control from `0.50x` to `1.50x`.
-- [ ] Keep the gameplay clock, BGM, VOX, lyrics and target pitch synchronised while changing speed.
-- [ ] Keep microphone latency expressed in real milliseconds while playback speed changes.
-- [ ] Add manual A and B loop points with clear/reset controls.
-- [ ] Seek every routed audio source together when an A-B loop repeats.
-- [ ] Break microphone pitch history cleanly at loop and seek boundaries.
-- [ ] Derive phrase boundaries from transcript segments and target-note gaps.
-- [ ] Add previous phrase, next phrase and retry-current-phrase actions.
-- [ ] Add optional current-phrase looping with a `500-1000 ms` preparation lead-in.
-- [ ] Put speed, loop and phrase navigation in a native `Practice` HUD group.
-- [ ] Add configurable shortcuts for practice actions instead of hard-coded keys.
-- [ ] Implement Half Time (HT) and Double Time (DT) on the shared speed controller.
-- [ ] Add Nightcore (NC) after DT timing and audio synchronisation are stable.
-- [ ] Log playback rate, loop transitions, seeks and routed-track discrepancies in Debug mode.
+- [x] Add pitch-preserving playback speed control from `0.50x` to `1.50x`.
+- [x] Keep the gameplay clock, BGM, VOX, lyrics and target pitch synchronised while changing speed.
+- [x] Keep microphone latency expressed in real milliseconds while playback speed changes.
+- [x] Add manual A and B loop points with clear/reset controls.
+- [x] Seek every routed audio source together when an A-B loop repeats.
+- [x] Break microphone pitch history cleanly at loop and seek boundaries.
+- [x] Derive phrase boundaries from transcript segments and target-note gaps.
+- [x] Add previous phrase, next phrase and retry-current-phrase actions.
+- [x] Add optional current-phrase looping with a `500-1000 ms` preparation lead-in.
+- [x] Put speed, loop and phrase navigation in a native `Practice` HUD group.
+- [x] Add configurable shortcuts for practice actions instead of hard-coded keys.
+- [x] Implement Half Time (HT) and Double Time (DT) on the shared speed controller.
+- [x] Add Nightcore (NC) after DT timing and audio synchronisation are stable.
+- [x] Log playback rate, loop transitions, seeks and routed-track discrepancies in Debug mode.
 - [x] Verify Transpose, VOX, OCT and all latency settings in combination with speed and looping.
 - [x] Verify repeated loops and long practice sessions do not accumulate drift or frame-time regressions.
 
