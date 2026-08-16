@@ -109,8 +109,8 @@ as a standard archive, so lazer owns storage and media decoding.
 - [ ] Implement Half Time (HT) and Double Time (DT) on the shared speed controller.
 - [ ] Add Nightcore (NC) after DT timing and audio synchronisation are stable.
 - [ ] Log playback rate, loop transitions, seeks and routed-track discrepancies in Debug mode.
-- [ ] Verify Transpose, VOX, OCT and all latency settings in combination with speed and looping.
-- [ ] Verify repeated loops and long practice sessions do not accumulate drift or frame-time regressions.
+- [x] Verify Transpose, VOX, OCT and all latency settings in combination with speed and looping.
+- [x] Verify repeated loops and long practice sessions do not accumulate drift or frame-time regressions.
 
 ### 0.5.0 - Scoring and feedback
 

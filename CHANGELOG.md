@@ -3,6 +3,43 @@
 This file records user-visible changes to `uta!`. Future work remains in the
 [README roadmap](README.md#roadmap--todo).
 
+## 0.4.0 - 2026-08-16
+
+### Added
+
+- Added pitch-preserving playback speed control as fixed 0.50x to 1.50x practice
+  rate options.
+- Added practice A/B loop points, previous/next/retry phrase actions and
+  current-phrase loop with configurable preparation lead-in.
+- Added rebindable shortcut bindings for speed/loop/phrase practice actions.
+- Added a native Practice HUD group for speed, looping and phrase controls.
+- Added Daycore and Nightcore modulation options for playback variation.
+- Added an Auto mod that synthesizes perfect pitch input for deterministic demo
+  gameplay.
+
+### Changed
+
+- Kept gameplay clock, BGM, VOX, lyrics and target pitch synchronized while
+  changing speed.
+- Kept microphone latency compensation in real milliseconds and scaled it
+  correctly when playback speed changes.
+- Synchronized all routed audio on each A-B loop/seek boundary via shared seek
+  plumbing.
+- Cleared microphone pitch-history and visual continuity cleanly at loop and seek
+  boundaries.
+- Tightened phrase-boundary detection using transcript segment gaps and target-note
+  gaps, with phrase-navigation and loop integration.
+- Added shared playback-rate/debug diagnostics for loop transitions, seeks and route
+  drift.
+
+### Fixed
+
+- Fixed practice viewport drift for pitch guide and trace visuals by binding guide,
+  curve and trail to one shared adaptive pitch viewport.
+- Fixed verification blockers by validating combined speed/loop/transpose/VOX/OCT
+  combinations and extended practice flows with microphone latency presets in real
+  sessions.
+
 ## 0.3.0 - 2026-08-15
 
 ### Added
@@ -78,5 +115,6 @@ This file records user-visible changes to `uta!`. Future work remains in the
 - Added native lazer settings, volume HUD integration and Uta-only song filtering.
 
 [0.3.0]: https://github.com/bintis/uta-ruleset/compare/v0.2.1...main
+[0.4.0]: https://github.com/bintis/uta-ruleset/compare/v0.3.0...main
 [0.2.1]: https://github.com/bintis/uta-ruleset/compare/v0.1.0...v0.2.1
 [0.1.0]: https://github.com/bintis/uta-ruleset/releases/tag/v0.1.0
