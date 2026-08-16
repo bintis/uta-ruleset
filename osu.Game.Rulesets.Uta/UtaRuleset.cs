@@ -70,7 +70,17 @@ public sealed partial class UtaRuleset : Ruleset
         => Array.Empty<RulesetBeatmapAttribute>();
 
     public override IEnumerable<KeyBinding> GetDefaultKeyBindings(int variant = 0)
-        => new[] { new KeyBinding(InputKey.P, UtaAction.OpenSettings) };
+        => new[]
+        {
+            new KeyBinding(InputKey.P, UtaAction.OpenSettings),
+            new KeyBinding(InputKey.BracketLeft, UtaAction.SetLoopPointA),
+            new KeyBinding(InputKey.BracketRight, UtaAction.SetLoopPointB),
+            new KeyBinding(InputKey.BackSlash, UtaAction.ClearLoopPoints),
+            new KeyBinding(InputKey.Left, UtaAction.PreviousPhrase),
+            new KeyBinding(InputKey.Right, UtaAction.NextPhrase),
+            new KeyBinding(InputKey.R, UtaAction.RetryPhrase),
+            new KeyBinding(InputKey.L, UtaAction.ToggleCurrentPhraseLoop),
+        };
 
     public override IEnumerable<HitResult> GetValidHitResults()
         => new[]
@@ -94,11 +104,13 @@ public sealed partial class UtaRuleset : Ruleset
             {
                 new UtaModHidePitchGuide(),
                 new UtaModHideLyrics(),
+                new UtaModNightcore(),
             },
             ModType.DifficultyReduction => new Mod[]
             {
                 new UtaModOriginalVocals(),
                 new UtaModOctaveFold(),
+                new UtaModDaycore(),
             },
             ModType.Conversion => new Mod[]
             {
@@ -118,6 +130,24 @@ public sealed partial class UtaRuleset : Ruleset
                     new UtaModTransposePlus5(),
                     new UtaModTransposePlus6(),
                 }),
+                new MultiMod(new UtaModPracticeSpeed[]
+                {
+                    new UtaModPracticeSpeed50(),
+                    new UtaModPracticeSpeed60(),
+                    new UtaModPracticeSpeed70(),
+                    new UtaModPracticeSpeed80(),
+                    new UtaModPracticeSpeed90(),
+                    new UtaModPracticeSpeed100(),
+                    new UtaModPracticeSpeed110(),
+                    new UtaModPracticeSpeed120(),
+                    new UtaModPracticeSpeed130(),
+                    new UtaModPracticeSpeed140(),
+                    new UtaModPracticeSpeed150(),
+                }),
+            },
+            ModType.Automation => new Mod[]
+            {
+                new UtaModAutoplay(),
             },
             _ => Array.Empty<Mod>(),
         };

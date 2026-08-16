@@ -12,6 +12,7 @@ using osu.Framework.Graphics.Shapes;
 using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
+using osu.Game.Screens.Play;
 using osuTK;
 using osuTK.Graphics;
 
@@ -43,13 +44,14 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
     private readonly BindableDouble detectedPitchTime = new();
 
     private UtaNote[] notes = Array.Empty<UtaNote>();
-    private float centreMidi;
+    private readonly BindableFloat centreMidi = new();
     private double timelineEndTime;
     private double lastSampleTime = double.NegativeInfinity;
     private double lastPlaybackTime = double.NegativeInfinity;
     private bool geometryReady;
     private float geometryWidth = -1;
     private float geometryHeight = -1;
+    private GameplayClockContainer? gameplayClock;
 
     public UtaPitchGuideTrail()
     {
@@ -62,13 +64,16 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaBeatmap beatmap, DrawableRuleset drawableRuleset, UtaRulesetConfigManager config)
+    private void load(UtaBeatmap beatmap, DrawableRuleset drawableRuleset, UtaRulesetConfigManager config, GameplayClockContainer gameplayClock,
+                      UtaPitchViewport pitchViewport)
     {
+        this.gameplayClock = gameplayClock;
+        gameplayClock.OnSeek += onSeek;
         notes = beatmap.HitObjects.OfType<UtaNote>()
                        .Where(note => note.Midi != null)
                        .OrderBy(note => note.StartTime)
                        .ToArray();
-        centreMidi = UtaPitchGuide.CalculateFixedCentre(notes);
+        centreMidi.BindTo(pitchViewport.CentreMidi);
         timelineEndTime = (notes.Length > 0 ? notes[^1].EndTime : 0) + UtaPitchGuide.LOOK_AHEAD;
         enabled.BindTo(config.GetBindable<bool>(UtaRulesetSetting.ShowPitchGuideTrail));
         keyShiftSemitones.BindTo(config.GetBindable<float>(UtaRulesetSetting.KeyShiftSemitones));
@@ -158,10 +163,10 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
 
             Vector2 start = new(
                 UtaPitchCurveGraph.TimeToX(previous.Time, current, DrawWidth),
-                UtaPitchCurveGraph.MidiToY(previous.Midi, centreMidi + keyShiftSemitones.Value, DrawHeight));
+                UtaPitchCurveGraph.MidiToY(previous.Midi, centreMidi.Value + keyShiftSemitones.Value, DrawHeight));
             Vector2 end = new(
                 UtaPitchCurveGraph.TimeToX(sample.Time, current, DrawWidth),
-                UtaPitchCurveGraph.MidiToY(sample.Midi, centreMidi + keyShiftSemitones.Value, DrawHeight));
+                UtaPitchCurveGraph.MidiToY(sample.Midi, centreMidi.Value + keyShiftSemitones.Value, DrawHeight));
             if ((start.Y < 0 && end.Y < 0) || (start.Y > DrawHeight && end.Y > DrawHeight))
                 continue;
 
@@ -259,6 +264,8 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         hideUnused(glowSegments, 0);
     }
 
+    private void onSeek() => clear();
+
     protected override void Dispose(bool isDisposing)
     {
         enabled.UnbindAll();
@@ -267,6 +274,9 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         voiceActive.UnbindAll();
         keyShiftSemitones.UnbindAll();
         detectedPitchTime.UnbindAll();
+        centreMidi.UnbindAll();
+        if (gameplayClock != null)
+            gameplayClock.OnSeek -= onSeek;
         base.Dispose(isDisposing);
     }
 

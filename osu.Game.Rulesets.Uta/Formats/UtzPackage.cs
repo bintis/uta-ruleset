@@ -199,8 +199,6 @@ public sealed partial class UtzPackage
                         throw invalid($"vocal chart note '{note.Id}' has an invalid MIDI pitch");
                     if (note.Scoring.Mode == UtaVocalScoringMode.Pitch && note.Pitch == null)
                         throw invalid($"vocal chart note '{note.Id}' uses pitch scoring but has no pitch target");
-                    if (note.Lyrics.Count == 0)
-                        throw invalid($"vocal chart note '{note.Id}' has no lyric tokens");
                     if (previousEnd is { } end && note.Start < end)
                         throw invalid($"vocal chart track '{track.Id}' has overlapping or unordered notes");
 
@@ -405,7 +403,7 @@ public sealed partial class UtzPackage
 
     private static JsonSerializerOptions jsonOptions => JsonOptions;
 
-    [GeneratedRegex("^0\\.[12]\\.[0-9]+$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^0\\.[123]\\.[0-9]+$", RegexOptions.CultureInvariant)]
     private static partial Regex versionRegex();
 
     [GeneratedRegex("^1\\.[0-9]+\\.[0-9]+$", RegexOptions.CultureInvariant)]

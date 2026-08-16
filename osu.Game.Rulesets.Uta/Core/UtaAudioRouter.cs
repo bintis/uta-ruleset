@@ -241,6 +241,10 @@ internal sealed class UtaRoutedAudioStream : IDisposable
     public void Seek(double time)
         => onDevice(() => Bass.ChannelSetPosition(Handle, Bass.ChannelSeconds2Bytes(Handle, Math.Max(0, time) / 1000)));
 
+    /// <summary>The stream's actual playback position, for comparing against the expected gameplay-clock-derived target.</summary>
+    public double GetPositionMs()
+        => onDevice(() => Bass.ChannelBytes2Seconds(Handle, Bass.ChannelGetPosition(Handle)) * 1000);
+
     public void Start()
     {
         onDevice(() => BassMix.ChannelRemoveFlag(Handle, BassFlags.MixerChanPause));

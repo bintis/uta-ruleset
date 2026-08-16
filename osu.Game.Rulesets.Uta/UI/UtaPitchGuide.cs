@@ -52,7 +52,7 @@ public partial class UtaPitchGuide : CompositeDrawable
     private readonly BindableFloat keyShiftSemitones = new();
 
     private UtaNote[] notes = Array.Empty<UtaNote>();
-    private float centreMidi = (base_low_midi + base_high_midi) / 2;
+    private readonly BindableFloat centreMidi = new((base_low_midi + base_high_midi) / 2);
     private double maximumNoteDuration;
     private double lastUpdateTime = double.NegativeInfinity;
     private int previousRangeStart;
@@ -149,7 +149,8 @@ public partial class UtaPitchGuide : CompositeDrawable
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaBeatmap beatmap, osu.Game.Rulesets.UI.DrawableRuleset drawableRuleset, UtaRulesetConfigManager config)
+    private void load(UtaBeatmap beatmap, osu.Game.Rulesets.UI.DrawableRuleset drawableRuleset, UtaRulesetConfigManager config,
+                      UtaPitchViewport pitchViewport)
     {
         if (string.IsNullOrEmpty(beatmap.PackageId))
         {
@@ -161,13 +162,9 @@ public partial class UtaPitchGuide : CompositeDrawable
                        .Where(note => note.Midi != null)
                        .OrderBy(note => note.StartTime)
                        .ToArray();
-        centreMidi = CalculateFixedCentre(notes);
+        centreMidi.BindTo(pitchViewport.CentreMidi);
         keyShiftSemitones.BindTo(config.GetBindable<float>(UtaRulesetSetting.KeyShiftSemitones));
-        keyShiftSemitones.BindValueChanged(_ =>
-        {
-            updateStaticPitchLayout();
-            lastUpdateTime = double.NegativeInfinity;
-        });
+        keyShiftSemitones.BindValueChanged(_ => lastUpdateTime = double.NegativeInfinity);
         maximumNoteDuration = notes.Length == 0 ? 0 : notes.Max(note => note.Duration);
 
         foreach (var note in notes)
@@ -203,7 +200,11 @@ public partial class UtaPitchGuide : CompositeDrawable
             : 0;
         lastUpdateTime = current;
 
-        float shiftedCentre = centreMidi + keyShiftSemitones.Value;
+        // The viewport centre now glides to follow upcoming notes (UtaPitchViewport), so the grid
+        // and labels need repositioning every frame rather than only on load/key-shift change.
+        updateStaticPitchLayout();
+
+        float shiftedCentre = centreMidi.Value + keyShiftSemitones.Value;
         float low = shiftedCentre - VIEW_SPAN / 2;
         float high = shiftedCentre + VIEW_SPAN / 2;
 
@@ -251,7 +252,7 @@ public partial class UtaPitchGuide : CompositeDrawable
 
     private void updateStaticPitchLayout()
     {
-        float shiftedCentre = centreMidi + keyShiftSemitones.Value;
+        float shiftedCentre = centreMidi.Value + keyShiftSemitones.Value;
         float high = shiftedCentre + VIEW_SPAN / 2;
         int firstGridMidi = (int)MathF.Floor(shiftedCentre - VIEW_SPAN / 2);
 
@@ -354,6 +355,7 @@ public partial class UtaPitchGuide : CompositeDrawable
         pitchSimilarity.UnbindAll();
         voiceActive.UnbindAll();
         keyShiftSemitones.UnbindAll();
+        centreMidi.UnbindAll();
         base.Dispose(isDisposing);
     }
 

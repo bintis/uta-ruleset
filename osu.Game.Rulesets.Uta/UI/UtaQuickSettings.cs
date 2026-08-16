@@ -2,6 +2,7 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
@@ -11,13 +12,16 @@ using osu.Framework.Graphics.Shapes;
 using osu.Framework.Input.Bindings;
 using osu.Framework.Input.Events;
 using osu.Framework.Localisation;
+using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Settings;
+using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
+using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Screens.Play.PlayerSettings;
 using osuTK;
 using osuTK.Graphics;
@@ -86,6 +90,7 @@ public sealed partial class UtaQuickSettingsOverlay : OsuFocusedOverlayContainer
                     new AudioSettings(),
                     new InputSettings(),
                     new UtaPlaybackSettings(),
+                    new UtaPracticeSettings(),
                 },
             },
         };
@@ -264,6 +269,91 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
                 => string.IsNullOrEmpty(item) ? "Lazer default" : item;
         }
     }
+}
+
+/// <summary>
+/// Loop and phrase-navigation controls for a practice session, plus a read-only reminder of the
+/// selected practice speed. Speed itself is picked as a fixed value at song select - one icon per
+/// value, same as <see cref="UtaModTranspose"/> - rather than adjusted live from here. Loop and
+/// phrase actions call straight into the cached <see cref="UtaPracticeController"/>, the same
+/// instance the configurable shortcuts drive.
+/// </summary>
+public sealed partial class UtaPracticeSettings : PlayerSettingsGroup
+{
+    private readonly OsuSpriteText speedStatus;
+    private readonly OsuSpriteText loopStatus;
+    private readonly SettingsButton setLoopA;
+    private readonly SettingsButton setLoopB;
+    private readonly SettingsButton clearLoop;
+    private readonly PlayerCheckbox loopCurrentPhrase;
+    private readonly SettingsButton previousPhrase;
+    private readonly SettingsButton retryPhrase;
+    private readonly SettingsButton nextPhrase;
+
+    private UtaPracticeController practiceController = null!;
+
+    public UtaPracticeSettings()
+        : base("Uta practice")
+    {
+        Children = new Drawable[]
+        {
+            speedStatus = new OsuSpriteText
+            {
+                RelativeSizeAxes = Axes.X,
+                Height = 16,
+                Font = OsuFont.Default.With(size: 12),
+                Colour = new Color4(180, 184, 205, 255),
+            },
+            loopStatus = new OsuSpriteText
+            {
+                RelativeSizeAxes = Axes.X,
+                Height = 16,
+                Font = OsuFont.Default.With(size: 12),
+                Colour = new Color4(180, 184, 205, 255),
+            },
+            setLoopA = createButton("Set loop A"),
+            setLoopB = createButton("Set loop B"),
+            clearLoop = createButton("Clear loop"),
+            loopCurrentPhrase = new PlayerCheckbox { LabelText = "Loop current phrase" },
+            previousPhrase = createButton("Previous phrase"),
+            retryPhrase = createButton("Retry phrase"),
+            nextPhrase = createButton("Next phrase"),
+        };
+    }
+
+    [BackgroundDependencyLoader]
+    private void load(UtaPracticeController practiceController, IBindable<IReadOnlyList<Mod>> mods)
+    {
+        this.practiceController = practiceController;
+
+        UtaModPracticeSpeed? speedMod = mods.Value.OfType<UtaModPracticeSpeed>().SingleOrDefault();
+        speedStatus.Text = speedMod != null
+            ? $"Speed: {speedMod.Speed:0.0#}x (pick a different Speed mod next time to change)"
+            : "Speed: original (pick a Speed mod at song select to change)";
+
+        setLoopA.Action = practiceController.SetLoopPointA;
+        setLoopB.Action = practiceController.SetLoopPointB;
+        clearLoop.Action = practiceController.ClearLoopPoints;
+        loopCurrentPhrase.Current = practiceController.LoopCurrentPhrase;
+        previousPhrase.Action = practiceController.GoToPreviousPhrase;
+        retryPhrase.Action = practiceController.RetryPhrase;
+        nextPhrase.Action = practiceController.GoToNextPhrase;
+    }
+
+    protected override void Update()
+    {
+        base.Update();
+
+        string a = practiceController.LoopPointA.Value is { } pointA ? formatTime(pointA) : "-";
+        string b = practiceController.LoopPointB.Value is { } pointB ? formatTime(pointB) : "-";
+        loopStatus.Text = practiceController.LoopCurrentPhrase.Value
+            ? $"Looping current phrase ({practiceController.Phrases.Count} detected)"
+            : $"Loop A {a}  B {b}";
+    }
+
+    private static string formatTime(double ms) => TimeSpan.FromMilliseconds(ms).ToString(@"m\:ss\.ff");
+
+    private static SettingsButton createButton(string text) => new() { Text = text };
 }
 
 public sealed partial class UtaDeviceDiagnostics : PlayerSettingsGroup

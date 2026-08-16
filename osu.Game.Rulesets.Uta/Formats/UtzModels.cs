@@ -58,10 +58,13 @@ public sealed class UtzManifest
     /// <summary>
     /// UTZ 0.2 replaces the three parallel 0.1 chart assets with a single vocal
     /// chart and demotes pitch analysis to optional evidence; readers branch on
-    /// this to know which chart shape to expect.
+    /// this to know which chart shape to expect. 0.3 only adds optional,
+    /// defaulted fields on top of the 0.2 manifest shape, so it takes the same
+    /// branch.
     /// </summary>
     [JsonIgnore]
-    public bool IsFormatV2 => FormatVersion.StartsWith("0.2.", StringComparison.Ordinal);
+    public bool IsFormatV2 => FormatVersion.StartsWith("0.2.", StringComparison.Ordinal)
+                               || FormatVersion.StartsWith("0.3.", StringComparison.Ordinal);
 
     [JsonIgnore]
     public IEnumerable<UtzAsset> Assets
@@ -157,6 +160,23 @@ public sealed class UtzAudioAssets
     /// <summary>0.1 only; 0.2 bakes any shift into authored note times instead.</summary>
     [JsonPropertyName("audio_offset_seconds")]
     public double? AudioOffsetSeconds { get; init; }
+
+    /// <summary>0.3 only: advisory integrated loudness (EBU R 128 LUFS) per audio stem.</summary>
+    [JsonPropertyName("loudness")]
+    public UtzAudioLoudness? Loudness { get; init; }
+}
+
+/// <summary>Advisory integrated loudness (EBU R 128 LUFS); no consumer is required to act on it.</summary>
+public sealed class UtzAudioLoudness
+{
+    [JsonPropertyName("instrumental_lufs")]
+    public double? InstrumentalLufs { get; init; }
+
+    [JsonPropertyName("guide_vocals_lufs")]
+    public double? GuideVocalsLufs { get; init; }
+
+    [JsonPropertyName("original_lufs")]
+    public double? OriginalLufs { get; init; }
 }
 
 public sealed class UtzChartAssets
@@ -192,6 +212,10 @@ public sealed class UtzVisualAssets
 
     [JsonPropertyName("video")]
     public UtzAsset? Video { get; init; }
+
+    /// <summary>0.3 only; how far into the video the audio starts, mirroring <see cref="UtzAudioAssets.AudioOffsetSeconds"/>'s old role.</summary>
+    [JsonPropertyName("video_offset_seconds")]
+    public double VideoOffsetSeconds { get; init; }
 }
 
 public sealed class UtzScoringConfig

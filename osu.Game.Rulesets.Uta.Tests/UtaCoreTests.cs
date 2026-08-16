@@ -117,6 +117,7 @@ public class UtaCoreTests
         using var inputManager = new UtaInputManager(ruleset.RulesetInfo);
         Mod[] difficultyIncreaseMods = ruleset.GetModsFor(ModType.DifficultyIncrease).ToArray();
         Mod[] difficultyReductionMods = ruleset.GetModsFor(ModType.DifficultyReduction).ToArray();
+        Mod[] automationMods = ruleset.GetModsFor(ModType.Automation).ToArray();
 
         Assert.Multiple(() =>
         {
@@ -125,10 +126,11 @@ public class UtaCoreTests
             Assert.That(inputManager.UseParentInput, Is.True);
             Assert.That(ruleset.GetModsFor(ModType.Fun), Is.Empty);
             Assert.That(difficultyIncreaseMods,
-                Has.Exactly(1).TypeOf<UtaModHideLyrics>().And.Exactly(1).TypeOf<UtaModHidePitchGuide>());
+                Has.Exactly(1).TypeOf<UtaModHideLyrics>().And.Exactly(1).TypeOf<UtaModHidePitchGuide>().And.Exactly(1).TypeOf<UtaModNightcore>());
             Assert.That(difficultyReductionMods, Has.Exactly(1).TypeOf<UtaModOriginalVocals>()
-                                                       .And.Exactly(1).TypeOf<UtaModOctaveFold>());
-            Assert.That(difficultyIncreaseMods.Concat(difficultyReductionMods).All(mod => mod.HasImplementation), Is.True);
+                                                       .And.Exactly(1).TypeOf<UtaModOctaveFold>().And.Exactly(1).TypeOf<UtaModDaycore>());
+            Assert.That(automationMods, Has.Exactly(1).TypeOf<UtaModAutoplay>());
+            Assert.That(difficultyIncreaseMods.Concat(difficultyReductionMods).Concat(automationMods).All(mod => mod.HasImplementation), Is.True);
             Assert.That(ruleset.GetBeatmapAttributesForDisplay(new BeatmapInfo(ruleset.RulesetInfo), Array.Empty<Mod>()), Is.Empty);
             Assert.That(filter.Matches(new BeatmapInfo(ruleset.RulesetInfo), criteria), Is.True);
             Assert.That(filter.Matches(new BeatmapInfo(new RulesetInfo { ShortName = "osu" }), criteria), Is.False);
@@ -229,6 +231,25 @@ public class UtaCoreTests
     }
 
     [Test]
+    public void PackageAcceptsUtz03FormatVersion()
+    {
+        // 0.3 only adds optional, defaulted fields to the 0.2 manifest shape, so a 0.2 reader
+        // must accept and route it the same way.
+        using var source = createV2Package(formatVersion: "0.3.0");
+        UtzPackage package = UtzPackage.Open(source);
+
+        Assert.That(package.Manifest.IsFormatV2, Is.True);
+    }
+
+    [Test]
+    public void PackageAcceptsANoteWithNoLyricTokensYet()
+    {
+        // A wordless note is a normal authoring-in-progress state, not a format violation.
+        using var source = createV2Package(omitLyricsOnThirdNote: true);
+        Assert.That(() => UtzPackage.Open(source), Throws.Nothing);
+    }
+
+    [Test]
     public void PackageWritesBreakForSkippableVocalGap()
     {
         using var source = createPackage(includeGap: true);
@@ -289,6 +310,98 @@ public class UtaCoreTests
             Assert.That(frame.Visible, Is.True);
             Assert.That(frame.WordProgress, Has.Count.EqualTo(3));
             Assert.That(reusableFrame.WordProgress, Is.SameAs(reusableProgress));
+        });
+    }
+
+    [Test]
+    public void PitchViewportGlidesTowardTargetWithinRateLimit()
+    {
+        Assert.Multiple(() =>
+        {
+            // Within the snap tolerance, stays put rather than jittering by a fraction of a semitone.
+            Assert.That(UtaPitchViewport.StepCentre(60f, 60.1f, 1f), Is.EqualTo(60f));
+            // No elapsed time, no movement, however far the target is.
+            Assert.That(UtaPitchViewport.StepCentre(50f, 70f, 0f), Is.EqualTo(50f));
+            // Capped at the configured move rate (2.4 semitones/second) regardless of distance.
+            Assert.That(UtaPitchViewport.StepCentre(50f, 70f, 1f), Is.EqualTo(52.4f).Within(0.001f));
+            Assert.That(UtaPitchViewport.StepCentre(70f, 50f, 1f), Is.EqualTo(67.6f).Within(0.001f));
+        });
+    }
+
+    [Test]
+    public void FindPhrasesMergesActivityAcrossGapsBelowThreshold()
+    {
+        var segments = new[]
+        {
+            new UtaTranscriptSegment { Text = "a", Start = 0, End = 1 },
+            new UtaTranscriptSegment { Text = "b", Start = 1.5, End = 2.5 },
+            new UtaTranscriptSegment { Text = "c", Start = 10, End = 11 },
+        };
+
+        IReadOnlyList<UtaGapSkipController.Phrase> phrases = UtaGapSkipController.FindPhrases(segments, Array.Empty<UtaPitchNote>());
+
+        Assert.Multiple(() =>
+        {
+            // The 500ms gap between segments a and b stays within one phrase; the 7500ms
+            // gap before c exceeds the minimum and starts a new one.
+            Assert.That(phrases, Has.Count.EqualTo(2));
+            Assert.That(phrases[0].StartTime, Is.EqualTo(0));
+            Assert.That(phrases[0].EndTime, Is.EqualTo(2500));
+            Assert.That(phrases[1].StartTime, Is.EqualTo(10000));
+            Assert.That(phrases[1].EndTime, Is.EqualTo(11000));
+        });
+    }
+
+    [Test]
+    public void PhraseIndexAtFindsMostRecentlyStartedPhrase()
+    {
+        var phrases = new[]
+        {
+            new UtaGapSkipController.Phrase(0, 1000),
+            new UtaGapSkipController.Phrase(5000, 6000),
+            new UtaGapSkipController.Phrase(10000, 11000),
+        };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(UtaPracticeController.PhraseIndexAt(phrases, 0), Is.EqualTo(0));
+            Assert.That(UtaPracticeController.PhraseIndexAt(phrases, 4999), Is.EqualTo(0));
+            Assert.That(UtaPracticeController.PhraseIndexAt(phrases, 5000), Is.EqualTo(1));
+            Assert.That(UtaPracticeController.PhraseIndexAt(phrases, 9999), Is.EqualTo(1));
+            Assert.That(UtaPracticeController.PhraseIndexAt(phrases, 20000), Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public void MicLatencyScalesWithPlaybackRate()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(UtaInputManager.ComputePitchTime(10000, 100, 1), Is.EqualTo(9900));
+            Assert.That(UtaInputManager.ComputePitchTime(10000, 100, 0.5), Is.EqualTo(9950));
+            Assert.That(UtaInputManager.ComputePitchTime(10000, 100, 1.5), Is.EqualTo(9850));
+            // A negative rate (rewind) still represents a positive real-time latency offset.
+            Assert.That(UtaInputManager.ComputePitchTime(10000, 100, -1), Is.EqualTo(9900));
+        });
+    }
+
+    [Test]
+    public void PracticeSpeedModsApplyTheirFixedRate()
+    {
+        var half = new UtaModPracticeSpeed50();
+        var original = new UtaModPracticeSpeed100();
+        var faster = new UtaModPracticeSpeed130();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(half.Speed, Is.EqualTo(0.5));
+            Assert.That(original.Speed, Is.EqualTo(1.0));
+            Assert.That(faster.Speed, Is.EqualTo(1.3).Within(0.0001));
+            Assert.That(half.ApplyToRate(0), Is.EqualTo(0.5));
+            Assert.That(half.ApplyToRate(0, 2), Is.EqualTo(1.0));
+            Assert.That(half.IncompatibleMods, Does.Contain(typeof(ModRateAdjust)));
+            Assert.That(original.Name, Is.EqualTo("Original Speed"));
+            Assert.That(faster.Name, Is.EqualTo("Speed 1.3x"));
         });
     }
 
@@ -361,7 +474,7 @@ public class UtaCoreTests
         return output;
     }
 
-    private static MemoryStream createV2Package()
+    private static MemoryStream createV2Package(string formatVersion = "0.2.1", bool omitLyricsOnThirdNote = false)
     {
         object textToken(string id, string text, string joinBefore, string? reading = null)
             => new { id, text, join_before = joinBefore, reading };
@@ -421,7 +534,9 @@ public class UtaCoreTests
                                     vocal_mode = "rap",
                                     bonus = "golden",
                                     scoring = new { mode = "rhythm", weight = 1 },
-                                    lyrics = new[] { textToken("w2", "姫", "space") },
+                                    lyrics = omitLyricsOnThirdNote
+                                        ? Array.Empty<object>()
+                                        : new[] { textToken("w2", "姫", "space") },
                                 },
                             },
                         },
@@ -479,7 +594,7 @@ public class UtaCoreTests
         var manifest = new
         {
             format = "uta.song",
-            format_version = "0.2.1",
+            format_version = formatVersion,
             package_id = "org.example.v2test",
             revision = 1,
             song = new { title = "Test", artist = "Uta", duration_seconds = 1.0 },

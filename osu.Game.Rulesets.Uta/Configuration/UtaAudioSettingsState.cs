@@ -27,6 +27,7 @@ internal sealed class UtaAudioSettingsState : IDisposable
     public readonly BindableFloat LyricsLatency = new();
     public readonly BindableBool DebugDiagnostics = new();
     public readonly BindableFloat PitchSamplingInterval = new();
+    public readonly BindableFloat PhraseLoopLeadIn = new();
 
     private bool initialised;
 
@@ -49,6 +50,7 @@ internal sealed class UtaAudioSettingsState : IDisposable
         LyricsLatency.BindTo(config.GetBindable<float>(UtaRulesetSetting.LyricsLatency));
         DebugDiagnostics.BindTo(config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics));
         PitchSamplingInterval.BindTo(config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval));
+        PhraseLoopLeadIn.BindTo(config.GetBindable<float>(UtaRulesetSetting.PhraseLoopLeadIn));
         initialised = true;
     }
 
@@ -68,5 +70,6 @@ internal sealed class UtaAudioSettingsState : IDisposable
         LyricsLatency.UnbindAll();
         DebugDiagnostics.UnbindAll();
         PitchSamplingInterval.UnbindAll();
+        PhraseLoopLeadIn.UnbindAll();
     }
 }

@@ -34,7 +34,9 @@ internal sealed partial class UtaAudioController : Component
     private readonly BindableDouble mainTrackVolumeAdjustment = new(1);
     private readonly BindableFloat keyShiftSemitones = new();
     private readonly BindableFloat accompanimentLatency = new();
+    private readonly BindableBool debugDiagnostics = new();
     private IBindable<bool> gameplayPaused = null!;
+    private long diagnosticIntervalStart;
 
     private Track mainTrack = null!;
     private GameplayClockContainer gameplayClock = null!;
@@ -59,6 +61,7 @@ internal sealed partial class UtaAudioController : Component
         vocalsOutput.BindTo(audioSettings.OriginalVocalsOutputDevice);
         keyShiftSemitones.BindTo(audioSettings.KeyShiftSemitones);
         accompanimentLatency.BindTo(audioSettings.AccompanimentLatency);
+        debugDiagnostics.BindTo(audioSettings.DebugDiagnostics);
 
         backgroundMusic = tryCreateTrack(router, working, working.Metadata.AudioFile, backgroundMusicOutput.Value, "BGM");
 
@@ -140,6 +143,32 @@ internal sealed partial class UtaAudioController : Component
         double rate = gameplayClock.Rate;
         updateSource(backgroundMusic, sourceTime, rate, shouldRun);
         updateSource(vocals, sourceTime, rate, shouldRun);
+
+        if (debugDiagnostics.Value)
+            logDiagnostics(rate, sourceTime, shouldRun);
+    }
+
+    private void logDiagnostics(double rate, double sourceTime, bool running)
+    {
+        if (Stopwatch.GetElapsedTime(diagnosticIntervalStart).TotalMilliseconds < 5000)
+            return;
+
+        diagnosticIntervalStart = Stopwatch.GetTimestamp();
+        if (!running)
+            return;
+
+        string bgmDrift = describeDrift(backgroundMusic, sourceTime);
+        string voxDrift = describeDrift(vocals, sourceTime);
+        Logger.Log($"Uta debug audio: rate={rate:0.000} expected={sourceTime:0.0}ms bgm={bgmDrift} vocals={voxDrift}");
+    }
+
+    private static string describeDrift(UtaRoutedAudioStream? source, double expected)
+    {
+        if (source == null)
+            return "n/a";
+
+        double actual = source.GetPositionMs();
+        return $"{actual:0.0}ms (drift {actual - expected:+0.0;-0.0;0.0}ms)";
     }
 
     private static void updateSource(UtaRoutedAudioStream? source, double current, double rate, bool shouldRun)
@@ -222,6 +251,7 @@ internal sealed partial class UtaAudioController : Component
         vocalsOutput.UnbindAll();
         keyShiftSemitones.UnbindAll();
         accompanimentLatency.UnbindAll();
+        debugDiagnostics.UnbindAll();
         if (gameplayPaused != null)
             gameplayPaused.ValueChanged -= onGameplayPausedChanged;
         base.Dispose(isDisposing);

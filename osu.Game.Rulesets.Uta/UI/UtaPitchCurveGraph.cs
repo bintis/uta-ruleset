@@ -19,6 +19,7 @@ using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Formats;
 using osu.Game.Rulesets.Uta.Pitch;
+using osu.Game.Screens.Play;
 using osuTK;
 using osuTK.Graphics;
 
@@ -58,7 +59,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 
     private UtaNote[] notes = Array.Empty<UtaNote>();
     private ReferenceFrame[] referenceFrames = Array.Empty<ReferenceFrame>();
-    private float centreMidi;
+    private readonly BindableFloat centreMidi = new();
     private double timelineEndTime;
     private double lastSampleTime = double.NegativeInfinity;
     private double lastPlaybackTime = double.NegativeInfinity;
@@ -76,6 +77,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     private int diagnosticSampleClears;
     private double diagnosticMaximumPlaybackStep;
     private string diagnosticLastClearReason = "none";
+    private GameplayClockContainer? gameplayClock;
 
     public UtaPitchCurveGraph()
     {
@@ -90,13 +92,15 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 
     [BackgroundDependencyLoader]
     private void load(UtaBeatmap beatmap, DrawableRuleset drawableRuleset, UtaRulesetConfigManager config,
-                      IBindable<WorkingBeatmap> workingBeatmap)
+                      IBindable<WorkingBeatmap> workingBeatmap, GameplayClockContainer gameplayClock, UtaPitchViewport pitchViewport)
     {
+        this.gameplayClock = gameplayClock;
+        gameplayClock.OnSeek += onSeek;
         notes = beatmap.HitObjects.OfType<UtaNote>()
                        .Where(note => note.Midi != null)
                        .OrderBy(note => note.StartTime)
                        .ToArray();
-        centreMidi = UtaPitchGuide.CalculateFixedCentre(notes);
+        centreMidi.BindTo(pitchViewport.CentreMidi);
         referenceFrames = loadReferenceFrames(workingBeatmap.Value);
         timelineEndTime = workingBeatmap.Value.Track.Length;
         if (!double.IsFinite(timelineEndTime))
@@ -367,7 +371,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     private bool setSegment(CurveSegment segment, double fromTime, double toTime, double currentTime,
                             float fromMidi, float toMidi, Color4 colour, float alpha)
     {
-        float shiftedCentre = centreMidi + keyShiftSemitones.Value;
+        float shiftedCentre = centreMidi.Value + keyShiftSemitones.Value;
         Vector2 start = new(TimeToX(fromTime, currentTime, DrawWidth), MidiToY(fromMidi, shiftedCentre, DrawHeight));
         Vector2 end = new(TimeToX(toTime, currentTime, DrawWidth), MidiToY(toMidi, shiftedCentre, DrawHeight));
         if ((start.Y < 0 && end.Y < 0) || (start.Y > DrawHeight && end.Y > DrawHeight))
@@ -543,6 +547,11 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         return frames.ToArray();
     }
 
+    // A seek (manual, gap-skip, or an A-B/phrase loop repeat) is a deterministic break in the
+    // timeline; clear immediately instead of waiting for the >550ms jump heuristic below to
+    // notice, which is unreliable for loops shorter than that.
+    private void onSeek() => clearSamples("seek");
+
     private void clearSamples(string reason)
     {
         diagnosticSampleClears++;
@@ -572,6 +581,9 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         microphoneLatency.UnbindAll();
         detectedPitchTime.UnbindAll();
         debugDiagnostics.UnbindAll();
+        centreMidi.UnbindAll();
+        if (gameplayClock != null)
+            gameplayClock.OnSeek -= onSeek;
         base.Dispose(isDisposing);
     }
 

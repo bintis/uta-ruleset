@@ -31,6 +31,7 @@ public sealed class UtaRulesetConfigManager : RulesetConfigManager<UtaRulesetSet
         SetDefault(UtaRulesetSetting.LyricsLatency, 0f, -500f, 1000f, 1f);
         SetDefault(UtaRulesetSetting.DebugDiagnostics, false);
         SetDefault(UtaRulesetSetting.PitchSamplingInterval, 10f, 10f, 40f, 1f);
+        SetDefault(UtaRulesetSetting.PhraseLoopLeadIn, 750f, 500f, 1000f, 50f);
         SetDefault(UtaRulesetSetting.LyricsPosition, UtaLyricsPosition.Bottom);
         SetDefault(UtaRulesetSetting.LyricsSize, UtaLyricsSize.Normal);
         SetDefault(UtaRulesetSetting.LyricsTypeface, UtaLyricsTypeface.Torus);
@@ -60,6 +61,7 @@ public enum UtaRulesetSetting
     LyricsLatency,
     DebugDiagnostics,
     PitchSamplingInterval,
+    PhraseLoopLeadIn,
 }
 
 public enum UtaLyricsPosition

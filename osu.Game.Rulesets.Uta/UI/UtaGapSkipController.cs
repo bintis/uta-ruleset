@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
@@ -25,9 +24,6 @@ namespace osu.Game.Rulesets.Uta.UI;
 internal sealed partial class UtaGapSkipController : CompositeDrawable
 {
     private const double minimum_gap = 3000;
-
-    private static readonly PropertyInfo? frame_stable_playback = typeof(DrawableRuleset).GetProperty(
-        "FrameStablePlayback", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private readonly Activity[] activities;
     private IReadOnlyList<SkippableGap> gaps = Array.Empty<SkippableGap>();
@@ -51,9 +47,6 @@ internal sealed partial class UtaGapSkipController : CompositeDrawable
         gameplayClock = clock;
         this.drawableRuleset = drawableRuleset;
         gaps = findSkippableGaps(activities, workingBeatmap.Value.Track.Length);
-
-        if (frame_stable_playback == null)
-            Logger.Log("Uta could not access lazer's frame-stable playback setting.", level: LogLevel.Error);
     }
 
     protected override void Update()
@@ -83,61 +76,53 @@ internal sealed partial class UtaGapSkipController : CompositeDrawable
 
     private void performImmediateSeek(double target)
     {
-        double current = gameplayClock.CurrentTime;
-        if (gameplayClock.IsPaused.Value || !gameplayClock.IsRunning || target - current < 50)
+        if (target - gameplayClock.CurrentTime < 50)
             return;
 
-        bool restoreFrameStability = frame_stable_playback?.GetValue(drawableRuleset) is true;
-        try
-        {
-            // A real gap skip exceeds lazer's invalid-BASS-jump threshold. Turn
-            // frame stability off only until its container consumes this seek,
-            // then restore it on the following child update. Leaving it off for
-            // the whole play session exposes ordinary clock jitter to the UI.
-            if (restoreFrameStability)
-                frame_stable_playback!.SetValue(drawableRuleset, false);
-
-            gameplayClock.Seek(target);
-            if (restoreFrameStability)
-                Schedule(() => frame_stable_playback!.SetValue(drawableRuleset, true));
-
-            Logger.Log($"Uta gap skip: {current:N0} ms -> {target:N0} ms.");
-        }
-        catch (Exception ex)
-        {
-            if (restoreFrameStability)
-                frame_stable_playback!.SetValue(drawableRuleset, true);
-
-            Logger.Log($"Uta gap skip failed: {ex.GetBaseException().Message}", level: LogLevel.Error);
-        }
+        UtaGameplaySeeker.Seek(gameplayClock, drawableRuleset, action => Schedule(action), target, "gap skip", true);
     }
 
     internal static IReadOnlyList<SkippableGap> FindSkippableGaps(
         IReadOnlyList<UtaTranscriptSegment> segments,
         IReadOnlyList<UtaPitchNote> notes)
-        => findSkippableGaps(
+        => findSkippableGaps(activitiesFor(segments, notes), null);
+
+    /// <summary>
+    /// Derives practice-navigation phrase boundaries from the same transcript-segment and
+    /// target-note activity <see cref="FindSkippableGaps"/> merges - each merged cluster
+    /// (rather than the gap between clusters) becomes one phrase.
+    /// </summary>
+    internal static IReadOnlyList<Phrase> FindPhrases(
+        IReadOnlyList<UtaTranscriptSegment> segments,
+        IReadOnlyList<UtaPitchNote> notes)
+        => phrasesFrom(activitiesFor(segments, notes));
+
+    /// <summary>Gameplay-hit-object overload: <see cref="UtaNote"/> times are already in milliseconds.</summary>
+    internal static IReadOnlyList<Phrase> FindPhrases(
+        IReadOnlyList<UtaTranscriptSegment> segments,
+        IEnumerable<UtaNote> notes)
+        => phrasesFrom(
             segments.Select(segment => new Activity(segment.Start * 1000, segment.End * 1000))
-                    .Concat(notes.Select(note => new Activity(note.Start * 1000, note.End * 1000))), null);
+                    .Concat(notes.Select(note => new Activity(note.StartTime, note.EndTime))));
+
+    // Phrases merge across gaps up to minimum_gap wide (a short breath between lines still
+    // belongs to the same phrase); only a gap that would also qualify as skippable starts a
+    // new one. This intentionally differs from the gap=0 merge findSkippableGaps needs, which
+    // must not bridge any gap so it can report every skippable one individually.
+    private static IReadOnlyList<Phrase> phrasesFrom(IEnumerable<Activity> activities)
+        => mergeActivities(activities, minimum_gap)
+            .Select(activity => new Phrase(activity.StartTime, activity.EndTime))
+            .ToArray();
+
+    private static IEnumerable<Activity> activitiesFor(IReadOnlyList<UtaTranscriptSegment> segments, IReadOnlyList<UtaPitchNote> notes)
+        => segments.Select(segment => new Activity(segment.Start * 1000, segment.End * 1000))
+                   .Concat(notes.Select(note => new Activity(note.Start * 1000, note.End * 1000)));
 
     private static IReadOnlyList<SkippableGap> findSkippableGaps(IEnumerable<Activity> source, double? trackEnd)
     {
-        Activity[] activities = source.Where(activity => activity.EndTime > activity.StartTime)
-                                      .OrderBy(activity => activity.StartTime)
-                                      .ThenBy(activity => activity.EndTime)
-                                      .ToArray();
-
-        if (activities.Length == 0)
+        List<Activity> merged = mergeActivities(source, 0);
+        if (merged.Count == 0)
             return Array.Empty<SkippableGap>();
-
-        var merged = new List<Activity> { activities[0] };
-        foreach (Activity activity in activities.Skip(1))
-        {
-            Activity previous = merged[^1];
-            if (activity.StartTime <= previous.EndTime)
-                merged[^1] = previous with { EndTime = Math.Max(previous.EndTime, activity.EndTime) };
-            else
-                merged.Add(activity);
-        }
 
         var gaps = merged.Zip(merged.Skip(1))
                          .Where(pair => pair.Second.StartTime - pair.First.EndTime >= minimum_gap)
@@ -150,7 +135,33 @@ internal sealed partial class UtaGapSkipController : CompositeDrawable
         return gaps;
     }
 
+    private static List<Activity> mergeActivities(IEnumerable<Activity> source, double gapThreshold)
+    {
+        Activity[] activities = source.Where(activity => activity.EndTime > activity.StartTime)
+                                      .OrderBy(activity => activity.StartTime)
+                                      .ThenBy(activity => activity.EndTime)
+                                      .ToArray();
+
+        if (activities.Length == 0)
+            return new List<Activity>();
+
+        var merged = new List<Activity> { activities[0] };
+        foreach (Activity activity in activities.Skip(1))
+        {
+            Activity previous = merged[^1];
+            if (activity.StartTime - previous.EndTime <= gapThreshold)
+                merged[^1] = previous with { EndTime = Math.Max(previous.EndTime, activity.EndTime) };
+            else
+                merged.Add(activity);
+        }
+
+        return merged;
+    }
+
     private readonly record struct Activity(double StartTime, double EndTime);
 
     internal readonly record struct SkippableGap(double StartTime, double EndTime);
+
+    /// <summary>A practice-navigable phrase span, in gameplay-clock milliseconds.</summary>
+    internal readonly record struct Phrase(double StartTime, double EndTime);
 }

@@ -23,6 +23,8 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
 {
     private readonly UtaAudioRouter audioRouter = new();
     private readonly UtaAudioSettingsState audioSettings = new();
+    private readonly UtaPracticeController practiceController;
+    private readonly UtaPitchViewport pitchViewport;
     private readonly IReadOnlyList<Mod> selectedMods;
 
     public new UtaInputManager KeyBindingInputManager => (UtaInputManager)base.KeyBindingInputManager;
@@ -31,10 +33,14 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         : base(ruleset, beatmap, mods)
     {
         selectedMods = mods ?? [];
+        practiceController = new UtaPracticeController((UtaBeatmap)beatmap);
+        pitchViewport = new UtaPitchViewport((UtaBeatmap)beatmap);
         Overlays.Add(new UtaQuickSettingsContainer());
         Overlays.Add(new UtaAudioController());
         Overlays.Add(new UtaPerformanceDiagnostics());
         Overlays.Add(new UtaGapSkipController((UtaBeatmap)beatmap));
+        Overlays.Add(practiceController);
+        Overlays.Add(pitchViewport);
         Overlays.Add(new UtaVolumeOverlayExtension());
     }
 
@@ -46,6 +52,8 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         dependencies.CacheAs((UtaBeatmap)Beatmap);
         dependencies.CacheAs(audioRouter);
         dependencies.CacheAs(audioSettings);
+        dependencies.CacheAs(practiceController);
+        dependencies.CacheAs(pitchViewport);
         return dependencies;
     }
 
