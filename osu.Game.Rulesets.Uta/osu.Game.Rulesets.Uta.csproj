@@ -35,6 +35,8 @@
     <Compile Include="Formats\*.cs" />
     <Compile Include="Mods\*.cs" />
     <Compile Include="Pitch\*.cs" />
+    <Compile Include="Scoring\**\*.cs" />
+    <Compile Include="Performance\**\*.cs" />
     <Compile Include="Skinning\*.cs" />
     <Compile Include="UI\*.cs" />
   </ItemGroup>

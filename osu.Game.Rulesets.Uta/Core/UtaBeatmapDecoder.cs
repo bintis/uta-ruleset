@@ -67,6 +67,7 @@ public sealed class UtaBeatmapDecoder : LegacyBeatmapDecoder
         if (metadata != null)
             beatmap.HitObjects.Add(new UtaMetadataHitObject { Metadata = decode<UtaBeatmapMetadata>(metadata) });
 
+        int scoringIndex = 0;
         foreach (UtaPitchNote source in notes.Select(decode<UtaPitchNote>))
         {
             beatmap.HitObjects.Add(new UtaNote
@@ -74,6 +75,8 @@ public sealed class UtaBeatmapDecoder : LegacyBeatmapDecoder
                 StartTime = source.Start * 1000,
                 Duration = (source.End - source.Start) * 1000,
                 Midi = source.Midi,
+                TargetConfidence = source.Confidence,
+                ScoringIndex = scoringIndex++,
                 NoteKind = source.Kind switch
                 {
                     UtaPitchNoteKind.GoldenRap => "golden_rap",

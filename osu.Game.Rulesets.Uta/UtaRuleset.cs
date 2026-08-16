@@ -8,6 +8,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Input.Bindings;
+using osu.Framework.Localisation;
 using osu.Game;
 using osu.Game.Beatmaps;
 using osu.Game.Configuration;
@@ -20,6 +21,7 @@ using osu.Game.Rulesets.Configuration;
 using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Filter;
 using osu.Game.Rulesets.Mods;
+using osu.Game.Rulesets.Scoring;
 using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
@@ -69,6 +71,21 @@ public sealed partial class UtaRuleset : Ruleset
 
     public override IEnumerable<KeyBinding> GetDefaultKeyBindings(int variant = 0)
         => new[] { new KeyBinding(InputKey.P, UtaAction.OpenSettings) };
+
+    public override IEnumerable<HitResult> GetValidHitResults()
+        => new[]
+        {
+            HitResult.Miss,
+            HitResult.Meh,
+            HitResult.Good,
+            HitResult.Great,
+            HitResult.Perfect,
+            HitResult.IgnoreHit,
+            HitResult.IgnoreMiss,
+        };
+
+    public override LocalisableString GetDisplayNameForHitResult(HitResult result)
+        => result == HitResult.Meh ? "Bad" : base.GetDisplayNameForHitResult(result);
 
     public override IEnumerable<Mod> GetModsFor(ModType type)
         => type switch

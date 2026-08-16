@@ -42,6 +42,10 @@ public sealed class UtaNote : UtaHitObject
     public int? Midi { get; set; }
 
     public string NoteKind { get; set; } = "normal";
+
+    public double TargetConfidence { get; set; } = 1;
+
+    public int ScoringIndex { get; set; } = -1;
 }
 
 internal sealed class UtaMetadataHitObject : UtaHitObject

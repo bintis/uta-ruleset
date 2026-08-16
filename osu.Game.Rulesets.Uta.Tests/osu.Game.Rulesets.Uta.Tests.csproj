@@ -16,5 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\osu.Game.Rulesets.Uta\osu.Game.Rulesets.Uta.csproj" />
     <Compile Include="UtaCoreTests.cs" />
+    <Compile Include="UtaScoringV2Tests.cs" />
+    <Compile Include="UtaPerformanceArchiveTests.cs" />
   </ItemGroup>
 </Project>
