@@ -1,17 +1,24 @@
 # osu!lazer scoring integration plan
 
+> Runtime status (main base `72cfb9f0fbd4142f44fa7253a093978173c3a6c0`): the
+> realtime queue/timeline bridge, native judgement and score processor, Uta HUD,
+> performance-folder save/query, result panel and explicit `评分模式` scoring/health MOD are
+> activated by the runtime integration patch. PCM/WAV recording is available
+> through the explicit `Recording` MOD; full song-clock historical playback remains follow-up work. See
+> `SCORING_RUNTIME_INTEGRATION.zh-CN.md`.
+
 ## Baseline
 
 This design targets:
 
-- uta-ruleset `main` commit `d0bac5ce3c0441877ef9cac7ec4e01b11e7d545f`;
+- uta-ruleset `main` commit `72cfb9f0fbd4142f44fa7253a093978173c3a6c0`;
 - osu!lazer `2026.804.2-lazer` runtime/API behaviour;
 - uta.pitch scoring engine v2;
 - uta.song 0.1 and 0.2 note kinds.
 
-The package contains integration primitives but does not silently activate them. The
-existing drawable still applies placeholder results until the realtime bridge below is
-implemented and tested.
+The foundation primitives were previously dormant. This runtime integration activates
+them as one coordinated change so drawable results, native score units, health and
+persistence cannot enter a partially-wired state.
 
 ## Architectural rule
 
@@ -246,9 +253,10 @@ match the advertised overall rating. Raw pitch accuracy remains available throug
 ### Simulation and maximum score
 
 During `ApplyBeatmap()`, lazer simulates autoplay to derive maximum score/combo.
-`UtaScoreProcessor.CreateResult()` creates a perfect `UtaJudgementResult` for each
-`UtaNote`, using the same deterministic maximum-unit calculation as the live scorer.
-The simulated maximum remains `1,000,000`.
+When `评分模式` is enabled, `UtaScoreProcessor.CreateResult()` creates a perfect
+`UtaJudgementResult` for each scoring-enabled `UtaNote`, using the same deterministic
+maximum-unit calculation as the live scorer. Without the mode, simulated and live
+score values remain zero. The enabled simulated maximum remains `1,000,000`.
 
 ### Revert
 
@@ -260,12 +268,13 @@ historical note from current settings during revert.
 
 Only after realtime equivalence tests pass:
 
-1. `UtaNote.CreateJudgement()` returns `UtaJudgement` for pitch-scored notes.
+1. `UtaNote.CreateJudgement()` returns `UtaJudgement` for scoring-enabled pitch notes
+   and an ignored judgement otherwise.
 2. `DrawableUtaHitObject.CreateResult()` returns `UtaJudgementResult`.
 3. Drawable commits the completed session note result.
 4. `UtaRuleset.CreateScoreProcessor()` returns `UtaScoreProcessor`.
 5. `UtaRuleset.CreateHealthProcessor()` returns `UtaPassiveHealthProcessor` by default.
-6. Add `UtaModFail` to the available MOD list.
+6. Add `UtaModScoringMode` to the available MOD list.
 
 Activating only some of these steps would produce placeholder Perfect results or zero
 custom units, so they should land together in the native-integration PR.
@@ -295,11 +304,11 @@ Detailed Uta data therefore uses `PERFORMANCE_ARCHIVE.md`.
 
 ## 7. Performance archive and score link
 
-On gameplay completion:
+On gameplay completion with `评分模式` and/or `Recording` selected:
 
-1. populate native `ScoreInfo` through `UtaScoreProcessor`;
+1. populate native `ScoreInfo` through `UtaScoreProcessor` when scoring is enabled;
 2. create a `UtaPerformanceManifest` and Pitch replay;
-3. optionally include the microphone recording;
+3. include the microphone recording only when `Recording` is selected;
 4. write the archive atomically to the configured folder;
 5. store `ScoreInfo.ID` as `lazer_score_id`;
 6. after native import, optionally patch `lazer_score_hash` in the manifest.
@@ -407,10 +416,9 @@ report-only and flags low dynamic range, clipping and possible AGC/compression.
 A future scored expression profile requires calibration, noise-floor handling,
 phrase-relative loudness and anti-gaming validation.
 
-## 13. Fail health
+## 13. 评分模式 health
 
-Default gameplay should use `UtaPassiveHealthProcessor`, which never drains or fails.
-`UtaModFail` supplies `UtaFailHealthProcessor`.
+Default gameplay uses ignored judgements and performs no scoring. `UtaModScoringMode` enables native vocal judgements and supplies `UtaScoringModeHealthProcessor`.
 
 The prototype health delta is note-driven:
 
@@ -470,4 +478,4 @@ recording corpus.
 6. **Recording writer and historical audio mix.**
 7. **Vibrato corpus calibration.**
 8. **RMS expression report.**
-9. **Fail MOD balancing.**
+9. **评分模式 health balancing.**

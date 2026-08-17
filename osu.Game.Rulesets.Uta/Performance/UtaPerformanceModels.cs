@@ -26,6 +26,7 @@ public sealed class UtaPerformanceManifest
     public IReadOnlyList<UtaPerformancePhraseSummary> Phrases { get; set; } = Array.Empty<UtaPerformancePhraseSummary>();
     public UtaPerformanceFileSet Files { get; set; } = new();
     public UtaPerformanceRecordingInfo? Recording { get; set; }
+    public UtaExpressionAnalysis? Expression { get; set; }
     public Dictionary<string, string> Checksums { get; set; } = new(StringComparer.Ordinal);
 
     public static UtaPerformanceManifest FromScore(
@@ -59,6 +60,7 @@ public sealed class UtaPerformanceScoringSummary
     public string Engine { get; set; } = "uta.pitch";
     public int EngineVersion { get; set; } = UtaScoringOptions.ENGINE_VERSION;
     public long TotalScore { get; set; }
+    public long TotalScoreWithoutMods { get; set; }
     public ushort CompositeRatingPermille { get; set; }
     public ushort PitchAccuracyPermille { get; set; }
     public ushort CoveragePermille { get; set; }
@@ -76,6 +78,7 @@ public sealed class UtaPerformanceScoringSummary
         => new()
         {
             TotalScore = score.TotalScore,
+            TotalScoreWithoutMods = score.TotalScore,
             CompositeRatingPermille = score.Profiles.FinalPermille,
             PitchAccuracyPermille = score.PitchAccuracyPermille,
             CoveragePermille = score.CoveragePermille,
@@ -129,6 +132,7 @@ public sealed class UtaPerformanceJudgementSummary
 
 public sealed class UtaPerformanceSettingsSnapshot
 {
+    public IReadOnlyList<string> ActiveMods { get; set; } = Array.Empty<string>();
     public int TransposeSemitones { get; set; }
     public bool OctaveFold { get; set; }
     public double PlaybackRate { get; set; } = 1;
@@ -145,8 +149,10 @@ public sealed class UtaPerformanceSettingsSnapshot
 public enum UtaPerformanceInvalidationReason
 {
     PracticeSession,
+    Automation,
     TimelineDiscontinuity,
     ScoringQueueOverflow,
+    LateScoringFrame,
     SettingsChangedDuringPlay,
     CaptureUnavailable,
     IncompletePerformance,
@@ -228,6 +234,19 @@ public sealed class UtaPerformanceRecordingInfo
     public double CalibratedLatencyMilliseconds { get; set; }
     public double InputGain { get; set; } = 1;
     public string SignalStage { get; set; } = "post_input_gain_pre_monitor";
+    public string InputDevice { get; set; } = string.Empty;
+    public string MonitorOutputDevice { get; set; } = string.Empty;
+    public IReadOnlyList<UtaPerformanceRecordingSegment> Segments { get; set; } = Array.Empty<UtaPerformanceRecordingSegment>();
+}
+
+public sealed class UtaPerformanceRecordingSegment
+{
+    public long FileStartFrame { get; set; }
+    public long FrameCount { get; set; }
+    public long SongStartTimeMicroseconds { get; set; }
+    public int PlaybackRateMillionths { get; set; } = 1_000_000;
+    public int TimelineEpoch { get; set; }
+    public string Reason { get; set; } = string.Empty;
 }
 
 public sealed class UtaPerformanceFileSet

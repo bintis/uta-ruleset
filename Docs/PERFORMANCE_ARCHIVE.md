@@ -18,7 +18,9 @@ features become unavailable.
 
 ## Root layout
 
-The user chooses a performance root directory. Recording remains opt-in.
+The performance root is resolved in this order: `UTA_PERFORMANCE_ROOT`, the
+remembered `exports/uta-performance-root.txt` pointer, then the default
+`exports/uta-performances` directory. Recording remains opt-in.
 
 ```text
 <UtaPerformanceRoot>/
@@ -58,7 +60,7 @@ The implemented `UtaPerformanceManifest` records:
 - immutable per-note summaries and a reserved per-phrase summary list;
 - High/Low/Unstable/Inaccurate/LowCoverage counts;
 - Transpose, OCT, rate, latency, sampling, scoring-bin, epoch and gain snapshot;
-- comparable/ineligible state and stable invalidation reason identifiers;
+- comparable/ineligible state and stable invalidation reason identifiers, including queue overflow and late-frame rejection;
 - deterministic positive/advice message identifiers;
 - relative asset file names;
 - SHA-256 checksums.
@@ -155,7 +157,7 @@ The original result remains immutable.
 
 Recommended defaults:
 
-- Pitch replay: user-configurable auto-save;
+- Pitch replay: automatically saved by the 0.5 runtime integration; a later settings UI may expose retention/auto-save policy;
 - microphone recording: off;
 - failed/partial files: automatic cleanup;
 - archive deletion: allow separate deletion of analysis, Pitch replay and recording;

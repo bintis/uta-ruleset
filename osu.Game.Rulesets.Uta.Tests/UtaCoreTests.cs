@@ -117,20 +117,25 @@ public class UtaCoreTests
         using var inputManager = new UtaInputManager(ruleset.RulesetInfo);
         Mod[] difficultyIncreaseMods = ruleset.GetModsFor(ModType.DifficultyIncrease).ToArray();
         Mod[] difficultyReductionMods = ruleset.GetModsFor(ModType.DifficultyReduction).ToArray();
-        Mod[] automationMods = ruleset.GetModsFor(ModType.Automation).ToArray();
+        Mod[] funMods = ruleset.GetModsFor(ModType.Fun).ToArray();
 
         Assert.Multiple(() =>
         {
             Assert.That(ruleset.ShortName, Is.EqualTo("uta"));
             Assert.That(ruleset.Description, Is.EqualTo("uta!"));
             Assert.That(inputManager.UseParentInput, Is.True);
-            Assert.That(ruleset.GetModsFor(ModType.Fun), Is.Empty);
             Assert.That(difficultyIncreaseMods,
-                Has.Exactly(1).TypeOf<UtaModHideLyrics>().And.Exactly(1).TypeOf<UtaModHidePitchGuide>().And.Exactly(1).TypeOf<UtaModNightcore>());
-            Assert.That(difficultyReductionMods, Has.Exactly(1).TypeOf<UtaModOriginalVocals>()
+                Has.Exactly(1).TypeOf<UtaModHideLyrics>()
+                   .And.Exactly(1).TypeOf<UtaModHidePitchGuide>()
+                   .And.Exactly(1).TypeOf<UtaModNightcore>());
+            Assert.That(difficultyReductionMods, Has.Exactly(1).TypeOf<UtaModRelax>()
+                                                       .And.Exactly(1).TypeOf<UtaModOriginalVocals>()
                                                        .And.Exactly(1).TypeOf<UtaModOctaveFold>().And.Exactly(1).TypeOf<UtaModDaycore>());
-            Assert.That(automationMods, Has.Exactly(1).TypeOf<UtaModAutoplay>());
-            Assert.That(difficultyIncreaseMods.Concat(difficultyReductionMods).Concat(automationMods).All(mod => mod.HasImplementation), Is.True);
+            Assert.That(funMods, Has.Exactly(1).TypeOf<UtaModAutoplay>().And.Exactly(1).TypeOf<UtaModRecording>());
+            Assert.That(difficultyIncreaseMods
+                .Concat(difficultyReductionMods)
+                .Concat(funMods)
+                .All(mod => mod.HasImplementation), Is.True);
             Assert.That(ruleset.GetBeatmapAttributesForDisplay(new BeatmapInfo(ruleset.RulesetInfo), Array.Empty<Mod>()), Is.Empty);
             Assert.That(filter.Matches(new BeatmapInfo(ruleset.RulesetInfo), criteria), Is.True);
             Assert.That(filter.Matches(new BeatmapInfo(new RulesetInfo { ShortName = "osu" }), criteria), Is.False);

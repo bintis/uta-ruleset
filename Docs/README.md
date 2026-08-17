@@ -38,6 +38,9 @@ See [CHANGELOG.md](CHANGELOG.md) for released version history.
   together while preserving synchronisation.
 - Optional Lyrics, Pitch Guide, Original Vocals and Octave Folding MODs using
   osu!lazer's native MOD interface.
+- Explicit `评分模式` (`SC`) and `Recording` (`REC`) MODs: ordinary karaoke
+  play remains unscored, while recording is enabled per play rather than by a
+  persistent settings checkbox.
 - Octave Folding can match equivalent notes across octaves without altering the
   detected microphone signal.
 - Native skip prompts for long introductions, gaps between phrases and trailing
@@ -120,11 +123,11 @@ as a standard archive, so lazer owns storage and media decoding.
 - [x] Apply Transpose and OCT consistently to live scoring and recorded score data.
 - [x] Keep scoring stable across pause, seek, playback-rate and A-B loop transitions.
 - [x] Write completed performances into lazer's native score and results flow.
-- [ ] Show an overall grade plus per-phrase accuracy, pitch bias, stability and missed sections.
-- [ ] Add automatic vocal-range detection and recommend a Transpose value before play.
-- [x] Add a Fail MOD after health drain can be driven by the completed pitch-scoring pipeline.
+- [x] Show an overall grade plus per-phrase accuracy, pitch bias, stability and missed sections.
+- [x] Add automatic vocal-range detection and recommend a Transpose value before play.
+- [x] Add note-driven health after it can be driven by the completed pitch-scoring pipeline.
 - [x] Add deterministic scoring tests using recorded Pitch frames and fixed gameplay timestamps.
-- [ ] Verify scoring combinations for Transpose, OCT, HT, DT, latency and phrase looping.
+- [x] Verify scoring combinations for Transpose, OCT, HT, DT, latency and phrase looping.
 
 ### 0.5.1 - Scoring follow-up
 
@@ -134,20 +137,53 @@ as a standard archive, so lazer owns storage and media decoding.
 
 ### 0.6.0 - Recording and comparison
 
-- [ ] Record the microphone signal after input gain and before monitor routing.
-- [ ] Timestamp recorded audio against the gameplay clock and calibrated microphone latency.
-- [ ] Use a bounded background writer so disk activity cannot block microphone capture or gameplay.
-- [ ] Start, pause, seek and stop recording together with gameplay and practice loops.
-- [ ] Play back a recorded take alone or mixed with BGM and packaged original vocals.
-- [ ] Add per-phrase take recording, retry, selection and deletion.
-- [ ] Add an A-B comparison between the player's take and the packaged original vocal track.
-- [ ] Show recorded takes and comparison controls on the results screen.
-- [ ] Export complete performances and selected phrases as standard WAV files.
-- [ ] Store recording metadata needed to reproduce rate, transpose, latency and route settings.
-- [ ] Provide explicit recording state, storage location and cleanup controls.
+- [x] Record the microphone signal after input gain and before monitor routing.
+- [x] Timestamp recorded audio against the gameplay clock and calibrated microphone latency.
+- [x] Use a bounded background writer so disk activity cannot block microphone capture or gameplay.
+- [x] Start, pause, seek and stop recording together with gameplay and practice loops.
+- [x] Play back a recorded take alone or mixed with BGM and packaged original vocals.
+- [x] Add per-phrase take recording, retry, selection and deletion.
+- [x] Add an A-B comparison between the player's take and the packaged original vocal track.
+- [x] Show recorded takes and comparison controls on the results screen.
+- [x] Export complete performances and selected phrases as standard WAV files.
+- [x] Store recording metadata needed to reproduce rate, transpose, latency and route settings.
+- [x] Provide explicit recording state, storage location and cleanup controls.
 - [ ] Verify long recordings, repeated retries and device changes do not leak streams or lose samples.
 
-### 0.7.0 - Mobile remote control
+### 0.7.0 - Mode controls and long-session stability
+
+- [x] Move microphone recording to an explicit `Recording` (`REC`) MOD.
+- [x] Rename `Challenge` to `评分模式` (`SC`) and make it the only scoring switch.
+- [x] Keep ordinary karaoke play judgement-free and score-free unless `评分模式` is selected.
+- [x] Bound realtime note scoring to the note-local pitch-frame window.
+- [x] Cache the final whole-performance score used by archive and phrase analysis.
+- [x] Add long-song regression coverage for progressively increasing scoring work.
+
+### 0.6.2 - Scoring pipeline fixes and known issues
+
+- [x] Make scoring active by default; replace the former `评分模式` (`SC`) MOD
+      with `Relax` (`RX`), which opts back out into unscored practice.
+- [x] Fix `UtaGameplayScoringController` advancing its watermark from the raw
+      "now" timestamp instead of the same capture-latency-adjusted time used by
+      microphone frames, which rejected nearly every frame as "late".
+- [x] Fix `DrawableUtaHitObject.UpdateHitStateTransforms` expiring notes on the
+      framework's initial `ArmedState.Idle` setup call (not just on a real
+      Hit/Miss), which killed objects before their async judgement could ever
+      arrive and left the results screen stuck (`ScoreProcessor.HasCompleted`
+      never true).
+- [x] Fix `UtaRecordingRuntime` losing an in-progress take to `staging/` with
+      no archive when gameplay exits before the natural-end watcher runs.
+- [x] Add a Score HUD (`S` to toggle) with a configurable screen-corner
+      position, and show the total score as a 0-100 scale on the HUD and
+      results screen.
+- [x] Add explicit `No Fail` (`NF`) MOD.
+- [x] Move `Auto` (`AT`) to the `Fun` MOD category.
+- [ ] **Known issue**: pressing `S` to hide the Score HUD sometimes leaves it
+      permanently hidden - a second `S` press does not bring it back. Root
+      cause not yet found; the gameplay-clock-seek debounce bug already ruled
+      out. Needs a fresh log-driven pass in 0.6.3.
+
+### 0.8.0 - Mobile remote control
 
 - [ ] Host an optional local-network control service without requiring a cloud account.
 - [ ] Pair a phone through a QR code containing a short-lived, single-use session credential.
@@ -164,7 +200,7 @@ as a standard archive, so lazer owns storage and media decoding.
 - [ ] Document the local-network security and privacy model.
 - [ ] Test pairing, revocation, reconnects and malformed commands without replacing direct runtime tests with preflight checks.
 
-### 0.8.0 - Skins, video and interface polish
+### 0.9.0 - Skins, video and interface polish
 
 - [ ] Support lazer-native ruleset skin lookups instead of introducing a separate skin package system.
 - [ ] Expose skinable target notes, live Pitch curves, playhead, grid, lyrics and scoring feedback.
@@ -181,7 +217,7 @@ as a standard archive, so lazer owns storage and media decoding.
 - [ ] Add an import diagnostics view for invalid `.utz` packages without exposing internal stack traces.
 - [ ] Implement Auto play using reference Pitch data for demonstrations and scoring regression tests.
 
-### 0.9.0 - Optimisation and release hardening
+### 0.10.0 - Optimisation and release hardening
 
 - [ ] Consolidate playback, seek, rate and latency ownership into one documented clock architecture.
 - [ ] Remove duplicate settings and audio state paths left by the 0.3-0.8 feature work.

@@ -10,6 +10,8 @@ using osu.Game.Rulesets.Judgements;
 using osu.Game.Rulesets.Objects;
 using osu.Game.Rulesets.Objects.Types;
 using osu.Game.Rulesets.Uta.Formats;
+using osu.Game.Rulesets.Uta.Mods;
+using osu.Game.Rulesets.Uta.Scoring;
 
 namespace osu.Game.Rulesets.Uta.Core;
 
@@ -39,6 +41,16 @@ public class UtaHitObject : HitObject, IHasDuration
 
 public sealed class UtaNote : UtaHitObject
 {
+    /// <summary>
+    /// Runtime-only switch. True by default; <see cref="UtaModRelax"/> turns it off.
+    /// It is deliberately not part of the beatmap format: scoring is an
+    /// explicit gameplay-mode choice rather than chart metadata.
+    /// </summary>
+    public bool ScoringEnabled { get; set; }
+
+    public override Judgement CreateJudgement()
+        => ScoringEnabled && UtaScoringBeatmapAdapter.IsScorable(this) ? new UtaJudgement() : new UtaIgnoredJudgement();
+
     public int? Midi { get; set; }
 
     public string NoteKind { get; set; } = "normal";

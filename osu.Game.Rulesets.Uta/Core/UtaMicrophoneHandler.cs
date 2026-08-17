@@ -15,6 +15,7 @@ using osu.Framework.Input.Handlers;
 using osu.Framework.Logging;
 using osu.Framework.Platform;
 using osu.Game.Rulesets.Uta.Pitch;
+using osu.Game.Rulesets.Uta.Recording;
 
 namespace osu.Game.Rulesets.Uta.Core;
 
@@ -25,6 +26,8 @@ namespace osu.Game.Rulesets.Uta.Core;
 internal sealed class UtaMicrophoneHandler : InputHandler
 {
     public event Action<UtaPitchFrame>? PitchDetected;
+
+    public IUtaPcmCaptureSink? PcmCaptureSink { get; set; }
 
     public override bool IsActive => Bass.RecordingDeviceCount > 0;
 
@@ -151,6 +154,18 @@ internal sealed class UtaMicrophoneHandler : InputHandler
             {
                 for (int i = 0; i < interleavedCount; i++)
                     interleaved[i] *= gain;
+            }
+
+            // Recording is tapped after input gain and before monitor routing. The sink is
+            // strictly non-blocking; file I/O happens on its bounded background consumer.
+            if (Volatile.Read(ref calibrationCapture) == null)
+            {
+                PcmCaptureSink?.TryWrite(
+                    interleaved.AsSpan(0, interleavedCount),
+                    frequency,
+                    channels,
+                    Stopwatch.GetTimestamp(),
+                    gain);
             }
 
             CalibrationCapture? capture = Volatile.Read(ref calibrationCapture);

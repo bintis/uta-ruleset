@@ -16,6 +16,8 @@ using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Pitch;
+using osu.Game.Rulesets.Uta.Recording;
+using osu.Game.Rulesets.Uta.Scoring;
 using osu.Game.Screens.Play;
 
 namespace osu.Game.Rulesets.Uta.Core;
@@ -38,6 +40,8 @@ public enum UtaAction
     RetryPhrase,
     [Description("Toggle current-phrase looping")]
     ToggleCurrentPhraseLoop,
+    [Description("Toggle score HUD")]
+    ToggleScoreHud,
 }
 
 public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
@@ -62,6 +66,8 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
     private readonly BindableFloat microphoneLatency = new();
     private readonly BindableFloat keyShiftSemitones = new();
     private GameplayClockContainer? gameplayClock;
+    private UtaGameplayScoringController scoringController = null!;
+    private UtaRecordingRuntime recordingRuntime = null!;
 
     public UtaInputManager(RulesetInfo ruleset)
         : base(ruleset, 0, SimultaneousBindingMode.All)
@@ -70,12 +76,15 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
 
     [BackgroundDependencyLoader]
     private void load(UtaBeatmap beatmap, UtaAudioSettingsState audioSettings, AudioManager audioManager, UtaAudioRouter audioRouter,
-                      IBindable<IReadOnlyList<Mod>> mods, GameplayClockContainer gameplayClock)
+                      IBindable<IReadOnlyList<Mod>> mods, GameplayClockContainer gameplayClock,
+                      UtaGameplayScoringController scoringController, UtaRecordingRuntime recordingRuntime)
     {
         audioRouter.Initialise(audioManager);
         this.beatmap = beatmap;
         this.gameplayClock = gameplayClock;
-        octaveFoldEnabled = mods.Value.Any(mod => mod is UtaModOctaveFold);
+        this.scoringController = scoringController;
+        this.recordingRuntime = recordingRuntime;
+        octaveFoldEnabled = beatmap.OctaveTolerance || mods.Value.Any(mod => mod is UtaModOctaveFold);
         autoEnabled = mods.Value.Any(mod => mod is UtaModAutoplay);
         notes = beatmap.HitObjects.OfType<UtaNote>().OrderBy(note => note.StartTime).ToArray();
         microphoneLatency.BindTo(audioSettings.MicrophoneLatency);
@@ -93,6 +102,7 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
         microphone.OutputDevice.BindTo(audioSettings.MicrophoneOutputDevice);
         microphone.DebugDiagnostics.BindTo(audioSettings.DebugDiagnostics);
         microphone.PitchSamplingInterval.BindTo(audioSettings.PitchSamplingInterval);
+        microphone.PcmCaptureSink = recordingRuntime.RecordingEnabled ? recordingRuntime : null;
         microphone.PitchDetected += onPitchDetected;
         AddHandler(microphone);
     }
@@ -139,6 +149,10 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
 
     private void onPitchDetected(UtaPitchFrame frame)
     {
+        // The formal scoring path receives every analysed window through a
+        // bounded queue. The latest-only mailbox below remains display-only.
+        scoringController.Enqueue(frame);
+
         // The recording callback runs independently of lazer's update thread.
         // Never enqueue every microphone window: if the update thread stalls,
         // stale pitch samples otherwise grow without bound and prevent recovery.

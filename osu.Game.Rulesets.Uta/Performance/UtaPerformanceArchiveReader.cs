@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
@@ -107,8 +108,9 @@ public sealed class UtaPerformanceArchiveReader
             throw new InvalidDataException("A practice performance cannot be marked comparable.");
         if (manifest.Notes == null || manifest.Phrases == null)
             throw new InvalidDataException("Performance manifest is missing note or phrase summaries.");
-        if (manifest.Scoring.TotalScore is < 0 or > 1_000_000)
-            throw new InvalidDataException("Performance score is outside 0-1,000,000.");
+        if (manifest.Scoring.TotalScore < 0
+            || manifest.Scoring.TotalScoreWithoutMods is < 0 or > 1_000_000)
+            throw new InvalidDataException("Performance score metadata is outside the supported range.");
         if (manifest.Scoring.EngineVersion <= 0 || string.IsNullOrWhiteSpace(manifest.Scoring.Engine))
             throw new InvalidDataException("Performance scoring engine metadata is invalid.");
         if (manifest.Scoring.CompositeRatingPermille > 1000
@@ -119,12 +121,22 @@ public sealed class UtaPerformanceArchiveReader
             || manifest.Scoring.VibratoQualityPermille > 1000
             || manifest.Scoring.ExpressionQualityPermille is > 1000)
             throw new InvalidDataException("Performance scoring quality is outside 0-1000.");
+        if (manifest.Settings.ActiveMods == null
+            || manifest.Settings.ActiveMods.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidDataException("Performance MOD metadata is invalid.");
         if (manifest.Settings.PlaybackRate is < 0.25 or > 4
             || !double.IsFinite(manifest.Settings.PlaybackRate)
             || !double.IsFinite(manifest.Settings.MicrophoneLatencyMilliseconds)
             || !double.IsFinite(manifest.Settings.PitchSamplingIntervalMilliseconds)
             || !double.IsFinite(manifest.Settings.InputGain))
             throw new InvalidDataException("Performance settings contain an invalid numeric value.");
+        if (manifest.Expression is { } expression
+            && (expression.P10DecibelsTenths is < -1200 or > 120
+                || expression.MedianDecibelsTenths is < -1200 or > 120
+                || expression.P90DecibelsTenths is < -1200 or > 120
+                || expression.DynamicRangeDecibelsTenths is < 0 or > 1320
+                || expression.ClippingRatioPermille > 1000))
+            throw new InvalidDataException("Performance expression analysis is invalid.");
         if (manifest.Recording != null)
         {
             if (manifest.Recording.SampleRate <= 0 || manifest.Recording.Channels <= 0

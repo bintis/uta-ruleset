@@ -32,6 +32,33 @@ internal sealed class UtaAudioRouter : IDisposable
         LoadBundledFlacPlugin();
     }
 
+    public UtaRoutedAudioStream CreateTrack(string filePath, string? outputDevice)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        int device = resolve(outputDevice);
+        int previous = Bass.CurrentDevice;
+        ensureInitialised(device);
+        Bass.CurrentDevice = device;
+
+        int source = Bass.CreateStream(filePath, 0, 0, BassFlags.Decode | BassFlags.Float | BassFlags.Prescan);
+        Errors error = Bass.LastError;
+        if (previous > 0)
+            Bass.CurrentDevice = previous;
+        if (source == 0)
+            throw new InvalidOperationException($"Could not decode routed audio file: {error}");
+
+        int tempo = BassFx.TempoCreate(source, BassFlags.Decode | BassFlags.FxFreeSource);
+        if (tempo == 0)
+        {
+            error = Bass.LastError;
+            Bass.StreamFree(source);
+            throw new InvalidOperationException($"Could not create pitch/tempo stream: {error}");
+        }
+
+        route(tempo, device, true);
+        return new UtaRoutedAudioStream(this, tempo, device);
+    }
+
     public UtaRoutedAudioStream CreateTrack(byte[] data, string? outputDevice)
     {
         int device = resolve(outputDevice);

@@ -18,5 +18,7 @@
     <Compile Include="UtaCoreTests.cs" />
     <Compile Include="UtaScoringV2Tests.cs" />
     <Compile Include="UtaPerformanceArchiveTests.cs" />
+    <Compile Include="UtaRecordingAndFollowUpTests.cs" />
+    <Compile Include="UtaGameplayScoringIntegrationTests.cs" />
   </ItemGroup>
 </Project>

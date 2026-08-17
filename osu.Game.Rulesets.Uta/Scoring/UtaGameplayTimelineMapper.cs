@@ -91,9 +91,10 @@ public sealed class UtaGameplayTimelineMapper
             throw new ArgumentOutOfRangeException(nameof(arrivalTimestamp));
         if (analysisWindowDurationMicroseconds < 0)
             throw new ArgumentOutOfRangeException(nameof(analysisWindowDurationMicroseconds));
-        if (microphoneLatencyMicroseconds < 0)
-            throw new ArgumentOutOfRangeException(nameof(microphoneLatencyMicroseconds));
 
+        // Microphone latency is intentionally signed. A negative calibration compares
+        // the captured voice with a later song position, matching the public Uta
+        // configuration range (-500 ms to +1000 ms).
         long realTimeOffset = checked(analysisWindowDurationMicroseconds / 2 + microphoneLatencyMicroseconds);
         long offsetTicks = checked((long)roundDivide((Int128)realTimeOffset * timestampFrequency, 1_000_000));
         long captureTimestamp = checked(arrivalTimestamp - offsetTicks);

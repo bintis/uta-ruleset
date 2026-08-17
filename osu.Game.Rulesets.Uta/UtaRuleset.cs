@@ -27,8 +27,13 @@ using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Formats;
 using osu.Game.Rulesets.Uta.Mods;
+using osu.Game.Rulesets.Uta.Recording;
+using osu.Game.Rulesets.Uta.Scoring;
 using osu.Game.Rulesets.Uta.Skinning;
+using osu.Game.Rulesets.Uta.UI;
 using osu.Game.Skinning;
+using osu.Game.Scoring;
+using osu.Game.Screens.Ranking.Statistics;
 using osuTK;
 
 namespace osu.Game.Rulesets.Uta;
@@ -58,6 +63,10 @@ public sealed partial class UtaRuleset : Ruleset
     public override DrawableRuleset CreateDrawableRulesetWith(IBeatmap beatmap, IReadOnlyList<Mod>? mods = null)
         => new DrawableUtaRuleset(this, beatmap, mods);
 
+    public override ScoreProcessor CreateScoreProcessor() => new UtaScoreProcessor(this);
+
+    public override HealthProcessor CreateHealthProcessor(double drainStartTime) => new UtaScoringModeHealthProcessor();
+
     public override IBeatmapConverter CreateBeatmapConverter(IBeatmap beatmap)
         => new UtaBeatmapConverter(beatmap, this);
 
@@ -80,6 +89,7 @@ public sealed partial class UtaRuleset : Ruleset
             new KeyBinding(InputKey.Right, UtaAction.NextPhrase),
             new KeyBinding(InputKey.R, UtaAction.RetryPhrase),
             new KeyBinding(InputKey.L, UtaAction.ToggleCurrentPhraseLoop),
+            new KeyBinding(InputKey.S, UtaAction.ToggleScoreHud),
         };
 
     public override IEnumerable<HitResult> GetValidHitResults()
@@ -97,6 +107,9 @@ public sealed partial class UtaRuleset : Ruleset
     public override LocalisableString GetDisplayNameForHitResult(HitResult result)
         => result == HitResult.Meh ? "Bad" : base.GetDisplayNameForHitResult(result);
 
+    public override StatisticItem[] CreateStatisticsForScore(ScoreInfo score, IBeatmap playableBeatmap)
+        => UtaNativeResultsStatistics.Create(score, playableBeatmap);
+
     public override IEnumerable<Mod> GetModsFor(ModType type)
         => type switch
         {
@@ -108,6 +121,8 @@ public sealed partial class UtaRuleset : Ruleset
             },
             ModType.DifficultyReduction => new Mod[]
             {
+                new UtaModRelax(),
+                new UtaModNoFail(),
                 new UtaModOriginalVocals(),
                 new UtaModOctaveFold(),
                 new UtaModDaycore(),
@@ -145,15 +160,22 @@ public sealed partial class UtaRuleset : Ruleset
                     new UtaModPracticeSpeed150(),
                 }),
             },
-            ModType.Automation => new Mod[]
+            ModType.Fun => new Mod[]
             {
                 new UtaModAutoplay(),
+                new UtaModRecording(),
             },
             _ => Array.Empty<Mod>(),
         };
 
     public override IRulesetConfigManager CreateConfig(SettingsStore? settings)
-        => new UtaRulesetConfigManager(settings, RulesetInfo);
+    {
+        var config = new UtaRulesetConfigManager(settings, RulesetInfo);
+        var root = config.GetBindable<string>(UtaRulesetSetting.PerformanceRootDirectory);
+        UtaPerformanceRootRegistry.SetConfiguredRoot(root.Value);
+        root.BindValueChanged(value => UtaPerformanceRootRegistry.SetConfiguredRoot(value.NewValue));
+        return config;
+    }
 
     public override RulesetSettingsSubsection CreateSettings() => new UtaSettingsSubsection(this);
 

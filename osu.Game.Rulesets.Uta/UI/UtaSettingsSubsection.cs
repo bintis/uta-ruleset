@@ -95,6 +95,12 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     HintText = "Write Uta frame, memory, microphone and curve metrics to the runtime log every five seconds.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics),
                 }),
+                new SettingsItemV2(new FormEnumDropdown<UtaScoreHudPosition>
+                {
+                    Caption = "Score HUD position",
+                    HintText = "Corner of the screen the live score panel is anchored to. Press S in-game to hide or show it.",
+                    Current = config.GetBindable<UtaScoreHudPosition>(UtaRulesetSetting.ScoreHudPosition),
+                }),
                 output("BGM output", "Hardware output used by the instrumental track.", config.GetBindable<string>(UtaRulesetSetting.BackgroundMusicOutputDevice)),
                 output("Vocals output", "Hardware output used by the original or guide-vocal track.", config.GetBindable<string>(UtaRulesetSetting.OriginalVocalsOutputDevice)),
                 new SettingsItemV2(new MicrophoneDropdown

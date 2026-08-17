@@ -62,21 +62,19 @@ public sealed class UtaCaptureFrameQueue
     }
 
     /// <summary>
-    /// Maps and drains capture frames into the formal scoring session. The
-    /// optional callback receives the exact quantised frame used by scoring and
-    /// can append it to the performance replay.
+    /// Maps and drains capture frames. When a formal scoring session is supplied,
+    /// only frames accepted by that session reach the optional consumer. A null
+    /// session maps frames for recording replay without retaining a second copy
+    /// in the scoring engine.
     /// </summary>
     public int DrainTo(
         UtaGameplayTimelineMapper mapper,
         long microphoneLatencyMicroseconds,
-        UtaStreamingScoringSession session,
+        UtaStreamingScoringSession? session,
         Action<UtaCapturedPitchFrame, UtaScoringFrame>? mappedFrameConsumer = null,
         int maximumFrames = int.MaxValue)
     {
         ArgumentNullException.ThrowIfNull(mapper);
-        ArgumentNullException.ThrowIfNull(session);
-        if (microphoneLatencyMicroseconds < 0)
-            throw new ArgumentOutOfRangeException(nameof(microphoneLatencyMicroseconds));
         if (maximumFrames < 0)
             throw new ArgumentOutOfRangeException(nameof(maximumFrames));
 
@@ -92,11 +90,9 @@ public sealed class UtaCaptureFrameQueue
             }
 
             UtaScoringFrame mapped = captured.MapToScoringFrame(mapper, microphoneLatencyMicroseconds);
-            if (mapped.TimeMicroseconds >= 0)
-            {
-                session.AddFrame(mapped);
+            if (mapped.TimeMicroseconds >= 0
+                && (session == null || session.TryAddFrame(mapped)))
                 mappedFrameConsumer?.Invoke(captured, mapped);
-            }
             drained++;
         }
 

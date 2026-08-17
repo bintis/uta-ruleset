@@ -15,6 +15,7 @@ using osu.Game.Graphics;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Configuration;
+using osu.Game.Rulesets.Uta.Scoring;
 using osuTK.Graphics;
 
 namespace osu.Game.Rulesets.Uta.UI;
@@ -31,6 +32,11 @@ public partial class UtaPitchGuide : CompositeDrawable
     internal const float PLAYHEAD_POSITION = (float)(LOOK_BEHIND / (LOOK_BEHIND + LOOK_AHEAD));
 
     private const double window = LOOK_BEHIND + LOOK_AHEAD;
+
+    // How long to keep retrying the official per-note grade (UtaGameplayScoringController.TryGetCompletedNote)
+    // after a note's end time before giving up and falling back to the live heuristic. Covers microphone
+    // latency plus the scorer's own commit delay so a real grade is used whenever one arrives in time.
+    private const double official_grade_wait_ms = 400;
     private const float base_low_midi = 48;
     private const float base_high_midi = 67;
     private const float edge_margin = 1.5f;
@@ -51,6 +57,7 @@ public partial class UtaPitchGuide : CompositeDrawable
     private readonly BindableBool voiceActive = new();
     private readonly BindableFloat keyShiftSemitones = new();
 
+    private UtaGameplayScoringController? scoringController;
     private UtaNote[] notes = Array.Empty<UtaNote>();
     private readonly BindableFloat centreMidi = new((base_low_midi + base_high_midi) / 2);
     private double maximumNoteDuration;
@@ -150,8 +157,9 @@ public partial class UtaPitchGuide : CompositeDrawable
 
     [BackgroundDependencyLoader]
     private void load(UtaBeatmap beatmap, osu.Game.Rulesets.UI.DrawableRuleset drawableRuleset, UtaRulesetConfigManager config,
-                      UtaPitchViewport pitchViewport)
+                      UtaPitchViewport pitchViewport, UtaGameplayScoringController scoringController)
     {
+        this.scoringController = scoringController;
         if (string.IsNullOrEmpty(beatmap.PackageId))
         {
             Hide();
@@ -242,13 +250,41 @@ public partial class UtaPitchGuide : CompositeDrawable
             active.PreviewColour();
         }
 
-        while (nextCommitIndex < commitOrder.Length && current > commitOrder[nextCommitIndex].Note.EndTime)
+        while (nextCommitIndex < commitOrder.Length)
         {
-            commitOrder[nextCommitIndex].CommitColour();
+            TargetNote pending = commitOrder[nextCommitIndex];
+            double timeSinceEnd = current - pending.Note.EndTime;
+            if (timeSinceEnd < 0)
+                break;
+
+            // Prefer the same grade the real score uses. It lands asynchronously (microphone
+            // latency + the scorer's commit delay), so keep retrying for a bounded window before
+            // falling back to the live preview heuristic rather than leaving the note uncoloured.
+            if (scoringController != null && scoringController.ScoringEnabled
+                                           && scoringController.TryPreviewCompletedNote(pending.Note.ScoringIndex, out UtaNoteScore? score) && score != null)
+            {
+                pending.CommitColour(score.Grade);
+                nextCommitIndex++;
+                continue;
+            }
+
+            bool relax = scoringController is not { ScoringEnabled: true };
+            if (!relax && timeSinceEnd < official_grade_wait_ms)
+                break;
+
+            pending.CommitColour(mapLiveGrade(pending.ColourState.Grade()));
             nextCommitIndex++;
         }
-
     }
+
+    private static UtaNoteGrade mapLiveGrade(UtaNoteColourGrade? grade)
+        => grade switch
+        {
+            UtaNoteColourGrade.Perfect => UtaNoteGrade.Perfect,
+            UtaNoteColourGrade.Good => UtaNoteGrade.Good,
+            UtaNoteColourGrade.High or UtaNoteColourGrade.Low => UtaNoteGrade.Bad,
+            _ => UtaNoteGrade.Miss,
+        };
 
     private void updateStaticPitchLayout()
     {
@@ -389,13 +425,12 @@ public partial class UtaPitchGuide : CompositeDrawable
             };
         }
 
-        public void CommitColour()
+        public void CommitColour(UtaNoteGrade grade)
         {
             if (ColourCommitted)
                 return;
 
             ColourCommitted = true;
-            UtaNoteColourGrade grade = ColourState.Grade() ?? UtaNoteColourGrade.Miss;
             (Color4 colour, float alpha, float glow) = styleFor(grade);
 
             fill.FadeColour(colour, 180, Easing.OutQuint);
@@ -405,7 +440,7 @@ public partial class UtaPitchGuide : CompositeDrawable
                 ? new EdgeEffectParameters
                 {
                     Type = EdgeEffectType.Glow,
-                    Colour = new Color4(colour.R, colour.G, colour.B, grade == UtaNoteColourGrade.Perfect ? 0.45f : 0.24f),
+                    Colour = new Color4(colour.R, colour.G, colour.B, grade == UtaNoteGrade.Perfect ? 0.45f : 0.24f),
                     Radius = glow,
                 }
                 : default;
@@ -418,18 +453,32 @@ public partial class UtaPitchGuide : CompositeDrawable
                 return;
 
             previewGrade = grade;
-            (Color4 colour, float alpha, _) = styleFor(grade.Value);
+            (Color4 colour, float alpha, _) = styleFor(UtaPitchGuide.mapLiveGrade(grade));
             fill.FadeColour(colour, 140, Easing.OutQuint);
             fill.FadeTo(alpha * 0.58f, 140, Easing.OutQuint);
         }
 
-        private static (Color4 Colour, float Alpha, float Glow) styleFor(UtaNoteColourGrade grade)
+        // Superseded by the osu-style grade bands below, which colour committed notes using the
+        // same UtaNoteGrade the real score uses instead of this separate nightingale-style heuristic.
+        // Left in place (rather than deleted) since PreviewColour() above still uses ColourState's
+        // live estimate for in-progress notes, where no official grade exists yet.
+        // private static (Color4 Colour, float Alpha, float Glow) styleFor(UtaNoteColourGrade grade)
+        //     => grade switch
+        //     {
+        //         UtaNoteColourGrade.Perfect => (new Color4(253, 224, 71, 255), 0.88f, 8),
+        //         UtaNoteColourGrade.Good => (new Color4(74, 222, 128, 255), 0.76f, 3),
+        //         UtaNoteColourGrade.High => (new Color4(251, 146, 60, 255), 0.68f, 0),
+        //         UtaNoteColourGrade.Low => (new Color4(96, 165, 250, 255), 0.68f, 0),
+        //         _ => (new Color4(251, 113, 133, 255), 0.58f, 0),
+        //     };
+
+        private static (Color4 Colour, float Alpha, float Glow) styleFor(UtaNoteGrade grade)
             => grade switch
             {
-                UtaNoteColourGrade.Perfect => (new Color4(253, 224, 71, 255), 0.88f, 8),
-                UtaNoteColourGrade.Good => (new Color4(74, 222, 128, 255), 0.76f, 3),
-                UtaNoteColourGrade.High => (new Color4(251, 146, 60, 255), 0.68f, 0),
-                UtaNoteColourGrade.Low => (new Color4(96, 165, 250, 255), 0.68f, 0),
+                UtaNoteGrade.Perfect => (new Color4(253, 224, 71, 255), 0.88f, 8),
+                UtaNoteGrade.Great => (new Color4(96, 165, 250, 255), 0.82f, 5),
+                UtaNoteGrade.Good => (new Color4(74, 222, 128, 255), 0.76f, 3),
+                UtaNoteGrade.Bad => (new Color4(251, 146, 60, 255), 0.68f, 0),
                 _ => (new Color4(251, 113, 133, 255), 0.58f, 0),
             };
     }

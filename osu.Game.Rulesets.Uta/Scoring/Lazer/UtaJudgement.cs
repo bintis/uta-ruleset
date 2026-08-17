@@ -12,3 +12,15 @@ public sealed class UtaJudgement : Judgement
 
     public override HitResult MinResult => HitResult.Miss;
 }
+
+/// <summary>
+/// Native no-score judgement for rap, spoken, freestyle and low-confidence
+/// targets. lazer validates every applied result against the judgement's
+/// minimum/maximum pair, so these notes require an explicit ignored judgement.
+/// </summary>
+public sealed class UtaIgnoredJudgement : Judgement
+{
+    public override HitResult MaxResult => HitResult.IgnoreHit;
+
+    public override HitResult MinResult => HitResult.IgnoreMiss;
+}

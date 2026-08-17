@@ -21,6 +21,6 @@ public sealed class UtaModAutoplay : Mod, IApplicableMod
     public override string Name => "Auto";
     public override string Acronym => "AT";
     public override IconUsage? Icon => FontAwesome.Solid.Robot;
-    public override ModType Type => ModType.Automation;
+    public override ModType Type => ModType.Fun;
     public override LocalisableString Description => "Watch a perfect virtual performance; the microphone is not used.";
 }

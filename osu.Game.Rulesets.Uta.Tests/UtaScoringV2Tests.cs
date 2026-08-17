@@ -295,6 +295,60 @@ public class UtaScoringV2Tests
         });
     }
 
+    [Test]
+    public void StreamingSessionIgnoresWatermarkRegressionWithoutThrowing()
+    {
+        var session = new UtaStreamingScoringSession(new[] { note(0, 1000, 69, 0) });
+        foreach (UtaScoringFrame frame in framesForCents(6900))
+            session.AddFrame(frame);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(session.AdvanceWatermark(1_060_000), Has.Count.EqualTo(1));
+            Assert.That(() => session.AdvanceWatermark(1_000_000), Throws.Nothing);
+            Assert.That(session.AdvanceWatermark(1_080_000), Is.Empty);
+            Assert.That(session.CompletedNotes, Has.Count.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void StreamingSessionScoresBoundedPerNoteWindows()
+    {
+        const int noteCount = 300;
+        const long noteDuration = 200_000;
+        const long noteSpacing = 300_000;
+        UtaScoringTarget[] targets = Enumerable.Range(0, noteCount)
+            .Select(index => UtaScoringTarget.FromConfidence(
+                index,
+                index * noteSpacing,
+                index * noteSpacing + noteDuration,
+                69,
+                1,
+                UtaScoringNoteKind.Normal))
+            .ToArray();
+        var session = new UtaStreamingScoringSession(targets);
+
+        // Preload a long performance to ensure the regression guard catches
+        // whole-history rescoring rather than relying on update timing.
+        for (long time = 10_000; time < noteCount * noteSpacing; time += 20_000)
+            session.AddFrame(new UtaScoringFrame(time, 6900, 1000, true));
+
+        for (int index = 0; index < noteCount; index++)
+        {
+            long watermark = index * noteSpacing + noteDuration
+                             + UtaScoringOptions.DEFAULT_COMMIT_DELAY_MICROSECONDS;
+            session.AdvanceWatermark(watermark);
+        }
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(session.CompletedNotes, Has.Count.EqualTo(noteCount));
+            Assert.That(session.CompletedNotes.Values.All(score => score.Grade == UtaNoteGrade.Perfect), Is.True);
+            Assert.That(session.MaximumRealtimeFrameWindow, Is.LessThan(30));
+            Assert.That(session.RealtimeBufferedFrameCount, Is.Zero);
+            Assert.That(session.CompletePerformance().TotalScore, Is.EqualTo(1_000_000));
+        });
+    }
 
     [Test]
     public void StreamingSessionIgnoresNegativeLeadInFrames()

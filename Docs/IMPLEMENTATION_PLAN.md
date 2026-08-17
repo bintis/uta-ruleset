@@ -3,7 +3,7 @@
 ## Baseline
 
 This package is generated against uta-ruleset `main` commit
-`d0bac5ce3c0441877ef9cac7ec4e01b11e7d545f` and the osu!lazer
+`72cfb9f0fbd4142f44fa7253a093978173c3a6c0` and the osu!lazer
 `2026.804.2-lazer` gameplay/scoring API.
 
 ## What this package implements
@@ -22,29 +22,37 @@ This package is generated against uta-ruleset `main` commit
 - a bounded, observable microphone-to-gameplay scoring queue;
 - streaming scoring session with a capture watermark;
 - `UtaJudgement`, `UtaJudgementResult`, `UtaScoreProcessor` primitives;
-- passive and Fail health processor primitives;
+- passive and 评分模式 health processor primitives;
 - filesystem performance manifest, compressed Pitch replay, optional recording and
   waveform assets, atomic writer, reader, index, recovery, score linker and library;
 - unit tests and design documentation.
 
-## What is deliberately not activated
+## Runtime activation status
 
-The foundation is compiled into the ruleset but is not made authoritative yet. The
-following gameplay/UI changes still have to be connected as coordinated PRs:
+The scoring foundation is authoritative in gameplay in this integration:
 
-- publish raw microphone analysis frames into `UtaCaptureFrameQueue`;
-- use `UtaGameplayTimelineMapper` from the shared playback/seek/rate controller;
-- drain mapped frames into `UtaStreamingScoringSession` on the gameplay thread;
-- populate `UtaJudgementResult` from committed note scores in `DrawableUtaHitObject`;
-- return `UtaScoreProcessor` and `UtaPassiveHealthProcessor` from `UtaRuleset`;
-- expose `UtaModFail` in the MOD list;
-- add live score/current-note HUD components;
-- save/query performance archives from gameplay and results;
-- implement microphone recording and the bounded WAV/FLAC writer.
+- every accepted microphone analysis window enters `UtaCaptureFrameQueue`;
+- capture centres are mapped by `UtaGameplayTimelineMapper` on the gameplay thread;
+- `UtaStreamingScoringSession` commits deterministic whole-note scores;
+- `DrawableUtaHitObject` emits populated `UtaJudgementResult` instances;
+- `UtaRuleset` returns `UtaScoreProcessor` and passive default health;
+- `UtaModScoringMode` is the sole switch for judgements, scoring HUD and
+  note-driven health/failure;
+- `UtaModRecording` is the sole switch for post-gain microphone PCM capture;
+- realtime note commits use bounded note-local frame windows;
+- gameplay writes the independent performance archive when scoring or recording
+  is selected;
+- the results statistics panel queries history by `ScoreInfo.ID`.
 
-These changes are intentionally not partially activated. Returning
-`UtaScoreProcessor` before drawable results carry Uta fixed-point units would create
-valid-looking but incorrect zero-unit scores.
+The following remains intentionally outside this patch:
+
+- waveform generation;
+- full song-clock historical playback and audio mixing;
+- corpus-based vibrato/评分模式 health balance calibration;
+- scored expression. RMS remains report-only.
+
+See `SCORING_RUNTIME_INTEGRATION.zh-CN.md` for the active data flow and operational
+contracts.
 
 ## Changes from the previous prototype
 
@@ -66,10 +74,10 @@ valid-looking but incorrect zero-unit scores.
 ## Suggested branch
 
 ```text
-agent/scoring-v2-foundation
+agent/scoring-runtime-integration
 ```
 
-## Activation PR 1 — realtime bridge
+## Historical staging plan — realtime bridge (implemented here)
 
 Modify only the microphone and clock data path:
 
@@ -83,7 +91,7 @@ Modify only the microphone and clock data path:
 
 Do not add HUD or native result application in this PR.
 
-## Activation PR 2 — native judgements and score
+## Historical staging plan — native judgements and score (implemented here)
 
 Land these changes together:
 
@@ -94,7 +102,7 @@ Land these changes together:
 - default `UtaPassiveHealthProcessor`;
 - native apply/revert, autoplay simulation, completion and rank tests.
 
-## Activation PR 3 — live HUD and current results
+## Historical staging plan — live HUD and current results (implemented here)
 
 - score, composite rating, raw Pitch accuracy and coverage;
 - native combo and accurate streak;
@@ -102,7 +110,7 @@ Land these changes together:
 - current-session phrase/result panels;
 - no independent score calculation in drawables or HUD.
 
-## Activation PR 4 — performance history
+## Historical staging plan — performance history (implemented here)
 
 - performance-root configuration and storage diagnostics;
 - write Pitch replay and `performance.json` at completion;
@@ -111,16 +119,17 @@ Land these changes together:
 - inject `UtaPerformanceLibrary` into the results panel;
 - historical Pitch playback and engine-version-aware reanalysis.
 
-## Activation PR 5 — recording
+## Recording status — implemented in 0.6/0.7
 
 - capture after input gain and before monitor routing;
 - bounded background PCM writer;
-- explicit visible recording state and opt-in default;
-- `take.wav`/FLAC and recording metadata in the same performance directory;
-- historical solo/mixed playback and storage cleanup controls.
+- explicit visible recording state through the `Recording` (`REC`) MOD;
+- `take.wav` and recording metadata in the same performance directory.
+
+Historical solo/mixed playback and storage cleanup controls remain follow-up work.
 
 ## Later calibration PRs
 
 - labelled vibrato corpus and threshold versioning;
 - phrase-relative RMS expression report and anti-AGC diagnostics;
-- Fail MOD health balancing from measured score distributions.
+- 评分模式 MOD health balancing from measured score distributions.

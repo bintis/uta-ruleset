@@ -2,7 +2,9 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using System.Linq;
 using osu.Framework.Bindables;
+using osu.Game.Beatmaps;
 using osu.Game.Rulesets;
 using osu.Game.Rulesets.Judgements;
 using osu.Game.Rulesets.Objects;
@@ -34,6 +36,7 @@ public sealed partial class UtaScoreProcessor : ScoreProcessor
     private long currentStableEarnedUnits;
     private long currentTechniqueEarnedUnits;
     private long fullMaximumUnits;
+    private bool scoringEnabled;
 
     public UtaScoreProcessor(Ruleset ruleset, UtaScoringOptions? options = null)
         : base(ruleset)
@@ -42,10 +45,16 @@ public sealed partial class UtaScoreProcessor : ScoreProcessor
         this.options.Validate();
     }
 
+    public override void ApplyBeatmap(IBeatmap beatmap)
+    {
+        scoringEnabled = beatmap.HitObjects.OfType<UtaNote>().Any(note => note.ScoringEnabled);
+        base.ApplyBeatmap(beatmap);
+    }
+
     protected override JudgementResult CreateResult(HitObject hitObject, Judgement judgement)
     {
         var result = new UtaJudgementResult(hitObject, judgement);
-        if (IsSimulating && hitObject is UtaNote note)
+        if (IsSimulating && hitObject is UtaNote { ScoringEnabled: true } note)
         {
             UtaScoringTarget target = UtaScoringBeatmapAdapter.CreateTarget(note);
             result.PopulatePerfectSimulation(target.Index, UtaScoringMath.MaximumUnits(target, options));
@@ -97,6 +106,17 @@ public sealed partial class UtaScoreProcessor : ScoreProcessor
 
     protected override double ComputeTotalScore(double comboProgress, double accuracyProgress, double bonusPortion)
     {
+        if (!scoringEnabled)
+        {
+            PitchAccuracy.Value = 0;
+            CompositeRating.Value = 0;
+            Coverage.Value = 0;
+            Accuracy.Value = 0;
+            MinimumAccuracy.Value = 0;
+            MaximumAccuracy.Value = 0;
+            return 0;
+        }
+
         long denominator = fullMaximumUnits > 0 ? fullMaximumUnits : currentMaximumUnits;
         long finalEarned = currentFaithfulEarnedUnits;
         UtaScoringProfile profile = UtaScoringProfile.Faithful;
@@ -122,7 +142,10 @@ public sealed partial class UtaScoreProcessor : ScoreProcessor
             MinimumAccuracy.Value = Math.Clamp(finalEarned / (double)denominator, 0, 1);
             long remaining = Math.Max(0, denominator - currentMaximumUnits);
             MaximumAccuracy.Value = Math.Clamp((finalEarned + remaining) / (double)denominator, 0, 1);
-            return Math.Clamp(finalEarned * (double)UtaScoringOptions.MAX_SCORE / denominator, 0, UtaScoringOptions.MAX_SCORE);
+            long roundedScore = UtaScoringMath.RoundDivide(
+                checked(finalEarned * UtaScoringOptions.MAX_SCORE),
+                denominator);
+            return Math.Clamp(roundedScore, 0, UtaScoringOptions.MAX_SCORE);
         }
 
         MinimumAccuracy.Value = 0;
@@ -145,9 +168,13 @@ public sealed partial class UtaScoreProcessor : ScoreProcessor
         currentFaithfulEarnedUnits = 0;
         currentStableEarnedUnits = 0;
         currentTechniqueEarnedUnits = 0;
-        PitchAccuracy.Value = 1;
-        CompositeRating.Value = 1;
-        Coverage.Value = 1;
+        double initialRating = scoringEnabled ? 1 : 0;
+        PitchAccuracy.Value = initialRating;
+        CompositeRating.Value = initialRating;
+        Coverage.Value = initialRating;
+        Accuracy.Value = initialRating;
+        MinimumAccuracy.Value = 0;
+        MaximumAccuracy.Value = initialRating;
         AccurateStreak.Value = 0;
         HighestAccurateStreak.Value = 0;
         FinalProfile.Value = UtaScoringProfile.Faithful;
@@ -156,7 +183,7 @@ public sealed partial class UtaScoreProcessor : ScoreProcessor
     public override void PopulateScore(ScoreInfo score)
     {
         base.PopulateScore(score);
-        score.Accuracy = CompositeRating.Value;
+        score.Accuracy = scoringEnabled ? CompositeRating.Value : 0;
         score.Rank = RankFromScore(score.Accuracy, score.Statistics);
     }
 }

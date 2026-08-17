@@ -21,6 +21,14 @@ public static class UtaScoringBeatmapAdapter
                       .ToArray();
     }
 
+    public static bool IsScorable(UtaNote note, UtaScoringOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(note);
+        var actualOptions = options ?? new UtaScoringOptions();
+        actualOptions.Validate();
+        return UtaScoringMath.IsScorable(CreateTarget(note), actualOptions);
+    }
+
     public static UtaScoringTarget CreateTarget(UtaNote note, int fallbackIndex = 0)
     {
         ArgumentNullException.ThrowIfNull(note);

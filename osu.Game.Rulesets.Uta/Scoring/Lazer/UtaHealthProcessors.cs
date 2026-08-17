@@ -17,12 +17,12 @@ public sealed partial class UtaPassiveHealthProcessor : HealthProcessor
     protected override bool CheckDefaultFailCondition(JudgementResult result) => false;
 }
 
-public sealed partial class UtaFailHealthProcessor : HealthProcessor
+public sealed partial class UtaScoringModeHealthProcessor : HealthProcessor
 {
     private readonly UtaScoringOptions options;
     private long maximumUnits;
 
-    public UtaFailHealthProcessor(UtaScoringOptions? options = null)
+    public UtaScoringModeHealthProcessor(UtaScoringOptions? options = null)
     {
         this.options = options ?? new UtaScoringOptions();
         this.options.Validate();

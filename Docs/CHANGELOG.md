@@ -3,6 +3,92 @@
 This file records user-visible changes to `uta!`. Future work remains in the
 [README roadmap](README.md#roadmap--todo).
 
+## 0.6.2 - 2026-08-17
+
+### Changed
+
+- Scoring is now active by default; the former `评分模式` (`SC`) MOD is
+  replaced with `Relax` (`RX`), which opts back out into unscored practice.
+- Moved `Auto` (`AT`) into the `Fun` MOD category.
+- The Score HUD now shows the total score as a 0-100 scale (matching the
+  results screen), and can be toggled in-game with `S`. Its screen corner is
+  configurable in ruleset settings.
+
+### Added
+
+- Added explicit `No Fail` (`NF`) MOD.
+- Added a 0-100 total score line to the Uta results-screen panel.
+
+### Fixed
+
+- Fixed `UtaGameplayScoringController` advancing its watermark from the raw
+  capture timestamp instead of the same latency-adjusted time used to map
+  microphone frames, which rejected nearly every frame as "late" and left
+  every note scoring as an empty Miss.
+- Fixed `DrawableUtaHitObject` expiring notes on the framework's initial
+  `ArmedState.Idle` setup rather than only on a real Hit/Miss, which killed
+  the object before its asynchronous judgement could ever arrive and left
+  `ScoreProcessor.HasCompleted` permanently false (no results screen).
+- Fixed an in-progress recording take being left orphaned under `staging/`
+  with no archive when gameplay exits before the natural-end watcher runs.
+
+### Known issues
+
+- Pressing `S` to hide the Score HUD can leave it permanently hidden; a
+  second `S` press does not always bring it back. Root cause not yet found -
+  tracked in the [README roadmap](README.md#roadmap--todo) for 0.6.3.
+
+## 0.7.0 - 2026-08-17
+
+### Added
+
+- Added the explicit `Recording` (`REC`) MOD. Microphone PCM is captured and
+  saved only when this MOD is selected for the play.
+- Added the explicit `评分模式` (`SC`) MOD as the sole switch for vocal
+  judgements, live score HUD, note-driven health and score archives.
+
+### Changed
+
+- Removed the recording checkbox from ruleset settings; recording is now chosen
+  per play from the native MOD selector.
+- Renamed the former `Challenge` MOD and its public implementation types to
+  `评分模式`.
+- Normal karaoke play now uses ignored judgements and does not calculate or
+  display a score unless `评分模式` is enabled.
+
+### Fixed
+
+- Fixed progressively worsening gameplay stutter and eventual freezing on long
+  songs by scoring each completed note from a bounded local pitch-frame window
+  instead of re-sorting and re-sampling the entire performance history.
+- Cached the final full-performance calculation so archive and phrase
+  finalisation do not repeat the same whole-song scoring pass.
+- Added thread-safe snapshots for pitch replay data during archive finalisation.
+- Preserved signed microphone-latency calibration in the formal scoring path.
+
+### Validation
+
+- Added regression coverage that completes 300 notes after preloading a long
+  pitch stream and verifies that realtime per-note frame windows remain bounded.
+- Added mode-gating tests for default ignored judgements, `评分模式`, and the
+  `Recording` MOD.
+
+## 0.6.0 - implementation candidate
+
+### Added
+
+- Activated Uta scoring through lazer native judgements, score processor and passive health flow.
+- Added native ranking-screen Uta statistics without creating a second results screen.
+- Added deterministic phrase summaries and vocal-range transpose recommendation.
+- Added bounded post-gain/pre-monitor microphone recording to streaming PCM16 WAV.
+- Added recording timeline segments, phrase-attempt storage, WAV export, take playback and A/B comparison primitives.
+- Added persistent recording state and archive/storage integration.
+
+### Validation
+
+- Added deterministic recording, timeline, vocal-range and scoring-matrix tests.
+- Device soak / hot-plug validation remains a release gate and is intentionally not marked complete.
+
 ## 0.5.1 - 2026-08-17
 
 ### Changed
