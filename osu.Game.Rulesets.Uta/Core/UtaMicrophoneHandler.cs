@@ -2,7 +2,6 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -58,18 +57,23 @@ internal sealed class UtaMicrophoneHandler : InputHandler
 
     private const int window_size = 2048;
     private readonly float[] samples = new float[window_size];
+    private float[] interleavedBuffer = Array.Empty<float>();
     private readonly int deviceIndex;
     private readonly UtaAudioRouter audioRouter;
     private int recordingStream;
     private int monitorStream;
     private int frequency;
     private int channels;
-    private int sampleCount;
+    private int sampleWriteIndex;
+    private int samplesFilled;
+    private int samplesUntilDetection;
     private volatile float inputGain;
     private volatile float monitorVolume;
     private volatile float pitchSamplingInterval = 10;
     private readonly object pending_window_lock = new();
-    private float[]? pendingWindow;
+    private float[] pendingWindow = new float[window_size];
+    private float[] workerWindow = new float[window_size];
+    private bool hasPendingWindow;
     private long pendingArrivalTimestamp;
     private bool detectionWorkerScheduled;
     private volatile bool recordingActive;
@@ -82,6 +86,7 @@ internal sealed class UtaMicrophoneHandler : InputHandler
     private int diagnosticQueuedWindows;
     private int diagnosticProcessedWindows;
     private int diagnosticDroppedWindows;
+    private volatile bool debugDiagnosticsEnabled;
 
     public UtaMicrophoneHandler(int deviceIndex, UtaAudioRouter audioRouter)
     {
@@ -91,7 +96,11 @@ internal sealed class UtaMicrophoneHandler : InputHandler
 
     public override bool Initialize(GameHost host)
     {
-        DebugDiagnostics.BindValueChanged(_ => resetDiagnosticCounters(), true);
+        DebugDiagnostics.BindValueChanged(value =>
+        {
+            debugDiagnosticsEnabled = value.NewValue;
+            resetDiagnosticCounters();
+        }, true);
         PitchSamplingInterval.BindValueChanged(value => pitchSamplingInterval = value.NewValue, true);
         InputGain.BindValueChanged(value => inputGain = value.NewValue, true);
         MonitorVolume.BindValueChanged(value =>
@@ -122,6 +131,14 @@ internal sealed class UtaMicrophoneHandler : InputHandler
         RecordInfo info = Bass.RecordingInfo;
         frequency = info.Frequency > 0 ? info.Frequency : 48000;
         channels = Math.Max(1, info.Channels);
+
+        // BASS is configured for a 10ms recording period. Reserve a generous 20ms buffer
+        // before the callback starts so normal capture never rents/returns a managed array.
+        int expectedInterleavedSamples = Math.Max(1024, checked(frequency * channels / 50));
+        if (interleavedBuffer.Length < expectedInterleavedSamples)
+            interleavedBuffer = new float[expectedInterleavedSamples];
+
+        resetSampleWindow();
         monitorStream = audioRouter.CreateMonitor(frequency, channels, OutputDevice.Value);
         if (monitorStream != 0)
         {
@@ -139,76 +156,115 @@ internal sealed class UtaMicrophoneHandler : InputHandler
         }
 
         Bass.ChannelPlay(recordingStream);
+
+        if (debugDiagnosticsEnabled)
+        {
+            Logger.Log($"Uta debug microphone: started deviceIndex={deviceIndex} frequency={frequency}Hz channels={channels} "
+                       + $"monitorStream={(monitorStream != 0 ? "attached" : "none")} captureSink={(PcmCaptureSink != null ? "attached" : "none")}");
+        }
     }
 
     private bool receive(int handle, IntPtr buffer, int length, IntPtr user)
     {
         int interleavedCount = length / sizeof(float);
-        float[] interleaved = ArrayPool<float>.Shared.Rent(interleavedCount);
-        try
+        ensureInterleavedCapacity(interleavedCount);
+        float[] interleaved = interleavedBuffer;
+        Marshal.Copy(buffer, interleaved, 0, interleavedCount);
+
+        float gain = inputGain;
+        if (gain != 1)
         {
-            Marshal.Copy(buffer, interleaved, 0, interleavedCount);
+            for (int i = 0; i < interleavedCount; i++)
+                interleaved[i] *= gain;
+        }
 
-            float gain = inputGain;
-            if (gain != 1)
+        // Recording is tapped after input gain and before monitor routing. The sink is
+        // strictly non-blocking; file I/O happens on its bounded background consumer.
+        if (Volatile.Read(ref calibrationCapture) == null)
+        {
+            PcmCaptureSink?.TryWrite(
+                interleaved.AsSpan(0, interleavedCount),
+                frequency,
+                channels,
+                Stopwatch.GetTimestamp(),
+                gain);
+        }
+
+        CalibrationCapture? capture = Volatile.Read(ref calibrationCapture);
+        if (capture == null && monitorStream != 0 && monitorVolume > 0)
+            Bass.StreamPutData(monitorStream, interleaved, length);
+
+        int frameCount = interleavedCount / channels;
+        for (int frame = 0; frame < frameCount; frame++)
+        {
+            int frameOffset = frame * channels;
+            float monoSample;
+            if (channels == 1)
             {
-                for (int i = 0; i < interleavedCount; i++)
-                    interleaved[i] *= gain;
+                // The overwhelmingly common microphone format. Avoid the inner channel loop
+                // and divide while preserving the exact multi-channel averaging path below.
+                monoSample = interleaved[frameOffset];
             }
-
-            // Recording is tapped after input gain and before monitor routing. The sink is
-            // strictly non-blocking; file I/O happens on its bounded background consumer.
-            if (Volatile.Read(ref calibrationCapture) == null)
-            {
-                PcmCaptureSink?.TryWrite(
-                    interleaved.AsSpan(0, interleavedCount),
-                    frequency,
-                    channels,
-                    Stopwatch.GetTimestamp(),
-                    gain);
-            }
-
-            CalibrationCapture? capture = Volatile.Read(ref calibrationCapture);
-            if (capture == null && monitorStream != 0 && monitorVolume > 0)
-                Bass.StreamPutData(monitorStream, interleaved, length);
-
-            for (int frame = 0; frame < interleavedCount / channels; frame++)
+            else
             {
                 float mono = 0;
                 for (int channel = 0; channel < channels; channel++)
-                    mono += interleaved[frame * channels + channel];
+                    mono += interleaved[frameOffset + channel];
+                monoSample = mono / channels;
+            }
+            if (capture != null && capture.Count < capture.Samples.Length)
+                capture.Samples[capture.Count++] = monoSample;
 
-                float monoSample = mono / channels;
-                if (capture != null && capture.Count < capture.Samples.Length)
-                    capture.Samples[capture.Count++] = monoSample;
+            samples[sampleWriteIndex] = monoSample;
+            sampleWriteIndex++;
+            if (sampleWriteIndex == window_size)
+                sampleWriteIndex = 0;
 
-                if (sampleCount < samples.Length)
-                    samples[sampleCount++] = monoSample;
-
-                if (sampleCount == samples.Length)
-                {
-                    if (capture == null)
-                        queuePitchDetection();
-                    int hopSamples = Math.Clamp((int)Math.Round(frequency * pitchSamplingInterval / 1000), 1, samples.Length);
-                    int retainedSamples = samples.Length - hopSamples;
-                    if (retainedSamples > 0)
-                        Array.Copy(samples, samples.Length - retainedSamples, samples, 0, retainedSamples);
-                    sampleCount = retainedSamples;
-                }
+            if (samplesFilled < window_size)
+            {
+                samplesFilled++;
+                if (samplesFilled < window_size)
+                    continue;
             }
 
-            if (capture != null && capture.Count == capture.Samples.Length
-                                && ReferenceEquals(Interlocked.CompareExchange(ref calibrationCapture, null, capture), capture))
+            if (samplesUntilDetection > 0)
+                samplesUntilDetection--;
+
+            if (samplesUntilDetection == 0)
             {
-                _ = Task.Run(() => capture.Completion.TrySetResult(analyseCalibration(capture)));
+                if (capture == null)
+                    queuePitchDetection();
+
+                samplesUntilDetection = currentHopSamples();
             }
         }
-        finally
+
+        if (capture != null && capture.Count == capture.Samples.Length
+                            && ReferenceEquals(Interlocked.CompareExchange(ref calibrationCapture, null, capture), capture))
         {
-            ArrayPool<float>.Shared.Return(interleaved);
+            _ = Task.Run(() => capture.Completion.TrySetResult(analyseCalibration(capture)));
         }
 
         return true;
+    }
+
+    private void ensureInterleavedCapacity(int required)
+    {
+        if (required <= interleavedBuffer.Length)
+            return;
+
+        int capacity = Math.Max(required, Math.Max(1024, interleavedBuffer.Length * 2));
+        interleavedBuffer = new float[capacity];
+    }
+
+    private int currentHopSamples()
+        => Math.Clamp((int)Math.Round(frequency * pitchSamplingInterval / 1000), 1, window_size);
+
+    private void resetSampleWindow()
+    {
+        sampleWriteIndex = 0;
+        samplesFilled = 0;
+        samplesUntilDetection = 0;
     }
 
     internal async Task<UtaLatencyCalibrationResult> CalibrateLatencyAsync(CancellationToken cancellationToken = default)
@@ -321,7 +377,7 @@ internal sealed class UtaMicrophoneHandler : InputHandler
                 BassMix.MixerRemoveChannel(calibrationStream);
                 Bass.StreamFree(calibrationStream);
             }
-            sampleCount = 0;
+            resetSampleWindow();
         }
     }
 
@@ -429,16 +485,22 @@ internal sealed class UtaMicrophoneHandler : InputHandler
 
     private void queuePitchDetection()
     {
-        Interlocked.Increment(ref diagnosticQueuedWindows);
-        float[] window = ArrayPool<float>.Shared.Rent(window_size);
-        samples.CopyTo(window, 0);
-        float[]? replaced;
+        if (debugDiagnosticsEnabled)
+            Interlocked.Increment(ref diagnosticQueuedWindows);
         bool scheduleWorker = false;
 
         lock (pending_window_lock)
         {
-            replaced = pendingWindow;
-            pendingWindow = window;
+            if (hasPendingWindow && debugDiagnosticsEnabled)
+                Interlocked.Increment(ref diagnosticDroppedWindows);
+
+            // sampleWriteIndex points at the oldest sample once the ring is full.
+            int tailCount = window_size - sampleWriteIndex;
+            samples.AsSpan(sampleWriteIndex, tailCount).CopyTo(pendingWindow);
+            if (sampleWriteIndex > 0)
+                samples.AsSpan(0, sampleWriteIndex).CopyTo(pendingWindow.AsSpan(tailCount));
+
+            hasPendingWindow = true;
             pendingArrivalTimestamp = Stopwatch.GetTimestamp();
             if (!detectionWorkerScheduled)
             {
@@ -447,11 +509,6 @@ internal sealed class UtaMicrophoneHandler : InputHandler
             }
         }
 
-        if (replaced != null)
-        {
-            Interlocked.Increment(ref diagnosticDroppedWindows);
-            ArrayPool<float>.Shared.Return(replaced);
-        }
         if (scheduleWorker)
             ThreadPool.UnsafeQueueUserWorkItem(static state => ((UtaMicrophoneHandler)state!).processPitchWindows(), this);
     }
@@ -460,36 +517,38 @@ internal sealed class UtaMicrophoneHandler : InputHandler
     {
         while (true)
         {
-            float[]? window;
             long arrivalTimestamp;
 
             lock (pending_window_lock)
             {
-                window = pendingWindow;
-                arrivalTimestamp = pendingArrivalTimestamp;
-                pendingWindow = null;
-                if (window == null)
+                if (!hasPendingWindow)
                 {
                     detectionWorkerScheduled = false;
                     return;
                 }
+
+                // Fixed double buffer: the worker owns workerWindow outside the lock while
+                // the callback is free to overwrite pendingWindow with the newest analysis window.
+                (pendingWindow, workerWindow) = (workerWindow, pendingWindow);
+                hasPendingWindow = false;
+                arrivalTimestamp = pendingArrivalTimestamp;
             }
 
             UtaPitchAnalysis analysis;
-            long analysisStart = Stopwatch.GetTimestamp();
-            try
+            if (debugDiagnosticsEnabled)
             {
-                analysis = UtaPitchDetector.Analyse(window.AsSpan(0, window_size), frequency);
+                long analysisStart = Stopwatch.GetTimestamp();
+                analysis = UtaPitchDetector.Analyse(workerWindow, frequency);
+                long analysisTicks = Stopwatch.GetTimestamp() - analysisStart;
+                Interlocked.Increment(ref diagnosticProcessedWindows);
+                Interlocked.Add(ref diagnosticAnalysisTicks, analysisTicks);
+                updateMaximum(ref diagnosticMaximumAnalysisTicks, analysisTicks);
+                reportDiagnostics();
             }
-            finally
+            else
             {
-                ArrayPool<float>.Shared.Return(window);
+                analysis = UtaPitchDetector.Analyse(workerWindow, frequency);
             }
-            long analysisTicks = Stopwatch.GetTimestamp() - analysisStart;
-            Interlocked.Increment(ref diagnosticProcessedWindows);
-            Interlocked.Add(ref diagnosticAnalysisTicks, analysisTicks);
-            updateMaximum(ref diagnosticMaximumAnalysisTicks, analysisTicks);
-            reportDiagnostics();
 
             if (recordingActive)
             {
@@ -505,7 +564,7 @@ internal sealed class UtaMicrophoneHandler : InputHandler
 
     private void reportDiagnostics()
     {
-        if (!DebugDiagnostics.Value)
+        if (!debugDiagnosticsEnabled)
             return;
 
         long now = Stopwatch.GetTimestamp();
@@ -548,6 +607,9 @@ internal sealed class UtaMicrophoneHandler : InputHandler
 
     private void stop()
     {
+        if (debugDiagnosticsEnabled && recordingActive)
+            Logger.Log($"Uta debug microphone: stopped deviceIndex={deviceIndex}");
+
         recordingActive = false;
         Volatile.Read(ref activeCalibrationCancellation)?.Cancel();
         if (recordingStream != 0)
@@ -561,15 +623,11 @@ internal sealed class UtaMicrophoneHandler : InputHandler
             Bass.StreamFree(monitorStream);
             monitorStream = 0;
         }
-        float[]? pending;
+
         lock (pending_window_lock)
-        {
-            pending = pendingWindow;
-            pendingWindow = null;
-        }
-        if (pending != null)
-            ArrayPool<float>.Shared.Return(pending);
-        sampleCount = 0;
+            hasPendingWindow = false;
+
+        resetSampleWindow();
         PitchDetected?.Invoke(new UtaPitchFrame(null, 0, 0, Stopwatch.GetTimestamp(), 0));
     }
 

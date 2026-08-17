@@ -28,9 +28,6 @@ namespace osu.Game.Rulesets.Uta.Scoring;
 /// </summary>
 internal sealed partial class UtaGameplayScoringController : Component
 {
-    // Doubled and passed as MapCaptureCentre's analysis-window argument (which halves it), giving
-    // the watermark ~50ms of slack beyond the configured microphone latency for analysis-window
-    // half-width and capture/drain scheduling jitter, on top of what a real captured frame gets.
     private const long watermark_safety_margin_microseconds = 100_000;
 
     private readonly UtaBeatmap beatmap;
@@ -40,16 +37,18 @@ internal sealed partial class UtaGameplayScoringController : Component
     private readonly UtaCaptureFrameQueue queue = new(4096);
     private readonly UtaGameplayTimelineMapper mapper = new(Stopwatch.Frequency);
     private readonly object replaySync = new();
-    private readonly List<UtaPerformancePitchFrame> replayFrames = new();
+    private readonly List<UtaPerformancePitchFrame> replayFrames;
     private readonly UtaVocalRangeAdvisor vocalRangeAdvisor = new();
     private readonly Bindable<UtaNoteGrade> lastGrade = new();
     private readonly Bindable<UtaPitchFault> lastFaults = new();
     private readonly BindableInt lastBiasCents = new();
     private readonly Bindable<string> archiveStatus = new();
+    private readonly Action<UtaCapturedPitchFrame, UtaScoringFrame> mappedFrameConsumer;
 
     private GameplayClockContainer gameplayClock = null!;
     private readonly BindableFloat microphoneLatency = new();
     private readonly BindableBool debugDiagnostics = new();
+    private volatile bool debugDiagnosticsEnabled;
     private UtaStreamingScoringSession session = null!;
     private UtaScoringOptions options = null!;
     private UtaPerformanceScore? emptyPerformance;
@@ -98,7 +97,18 @@ internal sealed partial class UtaGameplayScoringController : Component
         this.scoringEnabled = scoringEnabled;
         this.captureEnabled = captureEnabled;
         targets = UtaScoringBeatmapAdapter.CreateTargets(beatmap).ToArray();
+
+        // Pitch replay is append-only during a take. Reserving from the chart duration avoids
+        // repeated large-array growth/copies in the middle of gameplay. Capacity is capped so
+        // malformed/extreme charts cannot force an unreasonable upfront allocation.
+        long endMicroseconds = targets.Length == 0 ? 0 : targets.Max(target => target.EndTimeMicroseconds);
+        int replayCapacity = captureEnabled
+            ? (int)Math.Clamp(endMicroseconds / 10_000 + 64, 256, 65_536)
+            : 0;
+        replayFrames = new List<UtaPerformancePitchFrame>(replayCapacity);
+
         archiveStatus.Value = string.Empty;
+        mappedFrameConsumer = onMappedFrame;
     }
 
     [BackgroundDependencyLoader]
@@ -110,7 +120,11 @@ internal sealed partial class UtaGameplayScoringController : Component
         this.gameplayClock = gameplayClock;
         microphoneLatency.BindTo(audioSettings.MicrophoneLatency);
         debugDiagnostics.BindTo(audioSettings.DebugDiagnostics);
-        diagnosticIntervalStart = Stopwatch.GetTimestamp();
+        debugDiagnostics.BindValueChanged(value =>
+        {
+            debugDiagnosticsEnabled = value.NewValue;
+            diagnosticIntervalStart = Stopwatch.GetTimestamp();
+        }, true);
 
         options = new UtaScoringOptions
         {
@@ -140,7 +154,8 @@ internal sealed partial class UtaGameplayScoringController : Component
             frame.ArrivalTimestamp,
             frame.WindowDurationMilliseconds);
 
-        diagnosticEnqueuedFrames++;
+        if (debugDiagnosticsEnabled)
+            diagnosticEnqueuedFrames++;
         if (!queue.TryEnqueue(captured) && scoringEnabled)
             comparable = false;
     }
@@ -171,29 +186,18 @@ internal sealed partial class UtaGameplayScoringController : Component
 
         if (captureEnabled)
         {
-            diagnosticDrainedFrames += queue.DrainTo(
+            int drained = queue.DrainTo(
                 mapper,
                 latencyMicroseconds,
                 scoringEnabled ? session : null,
-                (captured, mapped) =>
-                {
-                    diagnosticAcceptedFrames++;
-                    lock (replaySync)
-                        replayFrames.Add(UtaPerformancePitchFrame.FromMapped(captured, mapped));
-                    if (mapped.Voiced)
-                        vocalRangeAdvisor.AddObservation(mapped.PitchCents, mapped.ClarityPermille);
-                },
+                mappedFrameConsumer,
                 maximumFrames: 512);
+            if (debugDiagnosticsEnabled)
+                diagnosticDrainedFrames += drained;
         }
 
         if (scoringEnabled)
         {
-            // A frame's mapped song-time is always latency+window behind the real "now" it was
-            // captured near (see UtaCapturedPitchFrame.MapToScoringFrame / MapCaptureCentre). Advancing
-            // the watermark straight to MapTimestamp(now) - with no such offset - made every frame look
-            // "late" the instant it arrived, so TryAddFrame rejected nearly all of them and every note
-            // committed as an empty-frame Miss. Mirror the same capture-centre offset here so the
-            // watermark trails "now" the way frames do, instead of racing ahead of them.
             UtaMappedGameplayTime watermark = mapper.MapCaptureCentre(now, watermark_safety_margin_microseconds, latencyMicroseconds);
             if (watermark.TimelineEpoch == options.TimelineEpoch)
             {
@@ -207,7 +211,8 @@ internal sealed partial class UtaGameplayScoringController : Component
 
                 foreach (UtaNoteScore score in session.AdvanceWatermark(safeWatermark))
                 {
-                    diagnosticCompletedNotes++;
+                    if (debugDiagnosticsEnabled)
+                        diagnosticCompletedNotes++;
                     lastGrade.Value = score.Grade;
                     lastFaults.Value = score.Faults;
                     lastBiasCents.Value = score.BiasCents;
@@ -216,7 +221,8 @@ internal sealed partial class UtaGameplayScoringController : Component
             }
             else
             {
-                diagnosticEpochMismatches++;
+                if (debugDiagnosticsEnabled)
+                    diagnosticEpochMismatches++;
                 lastScoringWatermarkMicroseconds = long.MinValue;
             }
 
@@ -240,9 +246,19 @@ internal sealed partial class UtaGameplayScoringController : Component
         reportDiagnostics(now);
     }
 
+    private void onMappedFrame(UtaCapturedPitchFrame captured, UtaScoringFrame mapped)
+    {
+        if (debugDiagnosticsEnabled)
+            diagnosticAcceptedFrames++;
+        lock (replaySync)
+            replayFrames.Add(UtaPerformancePitchFrame.FromMapped(captured, mapped));
+        if (mapped.Voiced)
+            vocalRangeAdvisor.AddObservation(mapped.PitchCents, mapped.ClarityPermille);
+    }
+
     private void reportDiagnostics(long now)
     {
-        if (!debugDiagnostics.Value || Stopwatch.GetElapsedTime(diagnosticIntervalStart, now).TotalSeconds < 5)
+        if (!debugDiagnosticsEnabled || Stopwatch.GetElapsedTime(diagnosticIntervalStart, now).TotalSeconds < 5)
             return;
 
         diagnosticIntervalStart = now;
@@ -263,7 +279,8 @@ internal sealed partial class UtaGameplayScoringController : Component
 
     public bool TryGetCompletedNote(int scoringIndex, out UtaNoteScore? score)
     {
-        diagnosticQueryAttempts++;
+        if (debugDiagnosticsEnabled)
+            diagnosticQueryAttempts++;
 
         if (!scoringEnabled)
         {
@@ -272,15 +289,11 @@ internal sealed partial class UtaGameplayScoringController : Component
         }
 
         bool found = session.TryGetCompletedNote(scoringIndex, out score);
-        if (found)
+        if (found && debugDiagnosticsEnabled)
             diagnosticQuerySuccesses++;
         return found;
     }
 
-    /// <summary>
-    /// Same lookup as <see cref="TryGetCompletedNote"/>, for the pitch guide's note-colouring
-    /// preview. Kept separate so it does not pollute the native-scoring query diagnostics above.
-    /// </summary>
     public bool TryPreviewCompletedNote(int scoringIndex, out UtaNoteScore? score)
     {
         if (!scoringEnabled)
@@ -292,20 +305,29 @@ internal sealed partial class UtaGameplayScoringController : Component
         return session.TryGetCompletedNote(scoringIndex, out score);
     }
 
-    /// <summary>Diagnostics-only: records that a drawable successfully applied a native judgement.</summary>
-    public void RecordNativeApplication() => diagnosticNativeApplications++;
+    public void RecordNativeApplication()
+    {
+        if (debugDiagnosticsEnabled)
+            diagnosticNativeApplications++;
+    }
 
-    /// <summary>Diagnostics-only: caps how many "CheckForResult" log lines get printed across every drawable sharing this controller.</summary>
-    public bool TryClaimDiagnosticCheckLogSlot() => Interlocked.Increment(ref diagnosticCheckLogSlots) <= 8;
+    public bool TryClaimDiagnosticCheckLogSlot()
+        => debugDiagnosticsEnabled && Interlocked.Increment(ref diagnosticCheckLogSlots) <= 8;
 
-    /// <summary>Diagnostics-only: a drawable's CheckForResult ran with timeOffset >= 0 (its note has ended).</summary>
-    public void RecordPostEndCheck() => Interlocked.Increment(ref diagnosticPostEndChecks);
+    public void RecordPostEndCheck()
+    {
+        if (debugDiagnosticsEnabled)
+            Interlocked.Increment(ref diagnosticPostEndChecks);
+    }
 
-    /// <summary>Diagnostics-only: a drawable's CheckForResult passed the commit-delay gate.</summary>
-    public void RecordCommitDelayPassed() => Interlocked.Increment(ref diagnosticCommitDelayPassed);
+    public void RecordCommitDelayPassed()
+    {
+        if (debugDiagnosticsEnabled)
+            Interlocked.Increment(ref diagnosticCommitDelayPassed);
+    }
 
-    /// <summary>Diagnostics-only: caps how many "apply" log lines get printed across every drawable sharing this controller.</summary>
-    public bool TryClaimDiagnosticApplyLogSlot() => Interlocked.Increment(ref diagnosticApplyLogSlots) <= 5;
+    public bool TryClaimDiagnosticApplyLogSlot()
+        => debugDiagnosticsEnabled && Interlocked.Increment(ref diagnosticApplyLogSlots) <= 5;
 
     public UtaPerformanceScore CompletePerformance()
     {
@@ -331,8 +353,6 @@ internal sealed partial class UtaGameplayScoringController : Component
             gameplayClock.IsPaused.Value ? 0 : gameplayClock.Rate,
             startsNewTimelineEpoch: true);
 
-        // A seek/loop creates a fresh deterministic epoch. lazer owns native
-        // judgement reversion; this session never mixes frames across epochs.
         queue.Clear();
         options = new UtaScoringOptions
         {
@@ -340,7 +360,7 @@ internal sealed partial class UtaGameplayScoringController : Component
             AllowOctaveTolerance = options.AllowOctaveTolerance,
             TimelineEpoch = epoch,
         };
-        session = new UtaStreamingScoringSession(targets, options);
+        session.Reset(options);
         emptyPerformance = null;
 
         if (scoringEnabled)

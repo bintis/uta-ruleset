@@ -10,27 +10,17 @@ using osu.Game.Screens.Play;
 
 namespace osu.Game.Rulesets.Uta.UI;
 
-/// <summary>
-/// The single source of truth for the pitch guide's vertical viewport centre, shared by
-/// <see cref="UtaPitchGuide"/>, <see cref="UtaPitchCurveGraph"/> and <see cref="UtaPitchGuideTrail"/>
-/// so all three always agree on where a given pitch sits on screen.
-///
-/// This restores the adaptive-viewport behaviour the standalone player originally had: the
-/// visible range glides to follow whichever notes are coming up next, rather than staying fixed
-/// to one range for the whole song. A later revision replaced this with a single value computed
-/// once from the whole song (still available as <see cref="UtaPitchGuide.CalculateFixedCentre"/>,
-/// reused here as the per-window target), which is why the range stopped moving.
-/// </summary>
 internal sealed partial class UtaPitchViewport : osu.Framework.Graphics.Containers.CompositeDrawable
 {
-    // How much of the look-ahead window counts as "coming up next" for viewport purposes -
-    // matches the standalone player's original relevance window.
     private const double relevance_lookahead_fraction = 0.72;
     private const float move_rate = 2.4f;
+    private const float neutral_centre = 57.5f;
+    private const float edge_margin = 1.5f;
 
     public readonly BindableFloat CentreMidi;
 
     private readonly UtaNote[] notes;
+    private readonly double maximumNoteDuration;
     private GameplayClockContainer? gameplayClock;
     private double lastUpdateTime = double.NegativeInfinity;
 
@@ -40,6 +30,7 @@ internal sealed partial class UtaPitchViewport : osu.Framework.Graphics.Containe
                        .Where(note => note.Midi != null)
                        .OrderBy(note => note.StartTime)
                        .ToArray();
+        maximumNoteDuration = notes.Length == 0 ? 0 : notes.Max(note => note.Duration);
         CentreMidi = new BindableFloat(UtaPitchGuide.CalculateFixedCentre(notes));
     }
 
@@ -68,15 +59,75 @@ internal sealed partial class UtaPitchViewport : osu.Framework.Graphics.Containe
 
     private void onSeek() => CentreMidi.Value = targetCentre(gameplayClock!.CurrentTime);
 
-    // Falling back to the neutral default (rather than the whole song's range) during a long gap
-    // with nothing relevant nearby matches the original standalone-player behaviour being restored.
+    // Hot path: no LINQ, closure or temporary array on rendered frames.
     private float targetCentre(double current)
-        => UtaPitchGuide.CalculateFixedCentre(
-            notes.Where(note => note.EndTime >= current - 200
-                                 && note.StartTime <= current + UtaPitchGuide.LOOK_AHEAD * relevance_lookahead_fraction)
-                 .ToArray());
+    {
+        double visibleStart = current - 200;
+        double visibleEnd = current + UtaPitchGuide.LOOK_AHEAD * relevance_lookahead_fraction;
+        int end = upperBoundStart(visibleEnd);
+        int start = lowerBoundStart(visibleStart - maximumNoteDuration);
+        float low = float.PositiveInfinity;
+        float high = float.NegativeInfinity;
+        bool found = false;
 
-    /// <summary>Glides <paramref name="current"/> toward <paramref name="target"/>, capped at <see cref="move_rate"/> semitones/second.</summary>
+        for (int i = start; i < end; i++)
+        {
+            UtaNote note = notes[i];
+            if (note.EndTime < visibleStart)
+                continue;
+
+            float midi = (float)note.Midi!.Value;
+            low = Math.Min(low, midi);
+            high = Math.Max(high, midi);
+            found = true;
+        }
+
+        return found ? calculateCentre(low, high) : neutral_centre;
+    }
+
+    private int lowerBoundStart(double time)
+    {
+        int low = 0;
+        int high = notes.Length;
+        while (low < high)
+        {
+            int middle = low + (high - low) / 2;
+            if (notes[middle].StartTime < time)
+                low = middle + 1;
+            else
+                high = middle;
+        }
+        return low;
+    }
+
+    private int upperBoundStart(double time)
+    {
+        int low = 0;
+        int high = notes.Length;
+        while (low < high)
+        {
+            int middle = low + (high - low) / 2;
+            if (notes[middle].StartTime <= time)
+                low = middle + 1;
+            else
+                high = middle;
+        }
+        return low;
+    }
+
+    private static float calculateCentre(float low, float high)
+    {
+        float targetCentre = neutral_centre;
+        if (high - low > UtaPitchGuide.VIEW_SPAN - edge_margin * 2)
+            targetCentre = (low + high) / 2;
+        else if (low < 48)
+            targetCentre = low - edge_margin + UtaPitchGuide.VIEW_SPAN / 2;
+        else if (high > 67)
+            targetCentre = high + edge_margin - UtaPitchGuide.VIEW_SPAN / 2;
+
+        return MathF.Round(Math.Clamp(targetCentre, 40 + UtaPitchGuide.VIEW_SPAN / 2, 88 - UtaPitchGuide.VIEW_SPAN / 2) * 2) / 2;
+    }
+
     internal static float StepCentre(float current, float target, float dt)
     {
         if (Math.Abs(target - current) < 0.2f)

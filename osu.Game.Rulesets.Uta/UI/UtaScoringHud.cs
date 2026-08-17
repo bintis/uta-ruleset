@@ -2,9 +2,9 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System.Collections.Generic;
-using System.Diagnostics;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
+using osu.Framework.Configuration;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
@@ -17,6 +17,7 @@ using osu.Game.Graphics.Sprites;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
+using osu.Game.Rulesets.Uta.Localisation;
 using osu.Game.Rulesets.Uta.Scoring;
 using osuTK;
 using osuTK.Graphics;
@@ -32,9 +33,10 @@ namespace osu.Game.Rulesets.Uta.UI;
 internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHandler<UtaAction>
 {
     private readonly Bindable<UtaScoreHudPosition> hudPosition = new();
+    private readonly Bindable<string> locale = new();
+    private UtaUiLanguage language = UtaUiLanguage.English;
     private bool debugDiagnostics;
     private bool hudVisible = true;
-    private double lastToggleTime = double.NegativeInfinity;
     private readonly BindableLong totalScore = new();
     private readonly BindableDouble composite = new();
     private readonly BindableDouble pitchAccuracy = new();
@@ -59,6 +61,12 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
         Height = 132;
         Masking = true;
         CornerRadius = 9;
+
+        // Without this, fading Alpha to 0 makes the drawable "not present", which drops it
+        // out of the non-positional input queue entirely - including its own ToggleScoreHud
+        // binding. That's the actual root cause of the HUD getting permanently stuck hidden:
+        // once faded out, it stops hearing the very key press meant to bring it back.
+        AlwaysPresent = true;
 
         InternalChildren = new Drawable[]
         {
@@ -93,11 +101,18 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
     }
 
     [BackgroundDependencyLoader]
-    private void load(ScoreProcessor scoreProcessor, UtaGameplayScoringController controller, UtaRulesetConfigManager config)
+    private void load(ScoreProcessor scoreProcessor, UtaGameplayScoringController controller, UtaRulesetConfigManager config, FrameworkConfigManager frameworkConfig)
     {
         hudPosition.BindTo(config.GetBindable<UtaScoreHudPosition>(UtaRulesetSetting.ScoreHudPosition));
         hudPosition.BindValueChanged(applyPosition, true);
         debugDiagnostics = config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics).Value;
+
+        locale.BindTo(frameworkConfig.GetBindable<string>(FrameworkSetting.Locale));
+        locale.BindValueChanged(value =>
+        {
+            language = UtaLanguageResolver.FromLocale(value.NewValue);
+            refresh();
+        }, true);
 
         if (scoreProcessor is not UtaScoreProcessor utaScore)
         {
@@ -144,12 +159,15 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
         }
 
         scoreText.Text = $"{totalScore.Value / (double)UtaScoringOptions.MAX_SCORE * 100:0.00} / 100";
-        qualityText.Text = $"综合 {composite.Value:P1}   音程 {pitchAccuracy.Value:P1}   覆盖 {coverage.Value:P1}";
-        streakText.Text = $"Combo {nativeCombo.Value:N0}   Accurate {accurateStreak.Value:N0}   {profile.Value}";
+        qualityText.Text = $"{UtaStrings.Get("hud.composite", language)} {composite.Value:P1}   "
+                            + $"{UtaStrings.Get("hud.pitch", language)} {pitchAccuracy.Value:P1}   "
+                            + $"{UtaStrings.Get("hud.coverage", language)} {coverage.Value:P1}";
+        streakText.Text = $"{UtaStrings.Get("hud.combo", language)} {nativeCombo.Value:N0}   "
+                           + $"{UtaStrings.Get("hud.accurate", language)} {accurateStreak.Value:N0}   {profile.Value}";
 
         string faults = lastFaults.Value == UtaPitchFault.None ? string.Empty : $" · {formatFaults(lastFaults.Value)}";
         string bias = lastGrade.Value == UtaNoteGrade.Ignored ? string.Empty : $" · {lastBias.Value:+0;-0;0}c";
-        noteText.Text = $"当前音符：{lastGrade.Value}{faults}{bias}";
+        noteText.Text = $"{UtaStrings.Get("hud.current_note", language)}：{lastGrade.Value}{faults}{bias}";
         archiveText.Text = archiveStatus.Value;
     }
 
@@ -177,19 +195,20 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
 
         // Track the intended state explicitly rather than reading Alpha, which can be
         // mid-transform (e.g. 0.4) if S is pressed again before the previous 150ms fade
-        // finishes - repeatedly toggling off an already-fading-out value here would just
-        // restart the SAME fade back to back rather than reversing it. Key-repeat while
-        // holding S is also ignored so it does not spam the transform queue.
-        // Uses a real wall-clock timestamp rather than the gameplay Clock: that clock can jump
-        // backwards on seeks/loops/retries, which would make this debounce permanently swallow
-        // every subsequent press (CurrentTime - lastToggleTime staying negative forever).
-        double now = Stopwatch.GetTimestamp() * 1000.0 / Stopwatch.Frequency;
-        if (now - lastToggleTime < 150)
-            return true;
-
-        lastToggleTime = now;
+        // finishes - toggling off an already-fading-out value here reverses the SAME
+        // fade rather than restarting it, so two quick presses always end up back where
+        // they started. Do NOT add a time-based debounce on top of this: the key-binding
+        // container only raises OnPressed once per physical key-down (OS auto-repeat while
+        // the key stays held does not generate additional Pressed events), so a manual
+        // "swallow presses within N ms" guard has nothing left to protect against - it only
+        // ends up eating a second deliberate press that lands inside the first press's fade
+        // window, which is exactly what caused the HUD to "randomly" stay hidden.
         hudVisible = !hudVisible;
         this.FadeTo(hudVisible ? 1 : 0, 150, Easing.OutQuint);
+
+        if (debugDiagnostics)
+            Logger.Log($"Uta debug scoring hud: toggle pressed, hudVisible={hudVisible}");
+
         return true;
     }
 
@@ -197,14 +216,14 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
     {
     }
 
-    private static string formatFaults(UtaPitchFault faults)
+    private string formatFaults(UtaPitchFault faults)
     {
         var parts = new List<string>();
-        if (faults.HasFlag(UtaPitchFault.High)) parts.Add("High");
-        if (faults.HasFlag(UtaPitchFault.Low)) parts.Add("Low");
-        if (faults.HasFlag(UtaPitchFault.Unstable)) parts.Add("Unstable");
-        if (faults.HasFlag(UtaPitchFault.LowCoverage)) parts.Add("Low coverage");
-        if (faults.HasFlag(UtaPitchFault.Inaccurate)) parts.Add("Inaccurate");
+        if (faults.HasFlag(UtaPitchFault.High)) parts.Add(UtaStrings.Get("fault.high", language));
+        if (faults.HasFlag(UtaPitchFault.Low)) parts.Add(UtaStrings.Get("fault.low", language));
+        if (faults.HasFlag(UtaPitchFault.Unstable)) parts.Add(UtaStrings.Get("fault.unstable", language));
+        if (faults.HasFlag(UtaPitchFault.LowCoverage)) parts.Add(UtaStrings.Get("fault.low_coverage", language));
+        if (faults.HasFlag(UtaPitchFault.Inaccurate)) parts.Add(UtaStrings.Get("fault.inaccurate", language));
         return string.Join(" / ", parts);
     }
 
@@ -219,6 +238,7 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
     protected override void Dispose(bool isDisposing)
     {
         hudPosition.UnbindAll();
+        locale.UnbindAll();
         totalScore.UnbindAll();
         composite.UnbindAll();
         pitchAccuracy.UnbindAll();

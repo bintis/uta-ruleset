@@ -24,7 +24,7 @@ public sealed class UtaModRelax : Mod, IApplicableMod, IApplicableToBeatmap, IAp
     public override string Acronym => "RX";
 
     public override LocalisableString Description
-        => "关闭实时演唱评分、音符判定与生命值结算。只显示音高反馈，不进行打分。";
+        => "Turns off real-time singing judgement, note scoring and health. Only pitch feedback is shown - no score.";
 
     public override IconUsage? Icon => FontAwesome.Solid.Couch;
 

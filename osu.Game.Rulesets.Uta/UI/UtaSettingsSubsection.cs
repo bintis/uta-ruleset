@@ -12,6 +12,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Localisation;
+using osu.Framework.Logging;
 using osu.Framework.Platform;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterfaceV2;
@@ -55,6 +56,12 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
         this.audioManager = audioManager;
         this.host = host;
         microphoneDevice = config.GetBindable<string>(UtaRulesetSetting.MicrophoneDevice);
+
+        if (config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics).Value)
+        {
+            Logger.Log($"Uta debug settings subsection: loaded with config instance {config.GetHashCode()} - "
+                       + $"mic-output='{config.GetBindable<string>(UtaRulesetSetting.MicrophoneOutputDevice).Value}'");
+        }
 
         Children = new Drawable[]
         {

@@ -28,7 +28,7 @@ public sealed class UtaScoringEngine
         ValidateTargets(orderedTargets);
 
         UtaScoringFrame[] frameArray = frames.ToArray();
-        var resampler = new UtaPitchFrameResampler(frameArray, options);
+        var resampler = new UtaPitchFrameResampler((IEnumerable<UtaScoringFrame>)frameArray, options);
         var accumulators = new List<UtaNoteScoreAccumulator>(orderedTargets.Length);
         var noteScores = new List<UtaNoteScore>(orderedTargets.Length);
 
@@ -36,18 +36,7 @@ public sealed class UtaScoringEngine
         {
             var accumulator = new UtaNoteScoreAccumulator(target, options);
             accumulators.Add(accumulator);
-
-            long binStart = UtaScoringMath.AlignBinStart(target.StartTimeMicroseconds, options.BinDurationMicroseconds);
-            while (binStart < target.EndTimeMicroseconds)
-            {
-                long binEnd = checked(binStart + options.BinDurationMicroseconds);
-                long overlapStart = Math.Max(target.StartTimeMicroseconds, binStart);
-                long overlapEnd = Math.Min(target.EndTimeMicroseconds, binEnd);
-                long sampleTime = overlapStart + (overlapEnd - overlapStart) / 2;
-                accumulator.Accumulate(binStart, binEnd, sampleTime, resampler.SampleAt(sampleTime));
-                binStart = binEnd;
-            }
-
+            accumulateTarget(accumulator, target, resampler);
             noteScores.Add(accumulator.Complete());
         }
 
@@ -134,8 +123,83 @@ public sealed class UtaScoringEngine
         return preliminary with { Analysis = UtaAnalysisReportGenerator.Generate(preliminary) };
     }
 
+    /// <summary>
+    /// Scores one target without constructing a synthetic one-note performance.
+    /// This is the realtime path used by <see cref="UtaStreamingScoringSession"/>.
+    /// The accumulator and resampler are exactly the same ones used by <see cref="Score"/>;
+    /// only performance-wide aggregation, dictionaries and analysis are skipped.
+    /// </summary>
     public UtaNoteScore ScoreNote(UtaScoringTarget target, IEnumerable<UtaScoringFrame> frames)
-        => Score(new[] { target }, frames).Notes.Single();
+    {
+        ArgumentNullException.ThrowIfNull(frames);
+        validateSingleTarget(target);
+        var resampler = new UtaPitchFrameResampler(frames, options);
+        var accumulator = new UtaNoteScoreAccumulator(target, options);
+        accumulateTarget(accumulator, target, resampler);
+        return accumulator.Complete();
+    }
+
+    /// <summary>
+    /// Span overload for the realtime scorer. It lets the streaming session score directly
+    /// over its active frame window instead of allocating a temporary array per completed note.
+    /// </summary>
+    internal UtaNoteScore ScoreNote(UtaScoringTarget target, ReadOnlySpan<UtaScoringFrame> frames)
+    {
+        // Streaming-session targets were validated as a set at construction time.
+        // The active frame slice is already ordered and epoch-filtered, so the ref-struct
+        // resampler keeps this path allocation-free.
+        var resampler = new UtaRealtimePitchFrameResampler(frames, options);
+        var accumulator = new UtaNoteScoreAccumulator(target, options);
+        accumulateTarget(accumulator, target, resampler);
+        return accumulator.Complete();
+    }
+
+    private void accumulateTarget(UtaNoteScoreAccumulator accumulator, UtaScoringTarget target, UtaPitchFrameResampler resampler)
+    {
+        long binStart = UtaScoringMath.AlignBinStart(target.StartTimeMicroseconds, options.BinDurationMicroseconds);
+        while (binStart < target.EndTimeMicroseconds)
+        {
+            long binEnd = checked(binStart + options.BinDurationMicroseconds);
+            long overlapStart = Math.Max(target.StartTimeMicroseconds, binStart);
+            long overlapEnd = Math.Min(target.EndTimeMicroseconds, binEnd);
+            long sampleTime = overlapStart + (overlapEnd - overlapStart) / 2;
+            accumulator.Accumulate(binStart, binEnd, sampleTime, resampler.SampleAt(sampleTime));
+            binStart = binEnd;
+        }
+    }
+
+    private void accumulateTarget(UtaNoteScoreAccumulator accumulator, UtaScoringTarget target, UtaRealtimePitchFrameResampler resampler)
+    {
+        long binStart = UtaScoringMath.AlignBinStart(target.StartTimeMicroseconds, options.BinDurationMicroseconds);
+        while (binStart < target.EndTimeMicroseconds)
+        {
+            long binEnd = checked(binStart + options.BinDurationMicroseconds);
+            long overlapStart = Math.Max(target.StartTimeMicroseconds, binStart);
+            long overlapEnd = Math.Min(target.EndTimeMicroseconds, binEnd);
+            long sampleTime = overlapStart + (overlapEnd - overlapStart) / 2;
+            accumulator.Accumulate(binStart, binEnd, sampleTime, resampler.SampleAt(sampleTime));
+            binStart = binEnd;
+        }
+    }
+
+    private void validateSingleTarget(UtaScoringTarget target)
+    {
+        if (target.Index < 0)
+            throw new ArgumentException("A scoring target has a negative index.", "targets");
+        if (target.StartTimeMicroseconds < 0 || target.EndTimeMicroseconds <= target.StartTimeMicroseconds)
+            throw new ArgumentException($"Scoring target {target.Index} has an invalid interval.", "targets");
+        if (target.Midi is < 0 or > 127)
+            throw new ArgumentException($"Scoring target {target.Index} has an invalid MIDI value.", "targets");
+        if (target.ConfidencePermille > UtaScoringOptions.QUALITY_SCALE)
+            throw new ArgumentException($"Scoring target {target.Index} has invalid confidence.", "targets");
+
+        if (target.Midi is { } midi)
+        {
+            int adjustedMidi = midi + options.TransposeSemitones;
+            if (adjustedMidi is < 0 or > 127)
+                throw new ArgumentException($"Scoring target {target.Index} is outside MIDI 0-127 after Transpose.", "targets");
+        }
+    }
 
     internal void ValidateTargets(IReadOnlyList<UtaScoringTarget> targets)
     {

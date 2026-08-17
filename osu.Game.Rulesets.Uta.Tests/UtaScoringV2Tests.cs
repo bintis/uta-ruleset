@@ -372,7 +372,7 @@ public class UtaScoringV2Tests
             new(30_000, 6900, 1000, true),
         };
 
-        UtaNoteScore score = new UtaScoringEngine().ScoreNote(target, frames);
+        UtaNoteScore score = new UtaScoringEngine().ScoreNote(target, (IEnumerable<UtaScoringFrame>)frames);
 
         Assert.That(score.Grade, Is.EqualTo(UtaNoteGrade.Perfect));
     }

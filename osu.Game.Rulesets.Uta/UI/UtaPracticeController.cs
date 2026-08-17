@@ -16,13 +16,6 @@ using osu.Game.Screens.Play;
 
 namespace osu.Game.Rulesets.Uta.UI;
 
-/// <summary>
-/// Owns practice-session state: manual A/B loop points, optional current-phrase looping,
-/// and phrase navigation. Phrases are derived once from the same transcript/target-note gap
-/// analysis <see cref="UtaGapSkipController"/> uses for skippable gaps. Every jump goes through
-/// <see cref="GameplayClockContainer.Seek"/>, so BGM/VOX resync and pitch-history clearing
-/// already happen via the existing <see cref="GameplayClockContainer.OnSeek"/> wiring.
-/// </summary>
 internal sealed partial class UtaPracticeController : CompositeDrawable, IKeyBindingHandler<UtaAction>
 {
     private const double phrase_restart_threshold = 1500;
@@ -52,7 +45,6 @@ internal sealed partial class UtaPracticeController : CompositeDrawable, IKeyBin
         phraseLoopLeadIn.BindTo(audioSettings.PhraseLoopLeadIn);
         debugDiagnostics.BindTo(audioSettings.DebugDiagnostics);
 
-        // The two loop mechanisms are mutually exclusive so their repeat behaviour never fights.
         LoopPointA.BindValueChanged(_ => LoopCurrentPhrase.Value = false);
         LoopPointB.BindValueChanged(_ => LoopCurrentPhrase.Value = false);
         LoopCurrentPhrase.BindValueChanged(value =>
@@ -133,18 +125,22 @@ internal sealed partial class UtaPracticeController : CompositeDrawable, IKeyBin
 
     private int phraseIndexAt(double time) => PhraseIndexAt(Phrases, time);
 
-    /// <summary>The index of the phrase most recently started at or before <paramref name="time"/>.</summary>
     internal static int PhraseIndexAt(IReadOnlyList<UtaGapSkipController.Phrase> phrases, double time)
     {
-        int index = 0;
-        for (int i = 1; i < phrases.Count; i++)
+        // Phrases are ordered by start time. The previous linear scan ran every rendered
+        // frame while phrase looping was enabled; upper-bound lookup keeps that path O(log n).
+        int low = 0;
+        int high = phrases.Count;
+        while (low < high)
         {
-            if (phrases[i].StartTime > time)
-                break;
-            index = i;
+            int middle = low + (high - low) / 2;
+            if (phrases[middle].StartTime <= time)
+                low = middle + 1;
+            else
+                high = middle;
         }
 
-        return index;
+        return System.Math.Max(0, low - 1);
     }
 
     private void seek(double target, string context)

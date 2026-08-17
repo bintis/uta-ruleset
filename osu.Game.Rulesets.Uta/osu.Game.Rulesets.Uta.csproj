@@ -3,7 +3,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyTitle>osu.Game.Rulesets.Uta</AssemblyTitle>
     <RootNamespace>osu.Game.Rulesets.Uta</RootNamespace>
-    <Version>0.6.2</Version>
+    <Version>0.7.2</Version>
     <OutputType>Library</OutputType>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
@@ -33,6 +33,7 @@
     <Compile Include="Configuration\**\*.cs" />
     <Compile Include="Core\**\*.cs" />
     <Compile Include="Formats\*.cs" />
+    <Compile Include="Localisation\*.cs" />
     <Compile Include="Mods\*.cs" />
     <Compile Include="Pitch\*.cs" />
     <Compile Include="Scoring\**\*.cs" />

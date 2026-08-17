@@ -34,6 +34,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
     private UtaWordToken[] currentTokens = Array.Empty<UtaWordToken>();
     private double[] wordProgress = Array.Empty<double>();
     private int segmentIndex = -1;
+    private int? displayedCountdown;
 
     public UtaLyricsDisplay()
     {
@@ -142,11 +143,17 @@ public partial class UtaLyricsDisplay : CompositeDrawable
 
         currentContainer.Alpha = frame.Visible ? 1 : 0;
         nextContainer.Alpha = frame.Visible && frame.SegmentIndex + 1 < segments.Count ? 1 : 0;
-        countdown.Text = frame.Countdown?.ToString() ?? string.Empty;
+
+        // Avoid formatting a new countdown string every rendered frame. The visible value
+        // only changes at integer-second boundaries.
+        if (frame.Countdown != displayedCountdown)
+        {
+            displayedCountdown = frame.Countdown;
+            countdown.Text = displayedCountdown?.ToString() ?? string.Empty;
+        }
 
         for (int i = 0; i < currentTokens.Length && i < frame.WordProgress.Count; i++)
             currentTokens[i].SetProgress(frame.WordProgress[i]);
-
     }
 
     private void rebuild(int index)

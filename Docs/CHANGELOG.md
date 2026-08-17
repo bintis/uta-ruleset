@@ -3,6 +3,76 @@
 This file records user-visible changes to `uta!`. Future work remains in the
 [README roadmap](README.md#roadmap--todo).
 
+## 0.7.2 - 2026-08-18
+
+### Fixed
+
+- Fixed the Score HUD (`S`) getting permanently stuck hidden. Root cause:
+  neither the Score HUD nor the new Practice HUD set `AlwaysPresent`, so once
+  faded to `Alpha 0` a drawable becomes "not present" in osu!framework and
+  drops out of the input queue - including the very keybinding meant to bring
+  it back. This resolves the known issue tracked in 0.6.2.
+- Removed a redundant time-based debounce on the Score HUD's toggle handler
+  that could itself swallow a legitimate second key press landing inside the
+  first press's 150ms fade - the key-binding container already only raises
+  `OnPressed` once per physical key-down, so the debounce had nothing left to
+  protect against.
+- Fixed lazer's native volume HUD popping open (and eating scroll-wheel
+  input) when opening the in-game settings panel (`O`). The panel's playback
+  sliders share bindables with the remapped native volume meters, so their
+  first lazy-load echoed into the meters; the panel now suppresses the
+  native volume overlay and consumes scroll input itself while it is open.
+- Fixed `UtaAudioRouter`'s per-device mixer cache (`getBus`) having no
+  locking, a latent race if two routed sources for the same output device
+  are created concurrently during component load.
+- Fixed `UtaModNoFail` and `UtaModRelax` showing hardcoded Chinese MOD
+  descriptions regardless of the player's selected language.
+
+### Added
+
+- Added a standalone Practice HUD (`P`), independent of the full settings
+  panel. It is now gated behind a new `Practice` (`PR`) MOD - without it, `P`
+  does nothing - and contains loop points, phrase navigation and a **live**
+  pitch-preserving speed control.
+- Replaced the 11 fixed-value `UtaModPracticeSpeed50`-`150` MODs with a
+  single live speed slider in the Practice HUD, bound directly to lazer's own
+  `MasterGameplayClockContainer.UserPlaybackRate` (the same mechanism lazer's
+  built-in practice-speed control uses) so it can be changed mid-song instead
+  of being fixed at song select. Added a Reset-speed button and a live
+  "current speed" readout.
+- Remapped `OpenSettings` from `P` to `O` to make room for the Practice HUD
+  on `P`.
+- Added Chinese/English/Japanese text for the Score HUD and Practice HUD,
+  following lazer's own `Settings > General > Language` selection live
+  (`osu.Game.Rulesets.Uta.Localisation`). This also fixes the Score HUD
+  previously showing raw Chinese labels regardless of language.
+- Added "Microphone monitor output" and its volume slider to the in-game
+  settings panel's playback group - previously only reachable from the
+  separate global ruleset settings page outside gameplay, so it could never
+  actually be changed while testing routing live.
+- Added a background dim/blur settings group to the in-game settings panel,
+  replacing native `VisualSettings` (which also brought in combo-colour
+  normalisation, storyboard, beatmap-skin and beatmap-colour controls that do
+  not apply to uta!).
+- Added extensive Debug-gated logging across the microphone handler, audio
+  router, recording runtime and settings panels to speed up future
+  diagnosis.
+
+### Changed
+
+- Removed native `VisualSettings` and `InputSettings` from the in-game
+  settings panel; reordered its groups to Background, Playback, Display,
+  Audio.
+
+### Known issues
+
+- Microphone monitor output does not reliably survive to the next play
+  session - it applies live and correctly re-routes audio immediately, but
+  the persisted setting can read back as unset next time gameplay starts.
+  An explicit `config.Save()` on the settings panel closing did not resolve
+  it. Tracked in the [README roadmap](README.md#roadmap--todo) for a fresh
+  pass.
+
 ## 0.6.2 - 2026-08-17
 
 ### Changed
@@ -88,6 +158,36 @@ This file records user-visible changes to `uta!`. Future work remains in the
 
 - Added deterministic recording, timeline, vocal-range and scoring-matrix tests.
 - Device soak / hot-plug validation remains a release gate and is intentionally not marked complete.
+
+## 0.5.0 - 2026-08-17
+
+### Added
+
+- Added deterministic per-note scoring from pitch similarity, voiced
+  duration and confidence, without double-counting after seeks or loops.
+- Added live score, accuracy and consecutive-hit feedback to the gameplay
+  HUD.
+- Added an overall grade plus per-phrase accuracy, pitch bias, stability and
+  missed-section reporting.
+- Added automatic vocal-range detection with a recommended Transpose value
+  before play.
+- Added note-driven health once it could be driven by the completed
+  pitch-scoring pipeline.
+- Added deterministic scoring tests using recorded Pitch frames and fixed
+  gameplay timestamps.
+
+### Changed
+
+- Applied Transpose and OCT consistently to both live scoring and recorded
+  score data.
+- Kept scoring stable across pause, seek, playback-rate and A-B loop
+  transitions.
+- Wrote completed performances into lazer's native score and results flow.
+
+### Validation
+
+- Verified scoring combinations for Transpose, OCT, HT, DT, latency and
+  phrase looping.
 
 ## 0.5.1 - 2026-08-17
 

@@ -45,6 +45,7 @@ internal sealed partial class UtaRecordingRuntime : Component, IUtaPcmCaptureSin
     private bool performanceArchived;
     private string? stagingPath;
     private readonly double naturalEndTime;
+    private bool debugDiagnostics;
 
     public bool RecordingEnabled => recordingEnabled;
 
@@ -76,6 +77,7 @@ internal sealed partial class UtaRecordingRuntime : Component, IUtaPcmCaptureSin
         UtaAudioSettingsState audioSettings)
     {
         this.gameplayClock = gameplayClock;
+        debugDiagnostics = config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics).Value;
         performanceRoot.BindTo(config.GetBindable<string>(UtaRulesetSetting.PerformanceRootDirectory));
         microphoneLatency.BindTo(audioSettings.MicrophoneLatency);
         inputGain.BindTo(audioSettings.MicrophoneInputGain);
@@ -147,6 +149,12 @@ internal sealed partial class UtaRecordingRuntime : Component, IUtaPcmCaptureSin
             MonitorOutputDevice = microphoneOutput.Value,
         });
         beginSegment(UtaRecordingSegmentReason.GameplayStart);
+
+        if (debugDiagnostics)
+        {
+            Logger.Log($"Uta debug recording: take started id={takeId} staging='{stagingPath}' "
+                       + $"device='{microphoneDevice.Value}' gain={inputGain.Value:0.00}");
+        }
     }
 
     private void beginSegment(UtaRecordingSegmentReason reason)
@@ -199,6 +207,13 @@ internal sealed partial class UtaRecordingRuntime : Component, IUtaPcmCaptureSin
             UtaRecordingMetadata recording = await session.StopAsync().ConfigureAwait(false);
             string? path = stagingPath;
             bool hasRecording = path != null && File.Exists(path) && recording.FrameCount > 0;
+
+            if (debugDiagnostics)
+            {
+                double clippedPercent = recording.FrameCount > 0 ? 100.0 * recording.ClippedSamples / recording.FrameCount : 0;
+                Logger.Log($"Uta debug recording: take finalised hasRecording={hasRecording} frames={recording.FrameCount} "
+                           + $"clipped={recording.ClippedSamples} ({clippedPercent:0.00}%) segments={recording.Segments.Count} path='{path}'");
+            }
 
             UtaPerformanceScore score = scoring.CompletePerformance();
             var manifest = UtaPerformanceManifest.FromScore(

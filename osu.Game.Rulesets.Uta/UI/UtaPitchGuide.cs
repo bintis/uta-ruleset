@@ -20,10 +20,6 @@ using osuTK.Graphics;
 
 namespace osu.Game.Rulesets.Uta.UI;
 
-/// <summary>
-/// Uta's flowing pitch guide, using the same 1.75s history / 5.25s look-ahead
-/// window and nineteen-semitone adaptive viewport as the standalone player.
-/// </summary>
 public partial class UtaPitchGuide : CompositeDrawable
 {
     internal const double LOOK_BEHIND = 1750;
@@ -32,10 +28,6 @@ public partial class UtaPitchGuide : CompositeDrawable
     internal const float PLAYHEAD_POSITION = (float)(LOOK_BEHIND / (LOOK_BEHIND + LOOK_AHEAD));
 
     private const double window = LOOK_BEHIND + LOOK_AHEAD;
-
-    // How long to keep retrying the official per-note grade (UtaGameplayScoringController.TryGetCompletedNote)
-    // after a note's end time before giving up and falling back to the live heuristic. Covers microphone
-    // latency plus the scorer's own commit delay so a real grade is used whenever one arrives in time.
     private const double official_grade_wait_ms = 400;
     private const float base_low_midi = 48;
     private const float base_high_midi = 67;
@@ -50,8 +42,8 @@ public partial class UtaPitchGuide : CompositeDrawable
     private readonly Container axisLayer;
     private readonly List<TargetNote> targetNotes = new();
     private TargetNote[] commitOrder = Array.Empty<TargetNote>();
-    private readonly List<Box> gridLines = new();
-    private readonly Dictionary<int, OsuSpriteText> pitchLabels = new();
+    private readonly List<Box> gridLines = new((int)VIEW_SPAN + 1);
+    private readonly Dictionary<int, OsuSpriteText> pitchLabels = new(5);
     private readonly BindableFloat pitchDeviation = new();
     private readonly BindableFloat pitchSimilarity = new();
     private readonly BindableBool voiceActive = new();
@@ -65,6 +57,7 @@ public partial class UtaPitchGuide : CompositeDrawable
     private int previousRangeStart;
     private int previousRangeEnd;
     private int nextCommitIndex;
+    private float lastLayoutCentre = float.NaN;
 
     public UtaPitchGuide()
     {
@@ -175,6 +168,7 @@ public partial class UtaPitchGuide : CompositeDrawable
         keyShiftSemitones.BindValueChanged(_ => lastUpdateTime = double.NegativeInfinity);
         maximumNoteDuration = notes.Length == 0 ? 0 : notes.Max(note => note.Duration);
 
+        targetNotes.Capacity = notes.Length;
         foreach (var note in notes)
         {
             var drawable = new TargetNote(note);
@@ -192,7 +186,6 @@ public partial class UtaPitchGuide : CompositeDrawable
             pitchSimilarity.BindTo(microphone.LivePitchSimilarity);
             voiceActive.BindTo(microphone.LiveVoiceActive);
         }
-
     }
 
     protected override void Update()
@@ -208,8 +201,6 @@ public partial class UtaPitchGuide : CompositeDrawable
             : 0;
         lastUpdateTime = current;
 
-        // The viewport centre now glides to follow upcoming notes (UtaPitchViewport), so the grid
-        // and labels need repositioning every frame rather than only on load/key-shift change.
         updateStaticPitchLayout();
 
         float shiftedCentre = centreMidi.Value + keyShiftSemitones.Value;
@@ -257,9 +248,6 @@ public partial class UtaPitchGuide : CompositeDrawable
             if (timeSinceEnd < 0)
                 break;
 
-            // Prefer the same grade the real score uses. It lands asynchronously (microphone
-            // latency + the scorer's commit delay), so keep retrying for a bounded window before
-            // falling back to the live preview heuristic rather than leaving the note uncoloured.
             if (scoringController != null && scoringController.ScoringEnabled
                                            && scoringController.TryPreviewCompletedNote(pending.Note.ScoringIndex, out UtaNoteScore? score) && score != null)
             {
@@ -289,6 +277,10 @@ public partial class UtaPitchGuide : CompositeDrawable
     private void updateStaticPitchLayout()
     {
         float shiftedCentre = centreMidi.Value + keyShiftSemitones.Value;
+        if (shiftedCentre.Equals(lastLayoutCentre))
+            return;
+
+        lastLayoutCentre = shiftedCentre;
         float high = shiftedCentre + VIEW_SPAN / 2;
         int firstGridMidi = (int)MathF.Floor(shiftedCentre - VIEW_SPAN / 2);
 
@@ -296,7 +288,7 @@ public partial class UtaPitchGuide : CompositeDrawable
         {
             int midi = firstGridMidi + i;
             int pitchClass = ((midi % 12) + 12) % 12;
-            bool labelled = pitchLabels.ContainsKey(midi);
+            bool labelled = isLabelledMidi(midi);
             gridLines[i].Y = (high - midi) / VIEW_SPAN;
             gridLines[i].Height = labelled ? 1.2f : 0.65f;
             gridLines[i].Alpha = labelled ? 0.16f : pitchClass is 1 or 3 or 6 or 8 or 10 ? 0.032f : 0.055f;
@@ -309,6 +301,8 @@ public partial class UtaPitchGuide : CompositeDrawable
             label.Alpha = y is >= 0.035f and <= 0.965f ? 0.66f : 0;
         }
     }
+
+    private static bool isLabelledMidi(int midi) => midi is 48 or 53 or 60 or 67 or 72;
 
     private int lowerBoundStart(double time)
     {
@@ -349,8 +343,6 @@ public partial class UtaPitchGuide : CompositeDrawable
             if (notes[i].EndTime >= time)
                 return targetNotes[i];
 
-            // Pitch notes are normally non-overlapping. This keeps overlap
-            // support without turning the common case into a full-song scan.
             if (time - notes[i].StartTime > maximumNoteDuration)
                 break;
         }
@@ -457,20 +449,6 @@ public partial class UtaPitchGuide : CompositeDrawable
             fill.FadeColour(colour, 140, Easing.OutQuint);
             fill.FadeTo(alpha * 0.58f, 140, Easing.OutQuint);
         }
-
-        // Superseded by the osu-style grade bands below, which colour committed notes using the
-        // same UtaNoteGrade the real score uses instead of this separate nightingale-style heuristic.
-        // Left in place (rather than deleted) since PreviewColour() above still uses ColourState's
-        // live estimate for in-progress notes, where no official grade exists yet.
-        // private static (Color4 Colour, float Alpha, float Glow) styleFor(UtaNoteColourGrade grade)
-        //     => grade switch
-        //     {
-        //         UtaNoteColourGrade.Perfect => (new Color4(253, 224, 71, 255), 0.88f, 8),
-        //         UtaNoteColourGrade.Good => (new Color4(74, 222, 128, 255), 0.76f, 3),
-        //         UtaNoteColourGrade.High => (new Color4(251, 146, 60, 255), 0.68f, 0),
-        //         UtaNoteColourGrade.Low => (new Color4(96, 165, 250, 255), 0.68f, 0),
-        //         _ => (new Color4(251, 113, 133, 255), 0.58f, 0),
-        //     };
 
         private static (Color4 Colour, float Alpha, float Glow) styleFor(UtaNoteGrade grade)
             => grade switch

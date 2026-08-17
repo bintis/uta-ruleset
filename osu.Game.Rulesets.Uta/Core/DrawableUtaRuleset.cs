@@ -31,9 +31,11 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
     private readonly UtaPitchViewport pitchViewport;
     private readonly UtaGameplayScoringController scoringController;
     private readonly UtaRecordingRuntime recordingRuntime;
+    private readonly UtaQuickSettingsContainer quickSettings;
     private readonly IReadOnlyList<Mod> selectedMods;
     private readonly bool scoringEnabled;
     private readonly bool recordingEnabled;
+    private readonly bool practiceEnabled;
 
     public new UtaInputManager KeyBindingInputManager => (UtaInputManager)base.KeyBindingInputManager;
 
@@ -43,6 +45,7 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         selectedMods = mods ?? [];
         scoringEnabled = selectedMods.All(mod => mod is not UtaModRelax);
         recordingEnabled = selectedMods.Any(mod => mod is UtaModRecording);
+        practiceEnabled = selectedMods.Any(mod => mod is UtaModPractice);
 
         practiceController = new UtaPracticeController((UtaBeatmap)beatmap);
         pitchViewport = new UtaPitchViewport((UtaBeatmap)beatmap);
@@ -56,11 +59,14 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         Overlays.Add(recordingRuntime);
         if (recordingEnabled)
             Overlays.Add(new UtaRecordingHud());
-        Overlays.Add(new UtaQuickSettingsContainer());
+        quickSettings = new UtaQuickSettingsContainer();
+        Overlays.Add(quickSettings);
         Overlays.Add(new UtaAudioController());
         Overlays.Add(new UtaPerformanceDiagnostics());
         Overlays.Add(new UtaGapSkipController((UtaBeatmap)beatmap));
         Overlays.Add(practiceController);
+        if (practiceEnabled)
+            Overlays.Add(new UtaPracticeHud());
         Overlays.Add(pitchViewport);
         Overlays.Add(new UtaVolumeOverlayExtension());
         if (scoringEnabled)
@@ -88,6 +94,7 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         dependencies.CacheAs(pitchViewport);
         dependencies.CacheAs(scoringController);
         dependencies.CacheAs(recordingRuntime);
+        dependencies.CacheAs(quickSettings.Overlay);
         return dependencies;
     }
 

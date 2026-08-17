@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 namespace osu.Game.Rulesets.Uta.Scoring;
 
@@ -17,17 +18,17 @@ public sealed class UtaStreamingScoringSession
 {
     private readonly object sync = new();
     private readonly UtaScoringTarget[] targets;
-    private readonly UtaScoringOptions options;
-    private readonly UtaScoringEngine engine;
-    private readonly long realtimeContextMicroseconds;
+    private UtaScoringOptions options;
+    private UtaScoringEngine engine;
+    private long realtimeContextMicroseconds;
     private readonly long?[] earliestRequiredFrameTimes;
 
     // The full list is retained for the one final performance calculation and
     // archive. Realtime note commits must never repeatedly rescore this list:
     // doing so makes every later note more expensive than the previous one.
-    private readonly List<UtaScoringFrame> allFrames = new();
-    private readonly List<UtaScoringFrame> realtimeFrames = new();
-    private readonly Dictionary<int, UtaNoteScore> completed = new();
+    private readonly List<UtaScoringFrame> allFrames;
+    private readonly List<UtaScoringFrame> realtimeFrames;
+    private readonly Dictionary<int, UtaNoteScore> completed;
 
     private UtaPerformanceScore? completedPerformance;
     private int realtimeStartIndex;
@@ -83,18 +84,49 @@ public sealed class UtaStreamingScoringSession
                                   .ThenBy(target => target.Index)
                                   .ToArray();
 
+        long performanceEnd = this.targets.Length == 0 ? 0 : this.targets[^1].EndTimeMicroseconds;
+        int expectedFrameCapacity = (int)Math.Clamp(performanceEnd / 10_000 + 64, 256, 32_768);
+        allFrames = new List<UtaScoringFrame>(expectedFrameCapacity);
+        realtimeFrames = new List<UtaScoringFrame>(Math.Min(expectedFrameCapacity, 512));
+        completed = new Dictionary<int, UtaNoteScore>(this.targets.Length);
+
         realtimeContextMicroseconds = Math.Max(
             this.options.MaximumInterpolationGapMicroseconds,
             this.options.MaximumNearestFrameDistanceMicroseconds);
         earliestRequiredFrameTimes = new long?[this.targets.Length + 1];
-        long? earliestRequired = null;
-        for (int i = this.targets.Length - 1; i >= 0; i--)
-        {
-            UtaScoringTarget target = this.targets[i];
-            if (UtaScoringMath.IsScorable(target, this.options))
-                earliestRequired = subtractSaturating(target.StartTimeMicroseconds, realtimeContextMicroseconds);
+        rebuildEarliestRequiredFrameTimes();
+    }
 
-            earliestRequiredFrameTimes[i] = earliestRequired;
+    /// <summary>
+    /// Starts a fresh deterministic timeline while retaining already allocated collections.
+    /// Used by practice seeks/loops to avoid rebuilding large backing arrays on every repeat.
+    /// </summary>
+    internal void Reset(UtaScoringOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+
+        lock (sync)
+        {
+            this.options = options;
+            // Target structure was validated in the constructor and does not change across
+            // gameplay seeks. The controller only advances TimelineEpoch here, so repeating
+            // HashSet/index validation would create avoidable practice-loop garbage.
+            engine = new UtaScoringEngine(options);
+            realtimeContextMicroseconds = Math.Max(
+                options.MaximumInterpolationGapMicroseconds,
+                options.MaximumNearestFrameDistanceMicroseconds);
+
+            allFrames.Clear();
+            realtimeFrames.Clear();
+            completed.Clear();
+            completedPerformance = null;
+            realtimeStartIndex = 0;
+            nextTarget = 0;
+            lastWatermark = long.MinValue;
+            rejectedLateFrames = 0;
+            MaximumRealtimeFrameWindow = 0;
+            rebuildEarliestRequiredFrameTimes();
         }
     }
 
@@ -149,22 +181,25 @@ public sealed class UtaStreamingScoringSession
             }
             lastWatermark = songTimeMicroseconds;
 
-            var newlyCompleted = new List<UtaNoteScore>();
+            // This method runs once per gameplay update. Most updates complete no note,
+            // so do not allocate the result List until the first target actually becomes due.
+            if (nextTarget >= targets.Length
+                || addSaturating(targets[nextTarget].EndTimeMicroseconds, options.CommitDelayMicroseconds) > songTimeMicroseconds)
+                return Array.Empty<UtaNoteScore>();
+
+            List<UtaNoteScore>? newlyCompleted = null;
             while (nextTarget < targets.Length
                    && addSaturating(targets[nextTarget].EndTimeMicroseconds, options.CommitDelayMicroseconds) <= songTimeMicroseconds)
             {
                 UtaScoringTarget target = targets[nextTarget++];
-                UtaScoringFrame[] targetFrames = framesFor(target);
-                MaximumRealtimeFrameWindow = Math.Max(MaximumRealtimeFrameWindow, targetFrames.Length);
-
-                UtaNoteScore score = engine.ScoreNote(target, targetFrames);
+                UtaNoteScore score = scoreRealtimeTarget(target);
                 completed[target.Index] = score;
-                newlyCompleted.Add(score);
+                (newlyCompleted ??= new List<UtaNoteScore>(1)).Add(score);
 
                 trimRealtimeFrames();
             }
 
-            return newlyCompleted;
+            return newlyCompleted == null ? Array.Empty<UtaNoteScore>() : newlyCompleted;
         }
     }
 
@@ -185,10 +220,13 @@ public sealed class UtaStreamingScoringSession
             return completedPerformance ??= engine.Score(targets, allFrames);
     }
 
-    private UtaScoringFrame[] framesFor(UtaScoringTarget target)
+    private UtaNoteScore scoreRealtimeTarget(UtaScoringTarget target)
     {
         if (!UtaScoringMath.IsScorable(target, options))
-            return Array.Empty<UtaScoringFrame>();
+        {
+            MaximumRealtimeFrameWindow = Math.Max(MaximumRealtimeFrameWindow, 0);
+            return engine.ScoreNote(target, ReadOnlySpan<UtaScoringFrame>.Empty);
+        }
 
         long start = subtractSaturating(target.StartTimeMicroseconds, realtimeContextMicroseconds);
         long end = addSaturating(target.EndTimeMicroseconds, realtimeContextMicroseconds);
@@ -196,12 +234,15 @@ public sealed class UtaStreamingScoringSession
         int first = lowerBound(start, realtimeStartIndex);
         int afterLast = upperBound(end, first);
         int count = afterLast - first;
-        if (count <= 0)
-            return Array.Empty<UtaScoringFrame>();
+        MaximumRealtimeFrameWindow = Math.Max(MaximumRealtimeFrameWindow, count);
 
-        var result = new UtaScoringFrame[count];
-        realtimeFrames.CopyTo(first, result, 0, count);
-        return result;
+        if (count <= 0)
+            return engine.ScoreNote(target, ReadOnlySpan<UtaScoringFrame>.Empty);
+
+        // realtimeFrames is not modified while sync is held. Exposing its active slice as a
+        // span therefore removes the per-note CopyTo/new-array allocation from the hot path.
+        ReadOnlySpan<UtaScoringFrame> window = CollectionsMarshal.AsSpan(realtimeFrames).Slice(first, count);
+        return engine.ScoreNote(target, window);
     }
 
     private void trimRealtimeFrames()
@@ -269,6 +310,20 @@ public sealed class UtaStreamingScoringSession
         }
 
         return low;
+    }
+
+    private void rebuildEarliestRequiredFrameTimes()
+    {
+        long? earliestRequired = null;
+        earliestRequiredFrameTimes[targets.Length] = null;
+        for (int i = targets.Length - 1; i >= 0; i--)
+        {
+            UtaScoringTarget target = targets[i];
+            if (UtaScoringMath.IsScorable(target, options))
+                earliestRequired = subtractSaturating(target.StartTimeMicroseconds, realtimeContextMicroseconds);
+
+            earliestRequiredFrameTimes[i] = earliestRequired;
+        }
     }
 
     private long? getEarliestRequiredFrameTime() => earliestRequiredFrameTimes[nextTarget];

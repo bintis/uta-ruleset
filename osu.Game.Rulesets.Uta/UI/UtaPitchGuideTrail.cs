@@ -33,9 +33,9 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
 
     private readonly Container glowLayer;
     private readonly Container traceLayer;
-    private readonly List<Box> glowSegments = new();
-    private readonly List<Box> traceSegments = new();
-    private readonly List<TrailSample> samples = new();
+    private readonly List<Box> glowSegments = new(256);
+    private readonly List<Box> traceSegments = new(256);
+    private readonly List<TrailSample> samples = new(256);
     private readonly BindableBool enabled = new();
     private readonly BindableFloat detectedPitchMidi = new();
     private readonly BindableFloat pitchSimilarity = new();
@@ -104,7 +104,10 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         double sampleTime = detectedPitchTime.Value;
         if (voiceActive.Value && sampleTime - lastSampleTime >= sample_interval)
         {
-            samples.Add(new TrailSample(sampleTime, detectedPitchMidi.Value, pitchSimilarity.Value));
+            // The target chart is immutable during gameplay. Cache this lookup once when the
+            // sample arrives instead of repeating a binary note lookup for every segment on
+            // every trail rebuild.
+            samples.Add(new TrailSample(sampleTime, detectedPitchMidi.Value, pitchSimilarity.Value, findNoteAt(sampleTime) != null));
             lastSampleTime = sampleTime;
             samplesChanged = true;
         }
@@ -172,7 +175,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
 
             Vector2 delta = end - start;
             float similarity = (previous.Similarity + sample.Similarity) / 2;
-            Color4 colour = trailColour(similarity, findNoteAt(sample.Time) != null);
+            Color4 colour = trailColour(similarity, sample.HasTarget);
 
             Box segment = getSegment(traceSegments, traceLayer, used);
             setSegment(segment, start, delta, colour, 3.2f + similarity * 1.6f, 0.76f + similarity * 0.24f);
@@ -280,5 +283,5 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         base.Dispose(isDisposing);
     }
 
-    private readonly record struct TrailSample(double Time, float Midi, float Similarity);
+    private readonly record struct TrailSample(double Time, float Midi, float Similarity, bool HasTarget);
 }

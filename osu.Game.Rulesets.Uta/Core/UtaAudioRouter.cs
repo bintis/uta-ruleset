@@ -55,6 +55,7 @@ internal sealed class UtaAudioRouter : IDisposable
             throw new InvalidOperationException($"Could not create pitch/tempo stream: {error}");
         }
 
+        Logger.Log($"Uta debug router: track '{Path.GetFileName(filePath)}' requested output='{outputDevice}' resolved device={device} source={source} tempo={tempo}");
         route(tempo, device, true);
         return new UtaRoutedAudioStream(this, tempo, device);
     }
@@ -83,6 +84,7 @@ internal sealed class UtaAudioRouter : IDisposable
             throw new InvalidOperationException($"Could not create pitch/tempo stream: {error}");
         }
 
+        Logger.Log($"Uta debug router: track (bytes) requested output='{outputDevice}' resolved device={device} source={source} tempo={tempo}");
         route(tempo, device, true);
         return new UtaRoutedAudioStream(this, tempo, device);
     }
@@ -96,6 +98,8 @@ internal sealed class UtaAudioRouter : IDisposable
         int stream = Bass.CreateStream(frequency, channels, BassFlags.Decode | BassFlags.Float, StreamProcedureType.Push);
         if (previous > 0)
             Bass.CurrentDevice = previous;
+
+        Logger.Log($"Uta debug router: monitor requested output='{outputDevice}' resolved device={device} stream={stream}");
 
         if (stream != 0)
             route(stream, device, false);
@@ -141,8 +145,12 @@ internal sealed class UtaAudioRouter : IDisposable
             if (sourceDevice != device && !Bass.ChannelSetDevice(source, device))
                 throw new InvalidOperationException($"Could not move Uta source to '{Bass.GetDeviceInfo(device).Name}': {Bass.LastError}");
 
+            int bus = getBus(device);
             BassFlags flags = paused ? BassFlags.MixerChanPause : BassFlags.Default;
-            if (!BassMix.MixerAddChannel(getBus(device), source, flags))
+            bool added = BassMix.MixerAddChannel(bus, source, flags);
+            Logger.Log($"Uta debug router: route source={source} -> device={device} bus={bus} paused={paused} added={added}"
+                       + (added ? string.Empty : $" error={Bass.LastError}"));
+            if (!added)
                 throw new InvalidOperationException($"Could not add Uta source to output mixer: {Bass.LastError}");
         }
         finally
@@ -154,24 +162,27 @@ internal sealed class UtaAudioRouter : IDisposable
 
     private int getBus(int device)
     {
-        if (buses.TryGetValue(device, out int bus))
+        lock (buses)
+        {
+            if (buses.TryGetValue(device, out int cached))
+                return cached;
+
+            int previous = Bass.CurrentDevice;
+            ensureInitialised(device);
+            Bass.CurrentDevice = device;
+            int bus = BassMix.CreateMixerStream(48000, 2, BassFlags.Float | BassFlags.MixerNonStop);
+            if (bus != 0)
+                Bass.ChannelPlay(bus);
+            if (previous > 0)
+                Bass.CurrentDevice = previous;
+
+            if (bus == 0)
+                throw new InvalidOperationException($"Could not create output mixer for '{Bass.GetDeviceInfo(device).Name}': {Bass.LastError}");
+
+            buses.Add(device, bus);
+            Logger.Log($"Uta output mixer ready: {Bass.GetDeviceInfo(device).Name} (device={device} bus={bus})");
             return bus;
-
-        int previous = Bass.CurrentDevice;
-        ensureInitialised(device);
-        Bass.CurrentDevice = device;
-        bus = BassMix.CreateMixerStream(48000, 2, BassFlags.Float | BassFlags.MixerNonStop);
-        if (bus != 0)
-            Bass.ChannelPlay(bus);
-        if (previous > 0)
-            Bass.CurrentDevice = previous;
-
-        if (bus == 0)
-            throw new InvalidOperationException($"Could not create output mixer for '{Bass.GetDeviceInfo(device).Name}': {Bass.LastError}");
-
-        buses.Add(device, bus);
-        Logger.Log($"Uta output mixer ready: {Bass.GetDeviceInfo(device).Name}");
-        return bus;
+        }
     }
 
     private int resolve(string? name) => string.IsNullOrWhiteSpace(name) ? defaultDevice : UtaAudioDevices.Resolve(name);

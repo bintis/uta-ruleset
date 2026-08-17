@@ -81,7 +81,7 @@ public sealed partial class UtaRuleset : Ruleset
     public override IEnumerable<KeyBinding> GetDefaultKeyBindings(int variant = 0)
         => new[]
         {
-            new KeyBinding(InputKey.P, UtaAction.OpenSettings),
+            new KeyBinding(InputKey.O, UtaAction.OpenSettings),
             new KeyBinding(InputKey.BracketLeft, UtaAction.SetLoopPointA),
             new KeyBinding(InputKey.BracketRight, UtaAction.SetLoopPointB),
             new KeyBinding(InputKey.BackSlash, UtaAction.ClearLoopPoints),
@@ -90,6 +90,7 @@ public sealed partial class UtaRuleset : Ruleset
             new KeyBinding(InputKey.R, UtaAction.RetryPhrase),
             new KeyBinding(InputKey.L, UtaAction.ToggleCurrentPhraseLoop),
             new KeyBinding(InputKey.S, UtaAction.ToggleScoreHud),
+            new KeyBinding(InputKey.P, UtaAction.TogglePracticeHud),
         };
 
     public override IEnumerable<HitResult> GetValidHitResults()
@@ -145,25 +146,12 @@ public sealed partial class UtaRuleset : Ruleset
                     new UtaModTransposePlus5(),
                     new UtaModTransposePlus6(),
                 }),
-                new MultiMod(new UtaModPracticeSpeed[]
-                {
-                    new UtaModPracticeSpeed50(),
-                    new UtaModPracticeSpeed60(),
-                    new UtaModPracticeSpeed70(),
-                    new UtaModPracticeSpeed80(),
-                    new UtaModPracticeSpeed90(),
-                    new UtaModPracticeSpeed100(),
-                    new UtaModPracticeSpeed110(),
-                    new UtaModPracticeSpeed120(),
-                    new UtaModPracticeSpeed130(),
-                    new UtaModPracticeSpeed140(),
-                    new UtaModPracticeSpeed150(),
-                }),
             },
             ModType.Fun => new Mod[]
             {
                 new UtaModAutoplay(),
                 new UtaModRecording(),
+                new UtaModPractice(),
             },
             _ => Array.Empty<Mod>(),
         };

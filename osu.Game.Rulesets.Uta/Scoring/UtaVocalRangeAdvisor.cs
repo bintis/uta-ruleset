@@ -14,7 +14,10 @@ namespace osu.Game.Rulesets.Uta.Scoring;
 public sealed class UtaVocalRangeAdvisor
 {
     private readonly object sync = new();
-    private readonly List<int> observedPitchCents = new();
+
+    // Observations arrive at the pitch-analysis cadence during gameplay. A modest initial
+    // capacity avoids the earliest List growth/copy spikes while keeping idle memory small.
+    private readonly List<int> observedPitchCents = new(4096);
 
     public int MinimumObservationCount { get; init; } = 40;
 
@@ -76,7 +79,6 @@ public sealed class UtaVocalRangeAdvisor
             int below = Math.Max(0, user.LowPitchCents - shiftedLow);
             int above = Math.Max(0, shiftedHigh - user.HighPitchCents);
 
-            // Range overflow dominates; centre mismatch breaks ties.
             double userCentre = (user.LowPitchCents + user.HighPitchCents) / 2.0;
             double songCentre = (shiftedLow + shiftedHigh) / 2.0;
             double penalty = below * below + above * above + Math.Abs(songCentre - userCentre) * 0.25;

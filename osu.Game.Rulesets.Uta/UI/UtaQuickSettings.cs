@@ -12,10 +12,13 @@ using osu.Framework.Graphics.Shapes;
 using osu.Framework.Input.Bindings;
 using osu.Framework.Input.Events;
 using osu.Framework.Localisation;
+using osu.Framework.Logging;
+using osu.Game.Configuration;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterface;
+using osu.Game.Localisation;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.Mods;
@@ -31,6 +34,13 @@ namespace osu.Game.Rulesets.Uta.UI;
 public sealed partial class UtaQuickSettingsContainer : CompositeDrawable, IKeyBindingHandler<UtaAction>
 {
     private readonly UtaQuickSettingsOverlay overlay;
+    private bool debugDiagnostics;
+
+    // Exposed so DrawableUtaRuleset can cache it for UtaVolumeOverlayExtension, a sibling
+    // Overlay that needs to suppress lazer's native volume HUD while this panel is open - see
+    // the comment on that class for why. Child-dependency caching only reaches descendants of
+    // this container, not siblings, hence surfacing the instance instead.
+    public UtaQuickSettingsOverlay Overlay => overlay;
 
     public UtaQuickSettingsContainer()
     {
@@ -38,10 +48,22 @@ public sealed partial class UtaQuickSettingsContainer : CompositeDrawable, IKeyB
         InternalChild = overlay = new UtaQuickSettingsOverlay();
     }
 
+    [BackgroundDependencyLoader]
+    private void load(UtaRulesetConfigManager config)
+    {
+        debugDiagnostics = config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics).Value;
+
+        if (debugDiagnostics)
+            Logger.Log("Uta debug settings: quick settings container loaded.");
+    }
+
     public bool OnPressed(KeyBindingPressEvent<UtaAction> e)
     {
         if (e.Action != UtaAction.OpenSettings)
             return false;
+
+        if (debugDiagnostics)
+            Logger.Log($"Uta debug settings: OpenSettings pressed, overlay state was {overlay.State.Value}");
 
         overlay.ToggleVisibility();
         return true;
@@ -61,6 +83,12 @@ public sealed partial class UtaQuickSettingsOverlay : OsuFocusedOverlayContainer
     // Keep gameplay's global scroll-to-volume handler from seeing wheel input
     // while this panel is open, including input outside the panel's own width.
     public override bool BlockScreenWideMouse => true;
+
+    // BlockScreenWideMouse alone did not stop lazer's GlobalScrollAdjustsVolume from also
+    // seeing wheel input while this panel was open. Consuming scroll directly here is a
+    // second, more direct line of defence against the same problem regardless of exactly
+    // which of the base container's block flags that global handler actually respects.
+    protected override bool OnScroll(ScrollEvent e) => true;
 
     protected override Container<Drawable> Content => groups;
 
@@ -85,15 +113,21 @@ public sealed partial class UtaQuickSettingsOverlay : OsuFocusedOverlayContainer
                 Padding = new MarginPadding(padding),
                 Children = new Drawable[]
                 {
-                    new VisualSettings(),
+                    new UtaBackgroundSettings(),
+                    new UtaPlaybackSettings(),
                     new UtaDisplaySettings(),
                     new AudioSettings(),
-                    new InputSettings(),
-                    new UtaPlaybackSettings(),
-                    new UtaPracticeSettings(),
                 },
             },
         };
+    }
+
+    private UtaRulesetConfigManager config = null!;
+
+    [BackgroundDependencyLoader]
+    private void load(UtaRulesetConfigManager config)
+    {
+        this.config = config;
     }
 
     protected override void LoadComplete()
@@ -127,6 +161,21 @@ public sealed partial class UtaQuickSettingsOverlay : OsuFocusedOverlayContainer
         base.PopOut();
         this.MoveToX(DrawWidth, 400, Easing.OutQuint);
         this.FadeOut(200, Easing.OutQuint);
+
+        // RulesetConfigManager batches writes into a pendingWrites set and only flushes them via
+        // QueueBackgroundSave() - nothing here was ever triggering that while gameplay was active,
+        // so changes made through this in-game panel (unlike the native settings screen, which
+        // explicitly saves on close) sat as pending and could be lost by the time the ruleset
+        // config manager next actually saved. Force a flush the moment this panel closes.
+        config?.Save();
+    }
+
+    protected override void Dispose(bool isDisposing)
+    {
+        // Covers exiting mid-song (retry, fail, quit) while this panel is still open, where
+        // PopOut() above never runs.
+        config?.Save();
+        base.Dispose(isDisposing);
     }
 }
 
@@ -208,12 +257,51 @@ public sealed partial class UtaDisplaySettings : PlayerSettingsGroup
     }
 }
 
+/// <summary>
+/// Just the two osu!-generic display controls worth keeping for Uta: background dim and blur.
+/// The rest of native <see cref="VisualSettings"/> (storyboards, beatmap skins/colours, combo
+/// colour normalisation) doesn't apply here - there's no combo colouring or storyboard-driven
+/// gameplay - so this replaces it wholesale rather than including it and hiding parts of it.
+/// </summary>
+public sealed partial class UtaBackgroundSettings : PlayerSettingsGroup
+{
+    private readonly PlayerSliderBar<double> dim;
+    private readonly PlayerSliderBar<double> blur;
+
+    public UtaBackgroundSettings()
+        : base("Background")
+    {
+        Children = new Drawable[]
+        {
+            dim = new PlayerSliderBar<double>
+            {
+                LabelText = GameplaySettingsStrings.BackgroundDim,
+                DisplayAsPercentage = true,
+            },
+            blur = new PlayerSliderBar<double>
+            {
+                LabelText = GameplaySettingsStrings.BackgroundBlur,
+                DisplayAsPercentage = true,
+            },
+        };
+    }
+
+    [BackgroundDependencyLoader]
+    private void load(OsuConfigManager config)
+    {
+        dim.Current = config.GetBindable<double>(OsuSetting.DimLevel);
+        blur.Current = config.GetBindable<double>(OsuSetting.BlurLevel);
+    }
+}
+
 public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
 {
     private readonly AudioOutputDropdown backgroundMusicOutput;
     private readonly AudioOutputDropdown vocalsOutput;
+    private readonly AudioOutputDropdown microphoneMonitorOutput;
     private readonly PlayerSliderBar<double> backgroundMusicVolume;
     private readonly PlayerSliderBar<float> originalVocalsVolume;
+    private readonly PlayerSliderBar<float> microphoneMonitorVolume;
     private readonly PlayerSliderBar<float> accompanimentLatency;
     private readonly PlayerSliderBar<float> lyricsLatency;
 
@@ -224,8 +312,14 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
         {
             backgroundMusicOutput = createOutput("BGM output"),
             vocalsOutput = createOutput("Vocals output"),
+            // Previously only reachable from the global uta! settings page, outside gameplay -
+            // meaning it could never actually be changed while testing routing live in-game, and
+            // silently stayed on "Lazer default" (a different device to whatever BGM/vocals were
+            // explicitly set to) no matter what the player thought they'd configured.
+            microphoneMonitorOutput = createOutput("Microphone monitor output"),
             backgroundMusicVolume = createSlider<double>("BGM", "Volume of the instrumental track."),
             originalVocalsVolume = createSlider<float>("Original vocals", "Volume of the vocal track enabled by the VOX mod."),
+            microphoneMonitorVolume = createSlider<float>("Microphone monitor", "Hear your microphone through the active output. Headphones are recommended."),
             accompanimentLatency = createSlider<float>("Accompaniment latency", "Positive values delay the routed accompaniment and vocals.", false, 1),
             lyricsLatency = createSlider<float>("Lyrics latency", "Positive values display lyrics later.", false, 1),
         };
@@ -236,10 +330,24 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
     {
         backgroundMusicVolume.Current = audioSettings.BackgroundMusicVolume;
         originalVocalsVolume.Current = audioSettings.OriginalVocalsVolume;
+        microphoneMonitorVolume.Current = audioSettings.MicrophoneMonitorVolume;
         accompanimentLatency.Current = audioSettings.AccompanimentLatency;
         lyricsLatency.Current = audioSettings.LyricsLatency;
         backgroundMusicOutput.Current = audioSettings.BackgroundMusicOutputDevice;
         vocalsOutput.Current = audioSettings.OriginalVocalsOutputDevice;
+
+        Logger.Log($"Uta debug playback settings: mic-output before dropdown bind='{audioSettings.MicrophoneOutputDevice.Value}' "
+                   + $"items=[{string.Join(", ", microphoneMonitorOutput.Items)}]");
+        microphoneMonitorOutput.Current = audioSettings.MicrophoneOutputDevice;
+        Logger.Log($"Uta debug playback settings: mic-output after dropdown bind='{audioSettings.MicrophoneOutputDevice.Value}'");
+
+        // Diagnostic only: log every change to the shared mic-output bindable, regardless of
+        // which of its several bound consumers (this dropdown, UtaMicrophoneHandler,
+        // UtaRecordingRuntime, UtaSettingsSubsection's own config view) causes it, since it's
+        // been observed reset to blank by the time the next play session starts and it isn't
+        // yet clear which of those writes it.
+        audioSettings.MicrophoneOutputDevice.BindValueChanged(value =>
+            Logger.Log($"Uta debug playback settings: mic-output changed '{value.OldValue}' -> '{value.NewValue}'"));
     }
 
     private static PlayerSliderBar<T> createSlider<T>(string label, string tooltip, bool percentage = true, float keyboardStep = 0.05f)
@@ -269,91 +377,6 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
                 => string.IsNullOrEmpty(item) ? "Lazer default" : item;
         }
     }
-}
-
-/// <summary>
-/// Loop and phrase-navigation controls for a practice session, plus a read-only reminder of the
-/// selected practice speed. Speed itself is picked as a fixed value at song select - one icon per
-/// value, same as <see cref="UtaModTranspose"/> - rather than adjusted live from here. Loop and
-/// phrase actions call straight into the cached <see cref="UtaPracticeController"/>, the same
-/// instance the configurable shortcuts drive.
-/// </summary>
-public sealed partial class UtaPracticeSettings : PlayerSettingsGroup
-{
-    private readonly OsuSpriteText speedStatus;
-    private readonly OsuSpriteText loopStatus;
-    private readonly SettingsButton setLoopA;
-    private readonly SettingsButton setLoopB;
-    private readonly SettingsButton clearLoop;
-    private readonly PlayerCheckbox loopCurrentPhrase;
-    private readonly SettingsButton previousPhrase;
-    private readonly SettingsButton retryPhrase;
-    private readonly SettingsButton nextPhrase;
-
-    private UtaPracticeController practiceController = null!;
-
-    public UtaPracticeSettings()
-        : base("Uta practice")
-    {
-        Children = new Drawable[]
-        {
-            speedStatus = new OsuSpriteText
-            {
-                RelativeSizeAxes = Axes.X,
-                Height = 16,
-                Font = OsuFont.Default.With(size: 12),
-                Colour = new Color4(180, 184, 205, 255),
-            },
-            loopStatus = new OsuSpriteText
-            {
-                RelativeSizeAxes = Axes.X,
-                Height = 16,
-                Font = OsuFont.Default.With(size: 12),
-                Colour = new Color4(180, 184, 205, 255),
-            },
-            setLoopA = createButton("Set loop A"),
-            setLoopB = createButton("Set loop B"),
-            clearLoop = createButton("Clear loop"),
-            loopCurrentPhrase = new PlayerCheckbox { LabelText = "Loop current phrase" },
-            previousPhrase = createButton("Previous phrase"),
-            retryPhrase = createButton("Retry phrase"),
-            nextPhrase = createButton("Next phrase"),
-        };
-    }
-
-    [BackgroundDependencyLoader]
-    private void load(UtaPracticeController practiceController, IBindable<IReadOnlyList<Mod>> mods)
-    {
-        this.practiceController = practiceController;
-
-        UtaModPracticeSpeed? speedMod = mods.Value.OfType<UtaModPracticeSpeed>().SingleOrDefault();
-        speedStatus.Text = speedMod != null
-            ? $"Speed: {speedMod.Speed:0.0#}x (pick a different Speed mod next time to change)"
-            : "Speed: original (pick a Speed mod at song select to change)";
-
-        setLoopA.Action = practiceController.SetLoopPointA;
-        setLoopB.Action = practiceController.SetLoopPointB;
-        clearLoop.Action = practiceController.ClearLoopPoints;
-        loopCurrentPhrase.Current = practiceController.LoopCurrentPhrase;
-        previousPhrase.Action = practiceController.GoToPreviousPhrase;
-        retryPhrase.Action = practiceController.RetryPhrase;
-        nextPhrase.Action = practiceController.GoToNextPhrase;
-    }
-
-    protected override void Update()
-    {
-        base.Update();
-
-        string a = practiceController.LoopPointA.Value is { } pointA ? formatTime(pointA) : "-";
-        string b = practiceController.LoopPointB.Value is { } pointB ? formatTime(pointB) : "-";
-        loopStatus.Text = practiceController.LoopCurrentPhrase.Value
-            ? $"Looping current phrase ({practiceController.Phrases.Count} detected)"
-            : $"Loop A {a}  B {b}";
-    }
-
-    private static string formatTime(double ms) => TimeSpan.FromMilliseconds(ms).ToString(@"m\:ss\.ff");
-
-    private static SettingsButton createButton(string text) => new() { Text = text };
 }
 
 public sealed partial class UtaDeviceDiagnostics : PlayerSettingsGroup

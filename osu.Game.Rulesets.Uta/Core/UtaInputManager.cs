@@ -42,6 +42,8 @@ public enum UtaAction
     ToggleCurrentPhraseLoop,
     [Description("Toggle score HUD")]
     ToggleScoreHud,
+    [Description("Toggle practice HUD")]
+    TogglePracticeHud,
 }
 
 public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
@@ -59,6 +61,7 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
     private UtaMicrophoneHandler? microphone;
     private double? smoothedMidi;
     private readonly object pending_pitch_lock = new();
+    private readonly Action processLatestPitchAction;
     private UtaPitchFrame? pendingPitch;
     private bool pitchUpdateScheduled;
     private bool octaveFoldEnabled;
@@ -72,6 +75,7 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
     public UtaInputManager(RulesetInfo ruleset)
         : base(ruleset, 0, SimultaneousBindingMode.All)
     {
+        processLatestPitchAction = processLatestPitch;
     }
 
     [BackgroundDependencyLoader]
@@ -91,8 +95,6 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
         keyShiftSemitones.BindTo(audioSettings.KeyShiftSemitones);
         gameplayClock.OnSeek += onSeek;
 
-        // Auto watches a synthesized perfect feed (see updateAuto) instead of the microphone -
-        // skip opening a real device entirely, so Auto also works without one available.
         if (autoEnabled)
             return;
 
@@ -114,9 +116,6 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
             updateAuto(Time.Current);
     }
 
-    // A perfect virtual singer: always exactly on the shifted target pitch (matching how a real
-    // singer's own voice would need to move under a key shift) while a note is active, silent
-    // otherwise. This lines up with findTargetAt/target.Y's own keyShift handling - see UtaPitchGuide.
     private void updateAuto(double current)
     {
         UtaNote? active = findNoteAt(current);
@@ -137,9 +136,6 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
         }
     }
 
-    // A seek (manual, gap-skip, or an A-B loop repeat) breaks the continuity a smoothed
-    // pitch reading and note lookup assume. Drop stale state immediately rather than
-    // waiting for the next microphone frame to disagree wildly with the new position.
     private void onSeek()
     {
         smoothedMidi = null;
@@ -149,13 +145,8 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
 
     private void onPitchDetected(UtaPitchFrame frame)
     {
-        // The formal scoring path receives every analysed window through a
-        // bounded queue. The latest-only mailbox below remains display-only.
         scoringController.Enqueue(frame);
 
-        // The recording callback runs independently of lazer's update thread.
-        // Never enqueue every microphone window: if the update thread stalls,
-        // stale pitch samples otherwise grow without bound and prevent recovery.
         lock (pending_pitch_lock)
         {
             pendingPitch = frame;
@@ -166,7 +157,7 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
             pitchUpdateScheduled = true;
         }
 
-        Schedule(processLatestPitch);
+        Schedule(processLatestPitchAction);
     }
 
     private void processLatestPitch()
@@ -227,12 +218,6 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
         LiveVoiceActive.Value = true;
     }
 
-    /// <summary>
-    /// The microphone's hardware round-trip, analysis window and scheduling delay are all real
-    /// wall-clock quantities - the singer's voice doesn't slow down with playback. At a gameplay
-    /// rate other than 1x, that same real-time gap covers more or less gameplay-clock time, so it
-    /// must be scaled by the current rate before subtracting from the current gameplay time.
-    /// </summary>
     internal static double ComputePitchTime(double gameplayTime, double realLatencyMs, double rate)
         => gameplayTime - realLatencyMs * Math.Abs(rate);
 

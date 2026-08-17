@@ -19,7 +19,7 @@ public sealed class UtaModNoFail : Mod, IApplicableMod, IApplicableHealthProcess
 
     public override string Acronym => "NF";
 
-    public override LocalisableString Description => "你不会因为演唱质量下降而失败退出。打分照常进行。";
+    public override LocalisableString Description => "You won't fail out from a dip in singing quality. Scoring still runs as normal.";
 
     public override IconUsage? Icon => FontAwesome.Solid.Heart;
 

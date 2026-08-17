@@ -38,9 +38,10 @@ See [CHANGELOG.md](CHANGELOG.md) for released version history.
   together while preserving synchronisation.
 - Optional Lyrics, Pitch Guide, Original Vocals and Octave Folding MODs using
   osu!lazer's native MOD interface.
-- Explicit `评分模式` (`SC`) and `Recording` (`REC`) MODs: ordinary karaoke
-  play remains unscored, while recording is enabled per play rather than by a
-  persistent settings checkbox.
+- Scoring is active by default; `Relax` (`RX`) opts back out into unscored
+  practice. `Recording` (`REC`) is enabled per play rather than by a
+  persistent settings checkbox, and `Practice` (`PR`) gates a standalone
+  Practice HUD with loop points, phrase navigation and a live speed control.
 - Octave Folding can match equivalent notes across octaves without altering the
   detected microphone signal.
 - Native skip prompts for long introductions, gaps between phrases and trailing
@@ -96,44 +97,28 @@ as a standard archive, so lazer owns storage and media decoding.
 
 ## Roadmap / TODO
 
-### 0.4.0 - Playback and practice control
+### 0.4.0 - Playback and practice control ✅ complete
 
-- [x] Add pitch-preserving playback speed control from `0.50x` to `1.50x`.
-- [x] Keep the gameplay clock, BGM, VOX, lyrics and target pitch synchronised while changing speed.
-- [x] Keep microphone latency expressed in real milliseconds while playback speed changes.
-- [x] Add manual A and B loop points with clear/reset controls.
-- [x] Seek every routed audio source together when an A-B loop repeats.
-- [x] Break microphone pitch history cleanly at loop and seek boundaries.
-- [x] Derive phrase boundaries from transcript segments and target-note gaps.
-- [x] Add previous phrase, next phrase and retry-current-phrase actions.
-- [x] Add optional current-phrase looping with a `500-1000 ms` preparation lead-in.
-- [x] Put speed, loop and phrase navigation in a native `Practice` HUD group.
-- [x] Add configurable shortcuts for practice actions instead of hard-coded keys.
-- [x] Implement Half Time (HT) and Double Time (DT) on the shared speed controller.
-- [x] Add Nightcore (NC) after DT timing and audio synchronisation are stable.
-- [x] Log playback rate, loop transitions, seeks and routed-track discrepancies in Debug mode.
-- [x] Verify Transpose, VOX, OCT and all latency settings in combination with speed and looping.
-- [x] Verify repeated loops and long practice sessions do not accumulate drift or frame-time regressions.
+Pitch-preserving speed control, A-B loop points, phrase navigation, a native
+Practice HUD group and HT/DT/NC playback variants, all kept synchronised with
+BGM, VOX, lyrics and microphone latency. Full item list in
+[CHANGELOG.md](CHANGELOG.md#040---2026-08-16).
 
-### 0.5.0 - Scoring and feedback
+### 0.5.0 - Scoring and feedback ✅ complete
 
-- [x] Accumulate deterministic per-note scores from pitch similarity, voiced duration and confidence.
-- [x] Classify accurate, high, low and missed singing without double-counting after seeks or loops.
-- [x] Display live score, accuracy and consecutive-hit feedback in the gameplay HUD.
-- [x] Apply Transpose and OCT consistently to live scoring and recorded score data.
-- [x] Keep scoring stable across pause, seek, playback-rate and A-B loop transitions.
-- [x] Write completed performances into lazer's native score and results flow.
-- [x] Show an overall grade plus per-phrase accuracy, pitch bias, stability and missed sections.
-- [x] Add automatic vocal-range detection and recommend a Transpose value before play.
-- [x] Add note-driven health after it can be driven by the completed pitch-scoring pipeline.
-- [x] Add deterministic scoring tests using recorded Pitch frames and fixed gameplay timestamps.
-- [x] Verify scoring combinations for Transpose, OCT, HT, DT, latency and phrase looping.
+Deterministic per-note scoring, live score/accuracy HUD feedback, overall
+grade and per-phrase breakdown, automatic vocal-range/Transpose
+recommendation, note-driven health and scoring tests. Full item list in
+[CHANGELOG.md](CHANGELOG.md#050---2026-08-17).
 
 ### 0.5.1 - Scoring follow-up
 
-- [ ] Show an overall grade plus per-phrase accuracy, pitch bias, stability and missed sections.
-- [ ] Add automatic vocal-range detection and recommend a Transpose value before play.
-- [ ] Verify scoring combinations for Transpose, OCT, HT, DT, latency and phrase looping in a single matrix.
+- [x] Show an overall grade plus per-phrase accuracy, pitch bias, stability
+      and missed sections (completed under 0.5.0).
+- [x] Add automatic vocal-range detection and recommend a Transpose value
+      before play (completed under 0.5.0).
+- [ ] Verify scoring combinations for Transpose, OCT, HT, DT, latency and
+      phrase looping in a single matrix.
 
 ### 0.6.0 - Recording and comparison
 
@@ -150,38 +135,50 @@ as a standard archive, so lazer owns storage and media decoding.
 - [x] Provide explicit recording state, storage location and cleanup controls.
 - [ ] Verify long recordings, repeated retries and device changes do not leak streams or lose samples.
 
-### 0.7.0 - Mode controls and long-session stability
+### 0.6.2 - Scoring pipeline fixes and known issues ✅ complete
 
-- [x] Move microphone recording to an explicit `Recording` (`REC`) MOD.
-- [x] Rename `Challenge` to `评分模式` (`SC`) and make it the only scoring switch.
-- [x] Keep ordinary karaoke play judgement-free and score-free unless `评分模式` is selected.
-- [x] Bound realtime note scoring to the note-local pitch-frame window.
-- [x] Cache the final whole-performance score used by archive and phrase analysis.
-- [x] Add long-song regression coverage for progressively increasing scoring work.
+Made scoring active by default (`Relax` replaces the old opt-in `Scoring
+Mode` switch), fixed the watermark/latency bug that rejected almost every
+microphone frame, fixed notes expiring before their async judgement could
+land (which silently broke the results screen), fixed an orphaned in-progress
+recording take, and added the toggleable Score HUD. Full item list in
+[CHANGELOG.md](CHANGELOG.md#062---2026-08-17). The HUD-sticks-hidden issue
+noted at the time is fixed in 0.7.2 below.
 
-### 0.6.2 - Scoring pipeline fixes and known issues
+### 0.7.0 - Mode controls and long-session stability ✅ complete
 
-- [x] Make scoring active by default; replace the former `评分模式` (`SC`) MOD
-      with `Relax` (`RX`), which opts back out into unscored practice.
-- [x] Fix `UtaGameplayScoringController` advancing its watermark from the raw
-      "now" timestamp instead of the same capture-latency-adjusted time used by
-      microphone frames, which rejected nearly every frame as "late".
-- [x] Fix `DrawableUtaHitObject.UpdateHitStateTransforms` expiring notes on the
-      framework's initial `ArmedState.Idle` setup call (not just on a real
-      Hit/Miss), which killed objects before their async judgement could ever
-      arrive and left the results screen stuck (`ScoreProcessor.HasCompleted`
-      never true).
-- [x] Fix `UtaRecordingRuntime` losing an in-progress take to `staging/` with
-      no archive when gameplay exits before the natural-end watcher runs.
-- [x] Add a Score HUD (`S` to toggle) with a configurable screen-corner
-      position, and show the total score as a 0-100 scale on the HUD and
-      results screen.
-- [x] Add explicit `No Fail` (`NF`) MOD.
-- [x] Move `Auto` (`AT`) to the `Fun` MOD category.
-- [ ] **Known issue**: pressing `S` to hide the Score HUD sometimes leaves it
-      permanently hidden - a second `S` press does not bring it back. Root
-      cause not yet found; the gameplay-clock-seek debounce bug already ruled
-      out. Needs a fresh log-driven pass in 0.6.3.
+Moved recording behind an explicit `Recording` MOD, made the former
+`Scoring Mode` MOD the sole scoring switch, bounded realtime note scoring to
+a local pitch-frame window and cached whole-performance scoring for archive
+and phrase analysis. Full item list in
+[CHANGELOG.md](CHANGELOG.md#070---2026-08-17).
+
+### 0.7.2 - Practice HUD, in-game settings and HUD reliability
+
+- [x] Fix the Score HUD (`S`) getting permanently stuck hidden.
+- [x] Add a standalone Practice HUD (`P`), gated behind a new `Practice`
+      (`PR`) MOD, independent of the full settings panel (now `O`).
+- [x] Replace the 11 fixed-value speed MODs with one live, pitch-preserving
+      speed slider in the Practice HUD (bound to lazer's own
+      `UserPlaybackRate`), plus a reset button and a live speed readout.
+- [x] Add Chinese/English/Japanese HUD text for the Score HUD and Practice
+      HUD, following lazer's own language setting live.
+- [x] Add "Microphone monitor output" and its volume slider to the in-game
+      settings panel (previously only reachable from the separate global
+      settings page, outside gameplay).
+- [x] Replace native `VisualSettings`/`InputSettings` in the in-game settings
+      panel with a background dim/blur group relevant to uta!.
+- [x] Fix lazer's native volume HUD popping open and eating scroll-wheel
+      input when the in-game settings panel opens.
+- [x] Fix hardcoded Chinese MOD descriptions (`No Fail`, `Relax`) showing
+      regardless of the player's selected language.
+- [ ] **Known issue**: the microphone monitor output setting does not
+      reliably survive to the next play session. It applies live and
+      correctly re-routes audio immediately when changed, but can read back
+      as unset the next time gameplay starts. An explicit `config.Save()` on
+      the settings panel closing did not resolve it - needs a fresh
+      log-driven pass to find what resets it (or confirm it is a lazer-side
+      `RulesetConfigManager` persistence issue) in a future release.
 
 ### 0.8.0 - Mobile remote control
 
@@ -213,7 +210,7 @@ as a standard archive, so lazer owns storage and media decoding.
 - [ ] Finish the native two-level settings navigation and remove remaining button/control inconsistencies.
 - [ ] Add search terms, tooltips, reset behaviour and disabled-state explanations to every setting.
 - [ ] Improve narrow-window, touch, keyboard and controller navigation.
-- [ ] Move user-facing strings to localisation resources and provide English, Japanese and Chinese coverage.
+- [ ] Move user-facing strings to localisation resources and provide English, Japanese and Chinese coverage (Score HUD and Practice HUD text already covers this since 0.7.2; settings labels, tooltips and other panels remain).
 - [ ] Add an import diagnostics view for invalid `.utz` packages without exposing internal stack traces.
 - [ ] Implement Auto play using reference Pitch data for demonstrations and scoring regression tests.
 

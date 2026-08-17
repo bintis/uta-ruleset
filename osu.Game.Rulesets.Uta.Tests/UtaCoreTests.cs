@@ -391,22 +391,19 @@ public class UtaCoreTests
     }
 
     [Test]
-    public void PracticeSpeedModsApplyTheirFixedRate()
+    public void PracticeModIsJustAGateForTheHud()
     {
-        var half = new UtaModPracticeSpeed50();
-        var original = new UtaModPracticeSpeed100();
-        var faster = new UtaModPracticeSpeed130();
+        // UtaModPractice no longer touches rate itself - IApplicableToRate is only evaluated once
+        // at Player start, not continuously, so it can't drive a live mid-song speed slider. The
+        // HUD instead binds straight to MasterGameplayClockContainer.UserPlaybackRate; this mod's
+        // only remaining job is gating whether the practice HUD (P) exists at all.
+        var practice = new UtaModPractice();
 
         Assert.Multiple(() =>
         {
-            Assert.That(half.Speed, Is.EqualTo(0.5));
-            Assert.That(original.Speed, Is.EqualTo(1.0));
-            Assert.That(faster.Speed, Is.EqualTo(1.3).Within(0.0001));
-            Assert.That(half.ApplyToRate(0), Is.EqualTo(0.5));
-            Assert.That(half.ApplyToRate(0, 2), Is.EqualTo(1.0));
-            Assert.That(half.IncompatibleMods, Does.Contain(typeof(ModRateAdjust)));
-            Assert.That(original.Name, Is.EqualTo("Original Speed"));
-            Assert.That(faster.Name, Is.EqualTo("Speed 1.3x"));
+            Assert.That(practice.Name, Is.EqualTo("Practice"));
+            Assert.That(practice.Acronym, Is.EqualTo("PR"));
+            Assert.That(practice.Type, Is.EqualTo(ModType.Fun));
         });
     }
 

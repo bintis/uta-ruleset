@@ -7,8 +7,8 @@ namespace osu.Game.Rulesets.Uta.Mods;
 
 /// <summary>
 /// Standard Daycore - Nightcore's slowed-down, pitched-down counterpart, replacing the plain
-/// <c>UtaModHalfTime</c> (removed as redundant now that <see cref="UtaModPracticeSpeed"/> already
-/// covers every rate from 50% to 150%).
+/// <c>UtaModHalfTime</c> (removed as redundant now that <see cref="UtaModPractice"/>'s live speed
+/// slider already covers every rate from 50% to 150%).
 /// </summary>
 public sealed class UtaModDaycore : ModDaycore
 {

@@ -3,6 +3,7 @@
 
 using System;
 using osu.Framework.Bindables;
+using osu.Framework.Logging;
 
 namespace osu.Game.Rulesets.Uta.Configuration;
 
@@ -52,6 +53,12 @@ internal sealed class UtaAudioSettingsState : IDisposable
         PitchSamplingInterval.BindTo(config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval));
         PhraseLoopLeadIn.BindTo(config.GetBindable<float>(UtaRulesetSetting.PhraseLoopLeadIn));
         initialised = true;
+
+        if (DebugDiagnostics.Value)
+        {
+            Logger.Log($"Uta debug audio settings: initialised from config instance {config.GetHashCode()} - "
+                       + $"mic-output loaded as '{MicrophoneOutputDevice.Value}' bgm-output='{BackgroundMusicOutputDevice.Value}'");
+        }
     }
 
     public void Dispose()

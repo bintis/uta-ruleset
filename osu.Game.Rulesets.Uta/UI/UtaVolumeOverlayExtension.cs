@@ -7,6 +7,7 @@ using osu.Framework.Allocation;
 using osu.Framework.Audio;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
+using osu.Framework.Graphics.Containers;
 using osu.Framework.Logging;
 using osu.Framework.Platform;
 using osu.Framework.Testing;
@@ -42,9 +43,10 @@ internal sealed partial class UtaVolumeOverlayExtension : Component
     private string backgroundMusicLabelText = string.Empty;
     private string vocalsLabelText = string.Empty;
     private bool remapped;
+    private readonly IBindable<Visibility> settingsOverlayState = new Bindable<Visibility>();
 
     [BackgroundDependencyLoader(true)]
-    private void load(VolumeOverlay? overlay, AudioManager audio, GameHost host, UtaAudioSettingsState audioSettings)
+    private void load(VolumeOverlay? overlay, AudioManager audio, GameHost host, UtaAudioSettingsState audioSettings, UtaQuickSettingsOverlay? settingsOverlay)
     {
         volumeOverlay = overlay;
         audioManager = audio;
@@ -53,6 +55,26 @@ internal sealed partial class UtaVolumeOverlayExtension : Component
         microphoneConfig.BindTo(audioSettings.MicrophoneMonitorVolume);
         backgroundMusicConfig.BindTo(audioSettings.BackgroundMusicVolume);
         Schedule(remap);
+
+        // The O settings panel's own volume sliders share these exact bindables (BGM/vocals/mic
+        // monitor), so opening it for the first time (its children lazy-load then) re-applies
+        // the current value through PlayerSliderBar's own bind step - which echoes straight into
+        // the remapped native meters below and pops lazer's volume HUD as an unintended
+        // side-effect of merely opening a settings panel, not an actual user volume change.
+        // Force it closed for the duration rather than chasing the exact echo path. Suppressing
+        // only on the Visible transition edge was not enough - the echo can land a frame or two
+        // later, after the panel's children finish lazily loading - so Update() below keeps
+        // re-hiding every frame the panel is open instead of relying on a single edge trigger.
+        if (settingsOverlay != null)
+            settingsOverlayState.BindTo(settingsOverlay.State);
+    }
+
+    protected override void Update()
+    {
+        base.Update();
+
+        if (settingsOverlayState.Value == Visibility.Visible)
+            volumeOverlay?.Hide();
     }
 
     private void remap()
@@ -174,6 +196,7 @@ internal sealed partial class UtaVolumeOverlayExtension : Component
         vocalsConfig.UnbindAll();
         microphoneConfig.UnbindAll();
         backgroundMusicConfig.UnbindAll();
+        settingsOverlayState.UnbindAll();
         base.Dispose(isDisposing);
     }
 }
