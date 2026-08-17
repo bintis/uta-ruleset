@@ -3,6 +3,18 @@
 This file records user-visible changes to `uta!`. Future work remains in the
 [README roadmap](README.md#roadmap--todo).
 
+## 0.5.1 - 2026-08-17
+
+### Changed
+
+- Bumped package version to `0.5.1`.
+- Updated roadmap state for Scoring and feedback milestone, marking completed 0.5
+  items and adding follow-up items under `0.5.1`.
+
+### Fixed
+
+- Cleaned up 0.5 rollout checklists and release metadata for 0.5.x delivery.
+
 ## 0.4.0 - 2026-08-16
 
 ### Added
@@ -114,6 +126,7 @@ This file records user-visible changes to `uta!`. Future work remains in the
   gap skipping and karaoke-focused MODs.
 - Added native lazer settings, volume HUD integration and Uta-only song filtering.
 
+[0.5.1]: https://github.com/bintis/uta-ruleset/compare/v0.5.0...v0.5.1
 [0.3.0]: https://github.com/bintis/uta-ruleset/compare/v0.2.1...main
 [0.4.0]: https://github.com/bintis/uta-ruleset/compare/v0.3.0...main
 [0.2.1]: https://github.com/bintis/uta-ruleset/compare/v0.1.0...v0.2.1

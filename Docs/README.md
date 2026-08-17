@@ -114,17 +114,23 @@ as a standard archive, so lazer owns storage and media decoding.
 
 ### 0.5.0 - Scoring and feedback
 
-- [ ] Accumulate deterministic per-note scores from pitch similarity, voiced duration and confidence.
-- [ ] Classify accurate, high, low and missed singing without double-counting after seeks or loops.
-- [ ] Display live score, accuracy and consecutive-hit feedback in the gameplay HUD.
-- [ ] Apply Transpose and OCT consistently to live scoring and recorded score data.
-- [ ] Keep scoring stable across pause, seek, playback-rate and A-B loop transitions.
-- [ ] Write completed performances into lazer's native score and results flow.
+- [x] Accumulate deterministic per-note scores from pitch similarity, voiced duration and confidence.
+- [x] Classify accurate, high, low and missed singing without double-counting after seeks or loops.
+- [x] Display live score, accuracy and consecutive-hit feedback in the gameplay HUD.
+- [x] Apply Transpose and OCT consistently to live scoring and recorded score data.
+- [x] Keep scoring stable across pause, seek, playback-rate and A-B loop transitions.
+- [x] Write completed performances into lazer's native score and results flow.
 - [ ] Show an overall grade plus per-phrase accuracy, pitch bias, stability and missed sections.
 - [ ] Add automatic vocal-range detection and recommend a Transpose value before play.
-- [ ] Add a Fail MOD after health drain can be driven by the completed pitch-scoring pipeline.
-- [ ] Add deterministic scoring tests using recorded Pitch frames and fixed gameplay timestamps.
+- [x] Add a Fail MOD after health drain can be driven by the completed pitch-scoring pipeline.
+- [x] Add deterministic scoring tests using recorded Pitch frames and fixed gameplay timestamps.
 - [ ] Verify scoring combinations for Transpose, OCT, HT, DT, latency and phrase looping.
+
+### 0.5.1 - Scoring follow-up
+
+- [ ] Show an overall grade plus per-phrase accuracy, pitch bias, stability and missed sections.
+- [ ] Add automatic vocal-range detection and recommend a Transpose value before play.
+- [ ] Verify scoring combinations for Transpose, OCT, HT, DT, latency and phrase looping in a single matrix.
 
 ### 0.6.0 - Recording and comparison
 
