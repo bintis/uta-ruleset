@@ -7,3 +7,4 @@ TestResults/
 *.nupkg
 /karaoke-only-host/
 web/uta-remote-wasm/target/
+/uta-ruleset-v*.zip

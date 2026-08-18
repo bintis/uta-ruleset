@@ -71,10 +71,14 @@ the runtime without a defined release target.
 
 ## Build and test
 
-Requires .NET 8 and the locally installed Nix osu! package. The Nix installation
-is the source of truth for osu! API and dependency versions; the currently
-detected target is osu! `2026.804.2`. Resolve the active store path rather than
-committing a Nix store hash:
+GitHub Releases publish an installable `uta-ruleset-v*.zip` with
+`osu.Game.Rulesets.Uta.dll`, `libbassflac.so` and `BASSFLAC.txt`. Copy those
+three files into lazer's `rulesets` directory.
+
+To build from source, use .NET 8 and the locally installed Nix osu! package.
+The Nix installation is the source of truth for osu! API and dependency
+versions; the currently detected target is osu! `2026.804.2`. Resolve the
+active store path rather than committing a Nix store hash:
 
 ```sh
 OSU_BIN="$(readlink -f "$(command -v 'osu!')")"

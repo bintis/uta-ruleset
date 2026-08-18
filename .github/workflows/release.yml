@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to publish (for example v0.8.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: python3 scripts/verify_single_file_remote.py
+      - run: python3 scripts/audit_overlay.py --repo .
+      - run: dotnet restore osu.Game.Rulesets.Uta.Tests/osu.Game.Rulesets.Uta.Tests.csproj
+      - run: dotnet format osu.Game.Rulesets.Uta/osu.Game.Rulesets.Uta.csproj --no-restore --verify-no-changes
+      - run: dotnet build osu.Game.Rulesets.Uta/osu.Game.Rulesets.Uta.csproj -c Release --no-restore
+      - run: dotnet test osu.Game.Rulesets.Uta.Tests/osu.Game.Rulesets.Uta.Tests.csproj -c Release --no-restore
+      - run: python3 scripts/package_ruleset.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uta-ruleset
+          path: uta-ruleset-v*.zip
+          if-no-files-found: error
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          ZIP="$(ls uta-ruleset-v*.zip)"
+          NOTES="$(mktemp)"
+          python3 - "$TAG" "$NOTES" <<'PY'
+          import pathlib, sys
+          tag, dest = sys.argv[1], pathlib.Path(sys.argv[2])
+          version = tag[1:] if tag.startswith("v") else tag
+          text = pathlib.Path("Docs/CHANGELOG.md").read_text(encoding="utf-8")
+          heading = f"## {version} "
+          start = text.find(heading)
+          if start < 0:
+              dest.write_text(f"uta! {version}\n", encoding="utf-8")
+              raise SystemExit(0)
+          rest = text[start:]
+          nxt = rest.find("\n## ", 1)
+          body = rest if nxt < 0 else rest[:nxt]
+          dest.write_text(body.strip() + "\n", encoding="utf-8")
+          PY
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            gh release create "$TAG" "$ZIP" --title "uta-ruleset $TAG" --notes-file "$NOTES" --latest
+          fi

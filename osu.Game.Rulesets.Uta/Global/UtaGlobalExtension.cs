@@ -95,16 +95,16 @@ public sealed partial class UtaGlobalExtension : CompositeDrawable, IKeyBindingH
         switch (e.Action)
         {
             case UtaAction.ToggleQueueOverlay:
-            {
-                QueueMutationResult result = Playback.RequestSkipToNext();
-                if (!result.Succeeded)
                 {
-                    osu.Framework.Logging.Logger.Log($"Uta next-song hotkey rejected: {result.Error}");
-                    showEmptyQueueFeedback(result.Error);
-                }
+                    QueueMutationResult result = Playback.RequestSkipToNext();
+                    if (!result.Succeeded)
+                    {
+                        osu.Framework.Logging.Logger.Log($"Uta next-song hotkey rejected: {result.Error}");
+                        showEmptyQueueFeedback(result.Error);
+                    }
 
-                return true;
-            }
+                    return true;
+                }
 
             case UtaAction.OpenQueueOverlay:
                 queueOverlay.ToggleVisibility();

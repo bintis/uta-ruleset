@@ -11,7 +11,7 @@ REQUIRED = {
     "osu.Game.Rulesets.Uta/Remote/UtaRemoteSecurity.cs": ["DEFAULT_PAIRING_LIFETIME", "FixedTimeEquals", "TryAdvance"],
     "osu.Game.Rulesets.Uta/Remote/UtaRemoteServer.cs": ["HttpListener", "Content-Security-Policy", "RevokeAll"],
     "osu.Game.Rulesets.Uta/Remote/Assets/uta-remote.html": ["WASM_BASE64", "WebSocket", "sessionStorage", "microphoneLatency", "accompanimentLatency", "lyricsLatency", "loopState"],
-    "osu.Game.Rulesets.Uta/Configuration/UtaRulesetConfigManager.cs": ["MicrophoneMonitorOutputDeviceV2", "BackgroundMusicVolume = 0", "ScoreHudPosition = 22"],
+    "osu.Game.Rulesets.Uta/Configuration/UtaRulesetConfigManager.cs": ["MicrophoneOutputDevice = 5", "BackgroundMusicVolume = 0", "ScoreHudPosition = 22", "Reserved23 = 23"],
     "osu.Game.Rulesets.Uta/Recording/UtaPcmCaptureQueue.cs": ["Interlocked.Exchange", "disposeTask", "ArrayPool<float>.Shared.Return"],
     "osu.Game.Rulesets.Uta/Core/UtaAutoplayFrameFactory.cs": ["UtaPitchFrame", "MidiToFrequency"],
     "osu.Game.Rulesets.Uta/Import/UtaImportDiagnostics.cs": ["capacity = 32", "sanitise"],
@@ -36,11 +36,16 @@ def main() -> int:
             if marker not in text:
                 failures.append(f"{relative}: marker missing: {marker}")
 
+    skip_parts = {"bin", "obj", "target", "__pycache__", ".git"}
     for path in root.rglob("*"):
-        if path.is_file() and ("__pycache__" in path.parts or path.suffix == ".pyc"):
+        if any(part in skip_parts for part in path.parts):
+            continue
+        if path.is_file() and path.suffix == ".pyc":
             failures.append(f"generated cache checked in: {path.relative_to(root)}")
 
     for path in root.rglob("*.cs"):
+        if any(part in skip_parts for part in path.parts):
+            continue
         text = path.read_text(encoding="utf-8")
         if text.count("{") != text.count("}"):
             failures.append(f"unbalanced braces: {path.relative_to(root)}")
