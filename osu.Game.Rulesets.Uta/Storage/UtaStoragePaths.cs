@@ -9,4 +9,5 @@ namespace osu.Game.Rulesets.Uta.Storage;
 public static class UtaStoragePaths
 {
     public static string QueueFile => Path.Combine(UtaPerformanceRootRegistry.Resolve(), "queue.json");
+    public static string RemoteDevicesFile => Path.Combine(UtaPerformanceRootRegistry.Resolve(), "remote-devices.json");
 }

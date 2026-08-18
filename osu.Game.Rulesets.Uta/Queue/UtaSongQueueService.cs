@@ -39,7 +39,11 @@ public sealed record UtaSongQueueEntry(
     DateTimeOffset RequestedAt,
     UtaQueueRequestSource Source,
     string? RequestedByClientId,
-    UtaQueueEntryState State);
+    UtaQueueEntryState State,
+    UtaQueuePlaybackOptions? Options = null)
+{
+    public UtaQueuePlaybackOptions Playback => Options ?? UtaQueuePlaybackOptions.Default;
+}
 
 public sealed record UtaSongRequest(
     Guid BeatmapId,
@@ -48,7 +52,8 @@ public sealed record UtaSongRequest(
     string DifficultyName,
     long LengthMs,
     UtaQueueRequestSource Source,
-    string? RequestedByClientId = null);
+    string? RequestedByClientId = null,
+    UtaQueuePlaybackOptions? Options = null);
 
 public sealed record QueueMutationResult(bool Succeeded, string? Error = null, int Position = -1)
 {
@@ -62,10 +67,13 @@ public sealed class UtaSongQueueService : IDisposable
     public const int MAXIMUM_ENTRIES = 500;
     private const int maximum_file_bytes = 2 * 1024 * 1024;
 
+    public const int FileVersion = 2;
+
     private readonly object sync = new();
     private readonly List<UtaSongQueueEntry> entries = new();
     private readonly BindableLong revision = new();
     private readonly SemaphoreSlim persistenceGate = new(1, 1);
+    private readonly string filePath;
     private Timer? saveTimer;
     private long saveGeneration;
     private bool disposed;
@@ -73,7 +81,16 @@ public sealed class UtaSongQueueService : IDisposable
     public event Action? Changed;
     public IBindable<long> Revision => revision;
 
-    public UtaSongQueueService() => load();
+    public UtaSongQueueService()
+        : this(UtaStoragePaths.QueueFile)
+    {
+    }
+
+    internal UtaSongQueueService(string filePath)
+    {
+        this.filePath = filePath;
+        load();
+    }
 
     public IReadOnlyList<UtaSongQueueEntry> GetSnapshot()
     {
@@ -91,7 +108,8 @@ public sealed class UtaSongQueueService : IDisposable
 
             entries.Add(new UtaSongQueueEntry(
                 Guid.NewGuid(), request.BeatmapId, request.Title, request.Artist, request.DifficultyName,
-                request.LengthMs, DateTimeOffset.UtcNow, request.Source, request.RequestedByClientId, UtaQueueEntryState.Queued));
+                request.LengthMs, DateTimeOffset.UtcNow, request.Source, request.RequestedByClientId, UtaQueueEntryState.Queued,
+                (request.Options ?? UtaQueuePlaybackOptions.Default).Normalized()));
             position = entries.Count;
         }
 
@@ -124,9 +142,27 @@ public sealed class UtaSongQueueService : IDisposable
 
     public QueueMutationResult Clear() => mutate(() =>
     {
-        int removed = entries.RemoveAll(entry => entry.State != UtaQueueEntryState.Reserved);
+        int removed = entries.Count;
+        entries.Clear();
         return removed > 0;
     }, "The queue is already empty.");
+
+    public QueueMutationResult Configure(Guid entryId, UtaQueuePlaybackOptions options)
+    {
+        UtaQueuePlaybackOptions normalized = options.Normalized();
+        if (!normalized.TryValidate(out string error))
+            return QueueMutationResult.Reject(error);
+
+        return mutate(() =>
+        {
+            int index = entries.FindIndex(entry => entry.EntryId == entryId);
+            if (index < 0 || entries[index].State == UtaQueueEntryState.Reserved)
+                return false;
+
+            entries[index] = entries[index] with { Options = normalized };
+            return true;
+        }, "The queue entry cannot be updated.");
+    }
 
     public QueueMutationResult MarkUnavailable(Guid entryId) => mutate(() => replaceState(entryId, UtaQueueEntryState.Unavailable), "The queue entry no longer exists.");
 
@@ -187,29 +223,35 @@ public sealed class UtaSongQueueService : IDisposable
 
     private void load()
     {
-        string path = UtaStoragePaths.QueueFile;
-        if (!File.Exists(path))
+        if (!File.Exists(filePath))
             return;
 
         try
         {
-            var info = new FileInfo(path);
+            var info = new FileInfo(filePath);
             if (info.Length > maximum_file_bytes)
                 throw new InvalidDataException("Queue file exceeds the size limit.");
 
-            QueueFile? file = JsonSerializer.Deserialize<QueueFile>(File.ReadAllText(path));
-            if (file?.Version != 1 || file.Entries.Count > MAXIMUM_ENTRIES)
+            QueueFile? file = JsonSerializer.Deserialize<QueueFile>(File.ReadAllText(filePath));
+            if (file == null || file.Version is < 1 or > FileVersion || file.Entries.Count > MAXIMUM_ENTRIES)
                 throw new InvalidDataException("Unsupported or oversized queue file.");
 
-            entries.AddRange(file.Entries.Select(entry => entry.State == UtaQueueEntryState.Reserved
-                ? entry with { State = UtaQueueEntryState.Queued }
-                : entry));
+            entries.AddRange(file.Entries.Select(entry =>
+            {
+                UtaSongQueueEntry normalized = entry with
+                {
+                    Options = (entry.Options ?? UtaQueuePlaybackOptions.Default).Normalized(),
+                };
+                return normalized.State == UtaQueueEntryState.Reserved
+                    ? normalized with { State = UtaQueueEntryState.Queued }
+                    : normalized;
+            }));
         }
         catch
         {
             try
             {
-                File.Move(path, path + ".corrupt", true);
+                File.Move(filePath, filePath + ".corrupt", true);
             }
             catch
             {
@@ -237,12 +279,11 @@ public sealed class UtaSongQueueService : IDisposable
             lock (sync)
                 snapshot = entries.ToArray();
 
-            string path = UtaStoragePaths.QueueFile;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            string temporary = path + ".tmp";
-            await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(new QueueFile(1, DateTimeOffset.UtcNow, snapshot))).ConfigureAwait(false);
+            Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+            string temporary = filePath + ".tmp";
+            await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(new QueueFile(FileVersion, DateTimeOffset.UtcNow, snapshot))).ConfigureAwait(false);
             if (generation == Volatile.Read(ref saveGeneration))
-                File.Move(temporary, path, true);
+                File.Move(temporary, filePath, true);
         }
         catch
         {
@@ -269,11 +310,10 @@ public sealed class UtaSongQueueService : IDisposable
             lock (sync)
                 snapshot = entries.ToArray();
 
-            string path = UtaStoragePaths.QueueFile;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            string temporary = path + ".tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(new QueueFile(1, DateTimeOffset.UtcNow, snapshot)));
-            File.Move(temporary, path, true);
+            Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+            string temporary = filePath + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(new QueueFile(FileVersion, DateTimeOffset.UtcNow, snapshot)));
+            File.Move(temporary, filePath, true);
         }
         catch
         {

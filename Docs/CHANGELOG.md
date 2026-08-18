@@ -1,7 +1,76 @@
 # Changelog
 
-This file records user-visible changes to `uta!`. Future work remains in the
-[README roadmap](README.md#roadmap--todo).
+Completed work from 0.1.0 onward. Open items stay in the
+[README roadmap](../README.md#roadmap--todo).
+
+## 0.8.1 - 2026-08-18
+
+Mobile remote and queue follow-up. The phone client is now a compact
+osu!lazer-styled canvas, and Next / Play Now / auto-next no longer stall
+or crash the desktop after a switch.
+
+### Added
+
+- Replaced the long-scroll HTML remote with a Rust WASM Canvas 2D client.
+  The phone opens on Control and swipes across Library, Control, Queue and
+  Info. Song search keeps one native HTML input so CJK IME works. The wire
+  format is a packed little-endian frame instead of JSON.
+- Queue entries now carry their own speed, transpose and start-time mods.
+  `queueAdd` / `queueAddNext` / `queueConfigure` accept an `options` object.
+  Starting that reservation applies the options before gameplay is built.
+- The add sheet can queue, insert next, or play now. The desktop F8 overlay
+  shows key / speed / mod badges on each row.
+- State snapshots include the current song title, artist, difficulty and
+  mapper so Control and Info can name the playing chart.
+- Remembered devices persist a hashed session so the phone can reopen the
+  host URL without scanning the QR code again.
+
+### Changed
+
+- `queue.json` is version 2. Version 1 files load with default playback
+  options (100%, original key, no extra mods).
+- CI rebuilds the remote WASM with the `wasm32-unknown-unknown` target
+  before verifying the single-file HTML asset.
+- Auto-next is on by default. After results, the next queued song starts
+  when either `IQ` or Auto-next is enabled.
+- The mobile chrome follows osu!lazer's dark overlay look: pink accent,
+  a small red/green connection dot, top-centre Library / Control / Queue /
+  Info tabs, and a search button that only opens the input when needed.
+  Practice loop controls stay hidden unless `PR` is on.
+- Queue rows keep only the drag handle. Play and delete live on the song
+  sheet, opened from the row or the top-right `···` menu. Tap empty space
+  to go back. Library and queue lists keep sliding after the finger lifts.
+
+### Fixed
+
+- Next-song no longer leaves the queue reserved and then rejects every
+  later tap as `transition_busy`. The switch now runs on the update
+  thread; a stuck reservation is released after 1.5s.
+- Ending a song goes to results without depending on a seek past the
+  gameplay clock's clamp. After results, auto-next is no longer blocked
+  by a leftover Reserved transition.
+- Clearing the queue also drops a reserved row. The phone no longer toasts
+  in-flight switch or rate-limit noise.
+- A Restart no longer makes the watchdog think the switch is stale. The
+  just-started reservation is committed instead of being pushed back onto
+  the queue, so Next / auto-next cannot restack the same song.
+- Next from the results screen restarts the suspended Player. Falling
+  back through song select was crashing on `PrepareTrackForPreview`
+  (`Cannot access Track without first calling LoadTrack`) and freezing
+  the game. A pending auto-next is cancelled when the user already
+  requested the next song.
+- Queue entries with no extra mods no longer wipe Auto / IQ / NF when
+  they start. The add sheet also opens with the currently selected mods.
+- After Uta play ends, the last playback coordinator stays attached so
+  the phone can still start a queued song from song select.
+- Play Now interrupts an in-flight switch and can add+start a beatmap
+  in one command, so the first tap is no longer swallowed for seconds.
+- The Info page now scrolls when its content is taller than the viewport.
+
+### Validation
+
+- Added queue-reservation regression tests for version-1 load, reserved
+  rows, distinct next-song selection and leftover-transition recovery.
 
 ## 0.8.0 - 2026-08-18
 
@@ -140,7 +209,7 @@ See [REMOTE-PROTOCOL.md](REMOTE-PROTOCOL.md) and
   session - it applies live and correctly re-routes audio immediately, but
   the persisted setting can read back as unset next time gameplay starts.
   An explicit `config.Save()` on the settings panel closing did not resolve
-  it. Tracked in the [README roadmap](README.md#roadmap--todo) for a fresh
+  it. Tracked in the [README roadmap](../README.md#roadmap--todo) for a fresh
   pass.
 
 ## 0.6.2 - 2026-08-17
@@ -176,7 +245,7 @@ See [REMOTE-PROTOCOL.md](REMOTE-PROTOCOL.md) and
 
 - Pressing `S` to hide the Score HUD can leave it permanently hidden; a
   second `S` press does not always bring it back. Root cause not yet found -
-  tracked in the [README roadmap](README.md#roadmap--todo) for 0.6.3.
+  tracked in the [README roadmap](../README.md#roadmap--todo) for 0.6.3.
 
 ## 0.7.0 - 2026-08-17
 
@@ -382,6 +451,7 @@ See [REMOTE-PROTOCOL.md](REMOTE-PROTOCOL.md) and
   gap skipping and karaoke-focused MODs.
 - Added native lazer settings, volume HUD integration and Uta-only song filtering.
 
+[0.8.1]: https://github.com/bintis/uta-ruleset/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/bintis/uta-ruleset/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/bintis/uta-ruleset/compare/v0.6.2...v0.7.2
 [0.5.1]: https://github.com/bintis/uta-ruleset/compare/v0.5.0...v0.5.1

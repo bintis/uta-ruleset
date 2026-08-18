@@ -13,6 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HTML = ROOT / "osu.Game.Rulesets.Uta/Remote/Assets/uta-remote.html"
 
+REQUIRED_EXPORTS = ("alloc", "dealloc", "start", "resize", "pointer", "frame", "on_message", "demo")
+
 
 def main() -> int:
     text = HTML.read_text(encoding="utf-8")
@@ -25,13 +27,14 @@ def main() -> int:
         failures.append("external CSS import")
     if "WebSocket" not in text or "sessionStorage" not in text:
         failures.append("remote protocol/reconnect client is missing")
+    if 'id="c"' not in text and "<canvas" not in text:
+        failures.append("canvas host is missing")
+    if 'id="search"' not in text:
+        failures.append("native search input is missing")
     if "prefers-reduced-motion" not in text:
         failures.append("reduced-motion CSS is missing")
     if not all(token in text for token in ("English", "中文", "日本語")):
         failures.append("English/Chinese/Japanese language selector is incomplete")
-    for control in ("microphoneLatency", "accompanimentLatency", "lyricsLatency", "loopState"):
-        if f'id="{control}"' not in text:
-            failures.append(f"mobile control/state field is missing: {control}")
 
     match = re.search(r"const WASM_BASE64='([A-Za-z0-9+/=]+)'", text)
     if match is None:
@@ -47,10 +50,18 @@ def main() -> int:
         with tempfile.NamedTemporaryFile(suffix=".wasm") as temporary:
             temporary.write(wasm)
             temporary.flush()
+            stubs = ",".join(f"{name}:()=>0" for name in (
+                "host_fill_rect", "host_stroke_rect", "host_fill_triangle", "host_fill_text", "host_measure_text",
+                "host_clip", "host_unclip", "host_send", "host_search",
+                "host_log", "host_session", "host_seq", "host_remember",
+            ))
+            needed = ",".join(f"'{name}'" for name in REQUIRED_EXPORTS)
             script = (
                 "const fs=require('fs');"
-                "WebAssembly.instantiate(fs.readFileSync(process.argv[1]),{}).then(x=>{"
-                "if(x.instance.exports.next_sequence(41)!==42)process.exit(3);"
+                f"const env={{{stubs}}};"
+                "WebAssembly.instantiate(fs.readFileSync(process.argv[1]),{env}).then(x=>{"
+                f"const need=[{needed}];"
+                "for(const name of need)if(typeof x.instance.exports[name]!=='function')process.exit(3);"
                 "}).catch(()=>process.exit(2));"
             )
             completed = subprocess.run([node, "-e", script, temporary.name])

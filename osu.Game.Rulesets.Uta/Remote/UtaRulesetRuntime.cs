@@ -25,10 +25,13 @@ internal sealed class UtaRulesetRuntime : IDisposable
 
     public UtaSongQueueService Queue { get; } = new();
     public UtaGameplaySessionRegistry Sessions { get; } = new();
-    public BindableBool AutoAdvanceEnabled { get; } = new();
+    public BindableBool AutoAdvanceEnabled { get; } = new(true);
     public Bindable<UtaPlaybackTransitionState> TransitionState { get; } = new(UtaPlaybackTransitionState.Idle);
+    public DateTimeOffset TransitionStartedAt { get; set; }
     public QueueReservation? PendingReservation { get; set; }
     public Guid PendingBeatmapId { get; set; }
+    public double? PendingSpeed { get; set; }
+    public Guid PendingSpeedBeatmapId { get; set; }
 
     /// <summary>
     /// The beatmap bindable visible to the current Uta drawable tree. After the
@@ -36,6 +39,7 @@ internal sealed class UtaRulesetRuntime : IDisposable
     /// bindable SongSelect still holds.
     /// </summary>
     public Bindable<WorkingBeatmap>? GameBeatmap { get; set; }
+    public BeatmapManager? Beatmaps { get; set; }
 
     public WorkingBeatmap? LastPlayedBeatmap { get; private set; }
 
@@ -62,8 +66,8 @@ internal sealed class UtaRulesetRuntime : IDisposable
     {
         LastPlayedBeatmap = beatmap;
         rememberPreviewCandidate(beatmap);
-        if (GameBeatmap?.Value != null)
-            rememberPreviewCandidate(GameBeatmap.Value);
+        tryRememberCurrentGameBeatmap();
+        EnsureFreshWorkingTrack(beatmap.BeatmapInfo);
     }
 
     public void PrepareSongSelectPreview()
@@ -72,12 +76,12 @@ internal sealed class UtaRulesetRuntime : IDisposable
 
         Bindable<WorkingBeatmap>? game = GameBeatmap;
         WorkingBeatmap? last = LastPlayedBeatmap;
-        if (game == null || last == null || game.Disabled)
+        if (game == null || last == null)
             return;
 
         try
         {
-            if (!ReferenceEquals(game.Value, last))
+            if (!game.Disabled && !ReferenceEquals(game.Value, last))
                 game.Value = last;
         }
         catch (Exception exception)
@@ -85,13 +89,22 @@ internal sealed class UtaRulesetRuntime : IDisposable
             Logger.Log($"Uta could not restore song select beatmap: {exception.Message}");
         }
 
-        EnsurePreviewTrack(game.Value);
+        try
+        {
+            EnsurePreviewTrack(game.Disabled ? null : game.Value);
+        }
+        catch (Exception exception)
+        {
+            Logger.Log($"Uta could not read song select beatmap: {exception.Message}");
+        }
+
+        EnsureFreshWorkingTrack(last.BeatmapInfo);
     }
 
     public void EnsureAllPreviewTracks()
     {
         EnsurePreviewTrack(LastPlayedBeatmap);
-        EnsurePreviewTrack(GameBeatmap?.Value);
+        tryRememberCurrentGameBeatmap();
 
         for (int i = previewBeatmaps.Count - 1; i >= 0; i--)
         {
@@ -102,6 +115,35 @@ internal sealed class UtaRulesetRuntime : IDisposable
             }
 
             EnsurePreviewTrack(beatmap);
+            EnsureFreshWorkingTrack(beatmap.BeatmapInfo);
+        }
+    }
+
+    private void tryRememberCurrentGameBeatmap()
+    {
+        try
+        {
+            WorkingBeatmap? current = GameBeatmap?.Value;
+            if (current != null)
+                rememberPreviewCandidate(current);
+        }
+        catch
+        {
+        }
+    }
+
+    private void EnsureFreshWorkingTrack(osu.Game.Beatmaps.BeatmapInfo? info)
+    {
+        if (info == null || Beatmaps == null)
+            return;
+
+        try
+        {
+            EnsurePreviewTrack(Beatmaps.GetWorkingBeatmap(info));
+        }
+        catch (Exception exception)
+        {
+            Logger.Log($"Uta could not refresh preview track for '{info}': {exception.Message}");
         }
     }
 

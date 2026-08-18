@@ -64,9 +64,13 @@ public sealed partial class UtaSongLibrary : Component
     public IReadOnlyList<UtaSongLibraryEntry> Browse(string? query)
         => order(filter(query)).ToArray();
 
-    public IReadOnlyList<UtaSongLibraryEntry> Search(string? query, int maximum = 50)
+    public const int RemotePageSize = 80;
+
+    public IReadOnlyList<UtaSongLibraryEntry> Search(string? query, int offset = 0, int maximum = RemotePageSize)
     {
-        return order(filter(query)).Take(Math.Clamp(maximum, 1, 50)).ToArray();
+        int start = Math.Max(0, offset);
+        int take = Math.Clamp(maximum, 1, RemotePageSize);
+        return order(filter(query)).Skip(start).Take(take).ToArray();
     }
 
     private IEnumerable<UtaSongLibraryEntry> filter(string? query)

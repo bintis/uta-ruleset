@@ -3,6 +3,7 @@
 
 using System;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using osu.Framework.Allocation;
@@ -48,6 +49,13 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
     private UtaPlaybackCoordinator playback = null!;
     private IBindable<WorkingBeatmap> selectedBeatmap = null!;
     private readonly CancellationTokenSource immersiveAdvanceCancellation = new();
+
+    private static readonly MethodInfo? progress_to_results = typeof(Player).GetMethod(
+        "progressToResults",
+        BindingFlags.Instance | BindingFlags.NonPublic,
+        binder: null,
+        types: new[] { typeof(bool) },
+        modifiers: null);
 
     public Guid BeatmapId => beatmap.BeatmapInfo.ID;
     public UtaRemoteSnapshot Snapshot => Volatile.Read(ref latestSnapshot);
@@ -111,17 +119,17 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
     }
 
     /// <summary>
-    /// Point the live player lease at <paramref name="target"/> and quick-restart.
-    /// Must be used instead of PerformFromScreen(SongSelect): after a previous
-    /// restart the coordinator's cached bindable is often already Returned.
+    /// Point the live player lease at <paramref name="target"/> and restart.
+    /// Works from gameplay and from the results screen (player is still in the
+    /// stack). Must not go through SongSelect: OnResuming there calls
+    /// PrepareTrackForPreview on a beatmap with no track and freezes the game.
     /// </summary>
     internal bool TryRestartWith(WorkingBeatmap target)
     {
         Player? currentPlayer = player;
-        if (currentPlayer == null || !currentPlayer.IsCurrentScreen())
+        if (currentPlayer == null)
         {
-            osu.Framework.Logging.Logger.Log(
-                $"Uta session restart skipped: player={(currentPlayer == null ? "null" : "not-current")} beatmap={target.BeatmapInfo.ID}");
+            osu.Framework.Logging.Logger.Log($"Uta session restart skipped: player=null beatmap={target.BeatmapInfo.ID}");
             return false;
         }
 
@@ -137,7 +145,11 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
         UtaRulesetRuntime.Instance.RememberPlayedBeatmap(target);
 
         if (currentPlayer.Beatmap.Value.BeatmapInfo.ID != target.BeatmapInfo.ID)
+        {
+            osu.Framework.Logging.Logger.Log(
+                $"Uta session restart assign mismatch have={currentPlayer.Beatmap.Value.BeatmapInfo.ID} want={target.BeatmapInfo.ID}");
             return false;
+        }
 
         if (!currentPlayer.Beatmap.Value.TrackLoaded)
         {
@@ -152,18 +164,44 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
             }
         }
 
-        if (!currentPlayer.Beatmap.Value.TrackLoaded || !currentPlayer.Restart(quickRestart: true))
+        if (!currentPlayer.Beatmap.Value.TrackLoaded)
             return false;
+
+        // Restart() from results (player not current) is preferred over MakeCurrent:
+        // MakeCurrent+Exit has been unwinding PlayerLoader all the way to song select,
+        // which then resumes without a preview track and crashes on the next mouse exit.
+        bool restarted = currentPlayer.Restart(quickRestart: currentPlayer.IsCurrentScreen())
+                         || currentPlayer.Restart(quickRestart: false);
+        UtaRulesetRuntime.Instance.PrepareSongSelectPreview();
+        if (!restarted)
+        {
+            osu.Framework.Logging.Logger.Log("Uta session restart rejected by the player.");
+            return false;
+        }
 
         osu.Framework.Logging.Logger.Log($"Uta session restart accepted: {target.BeatmapInfo.ID}");
         return true;
     }
 
+    internal void CancelPendingAdvance()
+    {
+        try
+        {
+            immersiveAdvanceCancellation.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
     private void onShowingResults()
     {
         long generation = lease?.Generation ?? -1;
-        bool shouldAdvance = immersiveQueue || playback.IsImmersiveQueueEnabled;
-        osu.Framework.Logging.Logger.Log($"Uta results shown: generation={generation} immersive={shouldAdvance}");
+        bool immersive = immersiveQueue || playback.IsImmersiveQueueEnabled;
+        bool autoAdvance = playback.AutoAdvanceEnabled.Value;
+        bool shouldAdvance = UtaPlaybackCoordinator.ShouldAutoplayNextSong(immersive, autoAdvance);
+        osu.Framework.Logging.Logger.Log(
+            $"Uta results shown: generation={generation} immersive={immersive} autoAdvance={autoAdvance} playNext={shouldAdvance}");
         if (shouldAdvance)
             _ = scheduleImmersiveAdvanceAsync(generation);
         else
@@ -214,26 +252,7 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
         switch (command.Name)
         {
             case UtaRemoteCommands.SkipCurrent:
-                if (player == null || score == null)
-                    return UtaRemoteCommandResult.Reject("no_active_gameplay");
-
-                scoringController.RequestForceCompletion();
-                score.CompleteRemainingAsMisses();
-                double trackLength = selectedBeatmap.Value.Track.Length;
-                double completionTime = Math.Max(
-                    trackLength - 50,
-                    score.ForcedCompletionTime);
-                osu.Framework.Logging.Logger.Log($"Uta remote skip executing: judged={score.JudgedHits} targetTime={completionTime:0}ms trackLength={trackLength:0}ms");
-                gameplayClock.Start();
-                return UtaGameplaySeeker.Seek(
-                    gameplayClock,
-                    drawableRuleset,
-                    action => Schedule(action),
-                    completionTime,
-                    "remote completion",
-                    true)
-                    ? UtaRemoteCommandResult.Ok()
-                    : UtaRemoteCommandResult.Reject("Gameplay completion seek was rejected.");
+                return skipCurrentToResults();
 
             case UtaRemoteCommands.Ping:
                 return UtaRemoteCommandResult.Ok();
@@ -337,9 +356,45 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
         }
     }
 
-    private UtaRemoteCommandResult seek(double requestedTime)
+    private UtaRemoteCommandResult skipCurrentToResults()
     {
-        double maximum = Math.Max(0, latestSnapshot.SongLength);
+        if (player == null || score == null)
+            return UtaRemoteCommandResult.Reject("no_active_gameplay");
+
+        if (!player.IsCurrentScreen())
+        {
+            osu.Framework.Logging.Logger.Log("Uta remote skip ignored: player is not the current screen.");
+            return UtaRemoteCommandResult.Ok();
+        }
+
+        double trackLength = selectedBeatmap.Value.TrackLoaded ? selectedBeatmap.Value.Track.Length : 0;
+        double chartEnd = latestSnapshot.SongLength;
+        double seekTarget = new[] { chartEnd, Math.Max(0, trackLength - 50) }.Max();
+        osu.Framework.Logging.Logger.Log(
+            $"Uta remote skip executing: judged={score.JudgedHits} seekTarget={seekTarget:0}ms trackLength={trackLength:0}ms chartEnd={chartEnd:0}ms paused={gameplayClock.IsPaused.Value}");
+
+        scoringController.RequestForceCompletion();
+        score.CompleteRemainingAsMisses();
+
+        if (seekTarget > gameplayClock.CurrentTime + 10)
+            seek(seekTarget, Math.Max(chartEnd, trackLength));
+
+        try
+        {
+            progress_to_results?.Invoke(player, new object[] { false });
+        }
+        catch (Exception exception)
+        {
+            osu.Framework.Logging.Logger.Log($"Uta remote skip results invoke failed: {exception.GetBaseException().Message}");
+        }
+
+        osu.Framework.Logging.Logger.Log("Uta remote skip accepted.");
+        return UtaRemoteCommandResult.Ok();
+    }
+
+    private UtaRemoteCommandResult seek(double requestedTime, double? maximumOverride = null)
+    {
+        double maximum = maximumOverride ?? Math.Max(0, latestSnapshot.SongLength);
         double target = Math.Clamp(requestedTime, 0, maximum > 0 ? maximum : double.MaxValue);
 
         // UtaGameplaySeeker only permits seeks while running because it was originally written
@@ -411,7 +466,11 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
                 audio.AccompanimentLatency.Value,
                 audio.LyricsLatency.Value),
             Array.Empty<UtaRemoteQueueEntrySnapshot>(),
-            false);
+            false,
+            SongTitle: beatmap.BeatmapInfo.Metadata.Title,
+            SongArtist: beatmap.BeatmapInfo.Metadata.Artist,
+            SongDifficulty: beatmap.BeatmapInfo.DifficultyName,
+            SongCreator: beatmap.BeatmapInfo.Metadata.Author.Username);
     }
 
     private int phraseIndexAt(double time)

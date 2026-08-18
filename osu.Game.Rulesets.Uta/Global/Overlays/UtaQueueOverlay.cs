@@ -258,7 +258,7 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
                             Anchor = Anchor.CentreLeft,
                             Origin = Anchor.CentreLeft,
                             RelativeSizeAxes = Axes.X,
-                            Text = $"{i + 1}. {entry.Title} · {entry.Artist} [{entry.DifficultyName}] · {entry.State}",
+                            Text = $"{i + 1}. {entry.Title} · {entry.Artist} [{entry.DifficultyName}] · {formatPlayback(entry)} · {entry.State}",
                             Font = OsuFont.Default.With(size: 13, weight: FontWeight.SemiBold),
                         },
                     },
@@ -284,6 +284,15 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
             };
             entries.Add(row);
         }
+    }
+
+    private static string formatPlayback(UtaSongQueueEntry entry)
+    {
+        UtaQueuePlaybackOptions options = entry.Playback;
+        string key = options.Transpose == 0 ? "K0" : $"K{options.Transpose:+0;-0}";
+        string speed = $"{Math.Round(options.Speed * 100)}%";
+        string mods = options.ModList.Count == 0 ? "-" : string.Join('+', options.ModList);
+        return $"{key} {speed} {mods}";
     }
 
     private static RoundedButton actionButton(string text, float width, Action action) => new()

@@ -2,6 +2,7 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -62,6 +63,34 @@ public sealed class UtaReleaseRegressionTests
         Assert.That(store.TryResume(session!.Id, secret!, now, out _), Is.True);
         Assert.That(store.Revoke(session.Id), Is.True);
         Assert.That(store.TryResume(session.Id, secret!, now, out _), Is.False);
+    }
+
+    [Test]
+    public void TestRememberedDeviceSurvivesStoreReload()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"uta-devices-{Guid.NewGuid():N}.json");
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        string id;
+        string secret;
+
+        try
+        {
+            using (var store = new UtaRemoteCredentialStore(path))
+            {
+                UtaRemotePairingTicket ticket = store.IssuePairingTicket(UtaRemoteRole.Controller, now);
+                Assert.That(store.TryRedeem(ticket.Token, now, out UtaRemoteSession? session, out string? issued, out string error), Is.True, error);
+                id = session!.Id;
+                secret = issued!;
+            }
+
+            using var reloaded = new UtaRemoteCredentialStore(path);
+            Assert.That(reloaded.TryResume(id, secret, now, out UtaRemoteSession? restored), Is.True);
+            Assert.That(restored!.Role, Is.EqualTo(UtaRemoteRole.Controller));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Test]
@@ -131,10 +160,33 @@ public sealed class UtaReleaseRegressionTests
     }
 
     [Test]
-    public void TestPostResultsAdvanceAutoplaysOnlyWithImmersiveQueue()
+    public void TestPostResultsAdvanceAutoplaysWithImmersiveQueueOrAutoAdvance()
     {
-        Assert.That(UtaPlaybackCoordinator.ShouldAutoplayNextSong(true), Is.True);
-        Assert.That(UtaPlaybackCoordinator.ShouldAutoplayNextSong(false), Is.False);
+        Assert.That(UtaPlaybackCoordinator.ShouldAutoplayNextSong(true, false), Is.True);
+        Assert.That(UtaPlaybackCoordinator.ShouldAutoplayNextSong(false, true), Is.True);
+        Assert.That(UtaPlaybackCoordinator.ShouldAutoplayNextSong(true, true), Is.True);
+        Assert.That(UtaPlaybackCoordinator.ShouldAutoplayNextSong(false, false), Is.False);
+    }
+
+    [Test]
+    public void TestUnstartedTransitionIsNotTreatedAsStale()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-08-18T13:28:00Z");
+        Assert.That(
+            UtaPlaybackCoordinator.IsStaleTransition(default, UtaPlaybackTransitionState.WaitingForGameplay, now),
+            Is.False);
+        Assert.That(
+            UtaPlaybackCoordinator.IsStaleTransition(now, UtaPlaybackTransitionState.WaitingForGameplay, now.AddSeconds(1)),
+            Is.False);
+        Assert.That(
+            UtaPlaybackCoordinator.IsStaleTransition(now, UtaPlaybackTransitionState.WaitingForGameplay, now.AddSeconds(5)),
+            Is.True);
+        Assert.That(
+            UtaPlaybackCoordinator.IsStaleTransition(now, UtaPlaybackTransitionState.Reserved, now.AddSeconds(2)),
+            Is.True);
+        Assert.That(
+            UtaPlaybackCoordinator.IsStaleTransition(now, UtaPlaybackTransitionState.Failed, now),
+            Is.True);
     }
 
     [TestCase("http://192.168.1.42:27835/#ticket=aB3dEfGhIjKlMnOpQrStUvWxYz012345&role=controller")]

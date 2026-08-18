@@ -15,6 +15,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using osu.Game.Rulesets.Uta.Storage;
 
 namespace osu.Game.Rulesets.Uta.Remote;
 
@@ -29,7 +30,7 @@ public sealed class UtaRemoteServer : IAsyncDisposable
 
     private readonly IUtaRemoteCommandTarget commandTarget;
     private readonly Func<UtaRemoteSnapshot> snapshotProvider;
-    private readonly UtaRemoteCredentialStore credentials = new();
+    private readonly UtaRemoteCredentialStore credentials = new(UtaStoragePaths.RemoteDevicesFile);
     private readonly ConcurrentDictionary<string, ClientConnection> clients = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim lifecycleGate = new(1, 1);
     private readonly object statusSync = new();
@@ -166,7 +167,7 @@ public sealed class UtaRemoteServer : IAsyncDisposable
     {
         try
         {
-            await client.SendJsonAsync(message, CancellationToken.None).ConfigureAwait(false);
+            await client.SendBytesAsync(UtaRemoteWire.Queue(message), CancellationToken.None).ConfigureAwait(false);
         }
         catch
         {
@@ -306,25 +307,23 @@ public sealed class UtaRemoteServer : IAsyncDisposable
         {
             if (newSecret != null)
             {
-                await connection.SendJsonAsync(new UtaRemoteWelcome(
+                await connection.SendBytesAsync(UtaRemoteWire.Welcome(new UtaRemoteWelcome(
                     "welcome",
                     session.Id,
                     newSecret,
                     session.Role,
                     UtaRemoteProtocol.VERSION,
-                    snapshotProvider()), cancellationToken).ConfigureAwait(false);
+                    snapshotProvider())), cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                await connection.SendJsonAsync(new
-                {
-                    type = "resumed",
-                    role = session.Role,
-                    protocolVersion = UtaRemoteProtocol.VERSION,
-                    snapshot = snapshotProvider(),
-                }, cancellationToken).ConfigureAwait(false);
+                await connection.SendBytesAsync(
+                    UtaRemoteWire.Resumed(session.Role, snapshotProvider()),
+                    cancellationToken).ConfigureAwait(false);
             }
 
+            osu.Framework.Logging.Logger.Log(
+                $"Uta remote hello role={session.Role} commands=ping,play,pause,togglePlayback,seek,seekRelative,speed,setLoopA,setLoopB,clearLoop,previousPhrase,nextPhrase,retryPhrase,loopPhrase,bgmVolume,vocalsVolume,monitorVolume,transpose,octaveFold,originalVocals,microphoneLatency,accompanimentLatency,lyricsLatency,disconnect,librarySearch,queueAdd,queueRemove,queueClear,queuePlayNow,skipCurrent,skipToNext,queueAddNext,queueMove,queueMoveToTop,queueMoveToBottom,autoAdvance,setMod,queueConfigure");
             setStatus($"{session.Role} connected from {context.Request.RemoteEndPoint?.Address}.");
             await receiveLoopAsync(connection, cancellationToken).ConfigureAwait(false);
         }
@@ -348,9 +347,9 @@ public sealed class UtaRemoteServer : IAsyncDisposable
                 WebSocketReceiveResult result = await connection.Socket.ReceiveAsync(new ArraySegment<byte>(rented), cancellationToken).ConfigureAwait(false);
                 if (result.MessageType == WebSocketMessageType.Close)
                     break;
-                if (result.MessageType != WebSocketMessageType.Text)
+                if (result.MessageType is not WebSocketMessageType.Text and not WebSocketMessageType.Binary)
                 {
-                    await connection.SendErrorAsync(0, "Only text JSON messages are supported.", cancellationToken).ConfigureAwait(false);
+                    await connection.SendErrorAsync(0, "Only binary or JSON text messages are supported.", cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -365,29 +364,47 @@ public sealed class UtaRemoteServer : IAsyncDisposable
                     continue;
 
                 byte[] payload = message.ToArray();
-                if (!UtaRemoteProtocol.TryParseCommand(payload, connection.Session.Role, out UtaRemoteCommand? command, out string parseError)
-                    || command == null)
+                message.SetLength(0);
+
+                if (UtaRemoteWire.TryReadKind(payload, out UtaRemoteWire.Kind kind, out byte[] body)
+                    && kind == UtaRemoteWire.Kind.Trace)
                 {
-                    await connection.SendErrorAsync(0, parseError, cancellationToken).ConfigureAwait(false);
-                    message.SetLength(0);
+                    if (UtaRemoteWire.TryParseTrace(body, out string eventName, out string detail))
+                        osu.Framework.Logging.Logger.Log($"Uta remote trace {eventName} {detail}");
                     continue;
                 }
 
-                message.SetLength(0);
+                UtaRemoteCommand? command;
+                string parseError;
+                bool parsed;
+                if (UtaRemoteWire.TryReadKind(payload, out _, out byte[] commandBody))
+                    parsed = UtaRemoteWire.TryParseCommand(commandBody, connection.Session.Role, out command, out parseError);
+                else
+                    parsed = UtaRemoteProtocol.TryParseCommand(payload, connection.Session.Role, out command, out parseError);
+
+                if (!parsed || command == null)
+                {
+                    osu.Framework.Logging.Logger.Log($"Uta remote rejected malformed command: {parseError}");
+                    await connection.SendErrorAsync(0, parseError, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
                 if (!connection.Session.CommandLimiter.TryConsume())
                 {
+                    osu.Framework.Logging.Logger.Log($"Uta remote rate-limited {command.Name} seq={command.Sequence}");
                     await connection.SendErrorAsync(command.Sequence, "Command rate limit exceeded.", cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
                 if (!connection.Session.ReplayGuard.TryAdvance(command.Sequence))
                 {
+                    osu.Framework.Logging.Logger.Log($"Uta remote sequence rejected {command.Name} seq={command.Sequence}");
                     await connection.SendErrorAsync(command.Sequence, "Sequence was replayed or out of order.", cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
-                if (command.Name == UtaRemoteCommands.SkipCurrent)
-                    osu.Framework.Logging.Logger.Log($"Uta remote skip received: sequence={command.Sequence} session={connection.Session.Id}");
+                osu.Framework.Logging.Logger.Log(
+                    $"Uta remote command {command.Name} seq={command.Sequence} value={command.Number} enabled={command.Enabled} text={command.Text} options={formatOptions(command.Options)} session={connection.Session.Id}");
 
                 if (command.Name == UtaRemoteCommands.Disconnect)
                 {
@@ -400,21 +417,18 @@ public sealed class UtaRemoteServer : IAsyncDisposable
                 UtaRemoteCommandResult outcome = await commandTarget.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
                 if (outcome.Accepted)
                 {
+                    osu.Framework.Logging.Logger.Log($"Uta remote accepted {command.Name} seq={command.Sequence}");
                     await connection.SendAckAsync(command.Sequence, cancellationToken).ConfigureAwait(false);
                     if (command.RequestId != null)
-                        await connection.SendJsonAsync(new
-                        {
-                            type = "commandResult",
-                            requestId = command.RequestId,
-                            accepted = true,
-                            library = outcome.LibraryEntries,
-                        }, cancellationToken).ConfigureAwait(false);
+                        await connection.SendBytesAsync(UtaRemoteWire.Result(command.RequestId, true, null, outcome.LibraryEntries), cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
-                    await connection.SendErrorAsync(command.Sequence, outcome.Error ?? "Command rejected.", cancellationToken).ConfigureAwait(false);
+                    osu.Framework.Logging.Logger.Log($"Uta remote rejected {command.Name} seq={command.Sequence}: {outcome.Error}");
                     if (command.RequestId != null)
-                        await connection.SendJsonAsync(new { type = "commandResult", requestId = command.RequestId, accepted = false, error = outcome.Error }, cancellationToken).ConfigureAwait(false);
+                        await connection.SendBytesAsync(UtaRemoteWire.Result(command.RequestId, false, outcome.Error, null), cancellationToken).ConfigureAwait(false);
+                    else
+                        await connection.SendErrorAsync(command.Sequence, outcome.Error ?? "Command rejected.", cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -441,10 +455,10 @@ public sealed class UtaRemoteServer : IAsyncDisposable
                     continue;
 
                 UtaRemoteSnapshot snapshot = snapshotProvider();
-                byte[] json = JsonSerializer.SerializeToUtf8Bytes(new { type = "state", snapshot }, UtaRemoteProtocol.JsonOptions);
+                byte[] state = UtaRemoteWire.State(snapshot);
                 foreach ((string id, ClientConnection client) in clients.ToArray())
                 {
-                    if (!client.QueueLatestState(json))
+                    if (!client.QueueLatestState(state))
                     {
                         clients.TryRemove(id, out _);
                         await client.DisposeAsync().ConfigureAwait(false);
@@ -500,6 +514,11 @@ public sealed class UtaRemoteServer : IAsyncDisposable
 
         context.Response.Close();
     }
+
+    private static string formatOptions(Queue.UtaQueuePlaybackOptions? options)
+        => options == null
+            ? "-"
+            : $"speed={options.Speed:0.##} key={options.Transpose} mods=[{string.Join(',', options.ModList)}]";
 
     private void setStatus(string value)
     {
@@ -588,10 +607,10 @@ public sealed class UtaRemoteServer : IAsyncDisposable
             => SendBytesAsync(JsonSerializer.SerializeToUtf8Bytes(value, UtaRemoteProtocol.JsonOptions), cancellationToken);
 
         public Task SendAckAsync(long sequence, CancellationToken cancellationToken)
-            => SendJsonAsync(new { type = "ack", sequence }, cancellationToken);
+            => SendBytesAsync(UtaRemoteWire.Ack(sequence), cancellationToken);
 
         public Task SendErrorAsync(long sequence, string error, CancellationToken cancellationToken)
-            => SendJsonAsync(new { type = "error", sequence, error }, cancellationToken);
+            => SendBytesAsync(UtaRemoteWire.Error(sequence, error), cancellationToken);
 
         public Task SendBytesAsync(ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken)
         {
@@ -644,7 +663,10 @@ public sealed class UtaRemoteServer : IAsyncDisposable
                     {
                         if (Socket.State != WebSocketState.Open)
                             return;
-                        await Socket.SendAsync(bytes, WebSocketMessageType.Text, true, sendCancellation.Token).ConfigureAwait(false);
+                        WebSocketMessageType messageType = bytes.Length > 0 && bytes[0] == UtaRemoteWire.Magic
+                            ? WebSocketMessageType.Binary
+                            : WebSocketMessageType.Text;
+                        await Socket.SendAsync(bytes, messageType, true, sendCancellation.Token).ConfigureAwait(false);
                     }
                     finally
                     {

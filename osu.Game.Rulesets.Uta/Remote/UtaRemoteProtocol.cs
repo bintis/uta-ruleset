@@ -48,12 +48,14 @@ public static class UtaRemoteCommands
     public const string QueueClear = "queueClear";
     public const string QueuePlayNow = "queuePlayNow";
     public const string SkipCurrent = "skipCurrent";
+    public const string SkipToNext = "skipToNext";
     public const string QueueAddNext = "queueAddNext";
     public const string QueueMove = "queueMove";
     public const string QueueMoveToTop = "queueMoveToTop";
     public const string QueueMoveToBottom = "queueMoveToBottom";
     public const string AutoAdvance = "autoAdvance";
     public const string SetMod = "setMod";
+    public const string QueueConfigure = "queueConfigure";
 
     /// <summary>
     /// Commands a read-only Spectator session is still permitted to send. Song requests are
@@ -99,12 +101,14 @@ public static class UtaRemoteCommands
         QueueClear,
         QueuePlayNow,
         SkipCurrent,
+        SkipToNext,
         QueueAddNext,
         QueueMove,
         QueueMoveToTop,
         QueueMoveToBottom,
         AutoAdvance,
         SetMod,
+        QueueConfigure,
     };
 
     internal static bool IsKnown(string command) => all.Contains(command);
@@ -128,7 +132,8 @@ public sealed record UtaRemoteCommand(
     bool? Enabled,
     string? Text,
     string? RequestId = null,
-    UtaRemoteRole Role = UtaRemoteRole.Controller);
+    UtaRemoteRole Role = UtaRemoteRole.Controller,
+    Queue.UtaQueuePlaybackOptions? Options = null);
 
 public sealed record UtaRemoteLibraryEntrySnapshot(
     string BeatmapId,
@@ -172,7 +177,10 @@ public sealed record UtaRemoteQueueEntrySnapshot(
     string Artist,
     DateTimeOffset RequestedAt,
     string? DifficultyName = null,
-    long LengthMs = 0);
+    long LengthMs = 0,
+    double Speed = 1,
+    int Transpose = 0,
+    IReadOnlyList<string>? Mods = null);
 
 public sealed record UtaRemoteQueueMessage(
     string Type,
@@ -202,7 +210,11 @@ public sealed record UtaRemoteSnapshot(
     bool AutoAdvanceEnabled,
     string? Notice = null,
     long QueueRevision = 0,
-    IReadOnlyList<UtaRemoteModSnapshot>? Mods = null)
+    IReadOnlyList<UtaRemoteModSnapshot>? Mods = null,
+    string? SongTitle = null,
+    string? SongArtist = null,
+    string? SongDifficulty = null,
+    string? SongCreator = null)
 {
     public static UtaRemoteSnapshot Empty(string? notice = null) => new(
         0, 0, 0, true, 1, -1, 0, string.Empty, null, null, 0, false, 0,
@@ -382,7 +394,14 @@ public static class UtaRemoteProtocol
                 return false;
             }
 
-            command = new UtaRemoteCommand(sequence, name, number, enabled, text, requestId, role);
+            if (!tryReadOptions(root, out Queue.UtaQueuePlaybackOptions? options, out error))
+                return false;
+
+            if (name is UtaRemoteCommands.QueueAdd or UtaRemoteCommands.QueueAddNext or UtaRemoteCommands.QueueConfigure
+                && options != null && !options.TryValidate(out error))
+                return false;
+
+            command = new UtaRemoteCommand(sequence, name, number, enabled, text, requestId, role, options);
             return true;
         }
         catch (JsonException)
@@ -410,6 +429,78 @@ public static class UtaRemoteProtocol
                 or UtaRemoteCommands.LyricsLatency => value is >= -500 and <= 1000,
             _ => true,
         };
+
+    private static bool tryReadOptions(JsonElement root, out Queue.UtaQueuePlaybackOptions? options, out string error)
+    {
+        options = null;
+        error = string.Empty;
+
+        if (!root.TryGetProperty("options", out JsonElement optionsElement) || optionsElement.ValueKind == JsonValueKind.Null)
+            return true;
+
+        if (optionsElement.ValueKind != JsonValueKind.Object)
+        {
+            error = "The options field must be an object.";
+            return false;
+        }
+
+        double speed = 1;
+        if (optionsElement.TryGetProperty("speed", out JsonElement speedElement) && speedElement.ValueKind != JsonValueKind.Null)
+        {
+            if (!speedElement.TryGetDouble(out speed) || !double.IsFinite(speed))
+            {
+                error = "The options.speed field must be a finite number.";
+                return false;
+            }
+        }
+
+        int transpose = 0;
+        if (optionsElement.TryGetProperty("transpose", out JsonElement transposeElement) && transposeElement.ValueKind != JsonValueKind.Null)
+        {
+            if (transposeElement.TryGetInt32(out int parsedTranspose))
+                transpose = parsedTranspose;
+            else if (transposeElement.TryGetDouble(out double transposeNumber)
+                     && double.IsFinite(transposeNumber)
+                     && Math.Abs(transposeNumber - Math.Round(transposeNumber)) < 0.0001)
+                transpose = (int)Math.Round(transposeNumber);
+            else
+            {
+                error = "The options.transpose field must be an integer.";
+                return false;
+            }
+        }
+
+        List<string> mods = new();
+        if (optionsElement.TryGetProperty("mods", out JsonElement modsElement) && modsElement.ValueKind != JsonValueKind.Null)
+        {
+            if (modsElement.ValueKind != JsonValueKind.Array)
+            {
+                error = "The options.mods field must be an array.";
+                return false;
+            }
+
+            foreach (JsonElement item in modsElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String)
+                {
+                    error = "Each reservation mod must be a string.";
+                    return false;
+                }
+
+                string? acronym = item.GetString();
+                if (string.IsNullOrWhiteSpace(acronym) || acronym.Length > 16)
+                {
+                    error = "A reservation mod acronym is invalid.";
+                    return false;
+                }
+
+                mods.Add(acronym);
+            }
+        }
+
+        options = new Queue.UtaQueuePlaybackOptions(speed, transpose, mods);
+        return true;
+    }
 
     private static string readRequiredString(JsonElement root, string name, int maximumLength)
     {

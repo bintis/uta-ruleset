@@ -30,6 +30,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: python3 scripts/build_remote_wasm.py --require-rust
       - run: python3 scripts/verify_single_file_remote.py
       - run: python3 scripts/audit_overlay.py --repo .
       - run: dotnet restore osu.Game.Rulesets.Uta.Tests/osu.Game.Rulesets.Uta.Tests.csproj

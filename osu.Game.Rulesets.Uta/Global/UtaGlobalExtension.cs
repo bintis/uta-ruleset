@@ -128,6 +128,9 @@ public sealed partial class UtaGlobalExtension : CompositeDrawable, IKeyBindingH
         // Gameplay hides the global notification overlay, so SimpleNotification
         // piles up and dumps after the player exits. Show a local toast instead,
         // and only reopen the queue overlay once per burst of next-song presses.
+        if (error == "transition_busy")
+            return;
+
         string text = error == "The queue is empty."
             ? "The Uta queue is empty."
             : (error ?? "Could not start the next queued song.");

@@ -35,6 +35,23 @@ public abstract class UtaModTranspose : Mod, IApplicableMod
     {
         Semitones = semitones;
     }
+
+    public static Mod? Create(int semitones) => semitones switch
+    {
+        -6 => new UtaModTransposeMinus6(),
+        -5 => new UtaModTransposeMinus5(),
+        -4 => new UtaModTransposeMinus4(),
+        -3 => new UtaModTransposeMinus3(),
+        -2 => new UtaModTransposeMinus2(),
+        -1 => new UtaModTransposeMinus1(),
+        1 => new UtaModTransposePlus1(),
+        2 => new UtaModTransposePlus2(),
+        3 => new UtaModTransposePlus3(),
+        4 => new UtaModTransposePlus4(),
+        5 => new UtaModTransposePlus5(),
+        6 => new UtaModTransposePlus6(),
+        _ => null,
+    };
 }
 
 public sealed class UtaModTransposeMinus6 : UtaModTranspose

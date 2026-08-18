@@ -6,12 +6,14 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 
 namespace osu.Game.Rulesets.Uta.Remote;
@@ -40,18 +42,32 @@ public sealed class UtaRemoteSession
 }
 
 /// <summary>
-/// In-memory, gameplay-session-scoped pairing and reconnect credentials.
-/// Pairing tickets are short-lived and single-use. Reconnect secrets never touch disk.
+/// Pairing tickets are short-lived and single-use. Remembered device sessions
+/// persist their hashed secrets so a phone can reopen the host URL without a QR.
 /// </summary>
 public sealed class UtaRemoteCredentialStore : IDisposable
 {
     public static readonly TimeSpan DEFAULT_PAIRING_LIFETIME = TimeSpan.FromSeconds(90);
+    public const int FileVersion = 1;
+    public const int MaximumRememberedDevices = 8;
 
     private readonly ConcurrentDictionary<string, PendingTicket> pendingTickets = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, UtaRemoteSession> sessions = new(StringComparer.Ordinal);
+    private readonly string? persistPath;
     private int disposed;
 
     public int ActiveSessionCount => sessions.Count;
+
+    public UtaRemoteCredentialStore()
+        : this(null)
+    {
+    }
+
+    internal UtaRemoteCredentialStore(string? persistPath)
+    {
+        this.persistPath = persistPath;
+        load();
+    }
 
     public UtaRemotePairingTicket IssuePairingTicket(
         UtaRemoteRole role,
@@ -131,6 +147,7 @@ public sealed class UtaRemoteCredentialStore : IDisposable
 
         session = created;
         sessionSecret = secret;
+        save();
         return true;
     }
 
@@ -159,7 +176,12 @@ public sealed class UtaRemoteCredentialStore : IDisposable
     }
 
     public bool Revoke(string sessionId)
-        => sessions.TryRemove(sessionId, out _);
+    {
+        bool removed = sessions.TryRemove(sessionId, out _);
+        if (removed)
+            save();
+        return removed;
+    }
 
     public int RevokeAll()
     {
@@ -171,6 +193,7 @@ public sealed class UtaRemoteCredentialStore : IDisposable
         }
 
         pendingTickets.Clear();
+        save();
         return count;
     }
 
@@ -229,10 +252,77 @@ public sealed class UtaRemoteCredentialStore : IDisposable
         if (Interlocked.Exchange(ref disposed, 1) != 0)
             return;
 
-        RevokeAll();
+        pendingTickets.Clear();
+        save();
+    }
+
+    private void load()
+    {
+        if (string.IsNullOrWhiteSpace(persistPath) || !File.Exists(persistPath))
+            return;
+
+        try
+        {
+            DeviceFile? file = JsonSerializer.Deserialize<DeviceFile>(File.ReadAllText(persistPath));
+            if (file == null || file.Version is < 1 or > FileVersion)
+                return;
+
+            foreach (DeviceRow row in file.Devices.Take(MaximumRememberedDevices))
+            {
+                if (string.IsNullOrWhiteSpace(row.Id) || string.IsNullOrWhiteSpace(row.SecretHash))
+                    continue;
+
+                byte[] hash = Convert.FromBase64String(row.SecretHash);
+                sessions[row.Id] = new UtaRemoteSession(row.Id, (UtaRemoteRole)row.Role, hash, row.CreatedAt);
+            }
+        }
+        catch
+        {
+            try
+            {
+                File.Move(persistPath, persistPath + ".corrupt", true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void save()
+    {
+        if (string.IsNullOrWhiteSpace(persistPath))
+            return;
+
+        try
+        {
+            DeviceRow[] rows = sessions.Values
+                .OrderByDescending(session => session.LastSeenAt)
+                .Take(MaximumRememberedDevices)
+                .Select(session => new DeviceRow(
+                    session.Id,
+                    (int)session.Role,
+                    Convert.ToBase64String(session.SecretHash),
+                    session.CreatedAt))
+                .ToArray();
+
+            string? directory = Path.GetDirectoryName(persistPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            string temporary = persistPath + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(new DeviceFile(FileVersion, DateTimeOffset.UtcNow, rows)));
+            File.Move(temporary, persistPath, true);
+        }
+        catch
+        {
+        }
     }
 
     private sealed record PendingTicket(UtaRemoteRole Role, DateTimeOffset ExpiresAt);
+
+    private sealed record DeviceFile(int Version, DateTimeOffset SavedAt, IReadOnlyList<DeviceRow> Devices);
+
+    private sealed record DeviceRow(string Id, int Role, string SecretHash, DateTimeOffset CreatedAt);
 }
 
 public sealed class UtaRemoteReplayGuard

@@ -10,7 +10,7 @@ REQUIRED = {
     "osu.Game.Rulesets.Uta/Remote/UtaRemoteProtocol.cs": ["MAX_MESSAGE_BYTES", "Spectator sessions are read-only"],
     "osu.Game.Rulesets.Uta/Remote/UtaRemoteSecurity.cs": ["DEFAULT_PAIRING_LIFETIME", "FixedTimeEquals", "TryAdvance"],
     "osu.Game.Rulesets.Uta/Remote/UtaRemoteServer.cs": ["HttpListener", "Content-Security-Policy", "RevokeAll"],
-    "osu.Game.Rulesets.Uta/Remote/Assets/uta-remote.html": ["WASM_BASE64", "WebSocket", "sessionStorage", "microphoneLatency", "accompanimentLatency", "lyricsLatency", "loopState"],
+    "osu.Game.Rulesets.Uta/Remote/Assets/uta-remote.html": ["WASM_BASE64", "WebSocket", "sessionStorage", "host_search", "prefers-reduced-motion"],
     "osu.Game.Rulesets.Uta/Configuration/UtaRulesetConfigManager.cs": ["MicrophoneOutputDevice = 5", "BackgroundMusicVolume = 0", "ScoreHudPosition = 22", "Reserved23 = 23"],
     "osu.Game.Rulesets.Uta/Recording/UtaPcmCaptureQueue.cs": ["Interlocked.Exchange", "disposeTask", "ArrayPool<float>.Shared.Return"],
     "osu.Game.Rulesets.Uta/Core/UtaAutoplayFrameFactory.cs": ["UtaPitchFrame", "MidiToFrequency"],
