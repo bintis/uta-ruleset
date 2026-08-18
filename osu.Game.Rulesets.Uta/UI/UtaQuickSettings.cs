@@ -122,14 +122,6 @@ public sealed partial class UtaQuickSettingsOverlay : OsuFocusedOverlayContainer
         };
     }
 
-    private UtaRulesetConfigManager config = null!;
-
-    [BackgroundDependencyLoader]
-    private void load(UtaRulesetConfigManager config)
-    {
-        this.config = config;
-    }
-
     protected override void LoadComplete()
     {
         base.LoadComplete();
@@ -161,21 +153,6 @@ public sealed partial class UtaQuickSettingsOverlay : OsuFocusedOverlayContainer
         base.PopOut();
         this.MoveToX(DrawWidth, 400, Easing.OutQuint);
         this.FadeOut(200, Easing.OutQuint);
-
-        // RulesetConfigManager batches writes into a pendingWrites set and only flushes them via
-        // QueueBackgroundSave() - nothing here was ever triggering that while gameplay was active,
-        // so changes made through this in-game panel (unlike the native settings screen, which
-        // explicitly saves on close) sat as pending and could be lost by the time the ruleset
-        // config manager next actually saved. Force a flush the moment this panel closes.
-        config?.Save();
-    }
-
-    protected override void Dispose(bool isDisposing)
-    {
-        // Covers exiting mid-song (retry, fail, quit) while this panel is still open, where
-        // PopOut() above never runs.
-        config?.Save();
-        base.Dispose(isDisposing);
     }
 }
 
@@ -328,6 +305,11 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
     [BackgroundDependencyLoader]
     private void load(UtaAudioSettingsState audioSettings)
     {
+        string[] availableOutputs = UtaAudioDevices.Enumerate().Select(device => device.Name).ToArray();
+        backgroundMusicOutput.Items = UtaDeviceItems.Build(audioSettings.BackgroundMusicOutputDevice.Value, availableOutputs);
+        vocalsOutput.Items = UtaDeviceItems.Build(audioSettings.OriginalVocalsOutputDevice.Value, availableOutputs);
+        microphoneMonitorOutput.Items = UtaDeviceItems.Build(audioSettings.MicrophoneOutputDevice.Value, availableOutputs);
+
         backgroundMusicVolume.Current = audioSettings.BackgroundMusicVolume;
         originalVocalsVolume.Current = audioSettings.OriginalVocalsVolume;
         microphoneMonitorVolume.Current = audioSettings.MicrophoneMonitorVolume;
@@ -364,7 +346,7 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
         => new()
         {
             LabelText = label,
-            Items = new[] { string.Empty }.Concat(UtaAudioDevices.Enumerate().Select(device => device.Name)).Distinct(),
+            Items = new[] { string.Empty },
         };
 
     private sealed partial class AudioOutputDropdown : SettingsDropdown<string>

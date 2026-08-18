@@ -42,6 +42,11 @@ See [CHANGELOG.md](CHANGELOG.md) for released version history.
   practice. `Recording` (`REC`) is enabled per play rather than by a
   persistent settings checkbox, and `Practice` (`PR`) gates a standalone
   Practice HUD with loop points, phrase navigation and a live speed control.
+- Optional local-network mobile remote (`K`): QR pairing, controller and
+  spectator roles, reconnect and revoke-all, with a single-file HTML client.
+- Global song queue (`F8`) with search, add and reorder, next-song skip
+  (`N`), and an `Immersive Queue` (`IQ`) MOD that continues after results.
+- Bounded, path-stripped import diagnostics for invalid `.utz` packages.
 - Octave Folding can match equivalent notes across octaves without altering the
   detected microphone signal.
 - Native skip prompts for long introductions, gaps between phrases and trailing
@@ -153,7 +158,7 @@ a local pitch-frame window and cached whole-performance scoring for archive
 and phrase analysis. Full item list in
 [CHANGELOG.md](CHANGELOG.md#070---2026-08-17).
 
-### 0.7.2 - Practice HUD, in-game settings and HUD reliability
+### 0.7.2 - Practice HUD, in-game settings and HUD reliability ✅ complete
 
 - [x] Fix the Score HUD (`S`) getting permanently stuck hidden.
 - [x] Add a standalone Practice HUD (`P`), gated behind a new `Practice`
@@ -180,39 +185,34 @@ and phrase analysis. Full item list in
       log-driven pass to find what resets it (or confirm it is a lazer-side
       `RulesetConfigManager` persistence issue) in a future release.
 
-### 0.8.0 - Mobile remote control
+### 0.8.0 - Mobile remote control ✅ complete
 
-- [ ] Host an optional local-network control service without requiring a cloud account.
-- [ ] Pair a phone through a QR code containing a short-lived, single-use session credential.
-- [ ] Require an explicit desktop action before accepting a new controller.
-- [ ] Restrict remote actions to the current uta! session and revoke them when gameplay exits.
-- [ ] Add reconnect, manual disconnect and revoke-all-controller controls.
-- [ ] Reject unpaired clients, cross-origin requests, replayed credentials and excessive commands.
-- [ ] Show the active network interface and pairing status before exposing the service.
-- [ ] Build a responsive mobile interface for play, pause, seek, speed, A-B loops and phrase navigation.
-- [ ] Add remote mixer, Transpose, VOX, OCT and latency controls with the same bounds as the desktop UI.
-- [ ] Stream current lyrics, phrase position, detected pitch and live score to the phone.
-- [ ] Keep desktop and mobile state synchronised after reconnects and rapid control changes.
-- [ ] Provide a read-only spectator mode that cannot change playback or settings.
-- [ ] Document the local-network security and privacy model.
-- [ ] Test pairing, revocation, reconnects and malformed commands without replacing direct runtime tests with preflight checks.
+Optional local-network remote (`K`) with QR pairing, single-use tickets,
+controller/spectator roles, reconnect and revoke-all. The phone loads one
+embedded HTML page; the listener is off by default and dies with gameplay.
+A global song queue (`F8` / `N` / `IQ`) ships in the same release. Protocol
+and security notes live in [REMOTE-PROTOCOL.md](REMOTE-PROTOCOL.md) and
+[REMOTE-SECURITY.md](REMOTE-SECURITY.md). Full item list in
+[CHANGELOG.md](CHANGELOG.md#080---2026-08-18). Real-device LAN, firewall and
+mobile-browser soak tests remain a later release gate.
 
 ### 0.9.0 - Skins, video and interface polish
 
-- [ ] Support lazer-native ruleset skin lookups instead of introducing a separate skin package system.
-- [ ] Expose skinable target notes, live Pitch curves, playhead, grid, lyrics and scoring feedback.
-- [ ] Define safe fallbacks when a skin omits uta!-specific elements or fonts.
-- [ ] Allow skins to customise colours, line weights, note shapes, spacing and animation intensity.
-- [ ] Preserve colour-blind readability and contrast when applying custom skin colours.
-- [ ] Add ruleset-aware video visibility, dimming, blur, offset and playback controls.
-- [ ] Keep video synchronised through speed changes, seeks, loops and pauses.
-- [ ] Add optional singing and scoring particles with a reduced-motion mode.
+- [x] Support lazer-native ruleset skin lookups instead of introducing a separate skin package system (started in 0.8.0).
+- [ ] Replace every existing hard-coded pitch/lyrics primitive with those skinable lookups (grid, notes, curves, playhead, lyrics, scoring feedback).
+- [x] Define safe fallbacks when a skin omits uta!-specific elements or fonts (started in 0.8.0).
+- [x] Allow skins to customise colours, line weights, note shapes, spacing and animation intensity (configuration lookups in 0.8.0).
+- [x] Preserve colour-blind readability and contrast when applying custom skin colours (started in 0.8.0).
+- [x] Add ruleset-aware video visibility, dimming, blur and offset settings (started in 0.8.0).
+- [ ] Bind those video settings to the exact target lazer background/video drawable.
+- [ ] Keep video synchronised through speed changes, seeks, loops and pauses once the ruleset binding exists (imported packages already inherit lazer's native video clock).
+- [ ] Add optional singing and scoring particles; reduced-motion and intensity settings already exist.
 - [ ] Finish the native two-level settings navigation and remove remaining button/control inconsistencies.
 - [ ] Add search terms, tooltips, reset behaviour and disabled-state explanations to every setting.
 - [ ] Improve narrow-window, touch, keyboard and controller navigation.
-- [ ] Move user-facing strings to localisation resources and provide English, Japanese and Chinese coverage (Score HUD and Practice HUD text already covers this since 0.7.2; settings labels, tooltips and other panels remain).
-- [ ] Add an import diagnostics view for invalid `.utz` packages without exposing internal stack traces.
-- [ ] Implement Auto play using reference Pitch data for demonstrations and scoring regression tests.
+- [ ] Move remaining user-facing strings to localisation resources and provide English, Japanese and Chinese coverage (Score HUD, Practice HUD and the mobile remote already cover this; settings labels, tooltips and other desktop panels remain).
+- [x] Add an import diagnostics view for invalid `.utz` packages without exposing internal stack traces (shipped in 0.8.0).
+- [x] Implement Auto play using reference Pitch data for demonstrations and scoring regression tests (shipped in 0.8.0).
 
 ### 0.10.0 - Optimisation and release hardening
 
@@ -264,6 +264,11 @@ The real-time Pitch detector is adapted from open-source Pitch-analysis work
 and uses a normalised-autocorrelation approach. We thank the developers and
 researchers who made these techniques and their implementations openly
 available.
+
+Desktop QR pairing uses a vendored copy of
+[Manuel Bleichenbacher's QR code generator](https://github.com/manuelbl/QrCodeGenerator),
+itself based on [Project Nayuki's QR code generator library](https://www.nayuki.io/page/qr-code-generator-library),
+both MIT-licensed.
 
 uta! is built on [osu!](https://github.com/ppy/osu) and osu!lazer's ruleset and
 framework APIs. We thank ppy and every osu! contributor for the game, framework

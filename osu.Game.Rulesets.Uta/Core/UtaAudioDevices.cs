@@ -1,6 +1,7 @@
 // Copyright (c) bintis. Licensed under the GPL Licence.
 // See the LICENSE file in the repository root for full licence text.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using ManagedBass;
@@ -35,5 +36,19 @@ internal static class UtaAudioDevices
         return Enumerate().FirstOrDefault(device => Bass.GetDeviceInfo(device.Index).IsDefault).Index is > 0 and var defaultDevice
             ? defaultDevice
             : 1;
+    }
+}
+
+internal static class UtaDeviceItems
+{
+    public static string[] Build(string? preferred, IEnumerable<string> available)
+    {
+        var items = new List<string> { string.Empty };
+        items.AddRange(available.Where(name => !string.IsNullOrWhiteSpace(name)));
+
+        if (!string.IsNullOrEmpty(preferred) && !items.Contains(preferred, StringComparer.Ordinal))
+            items.Add(preferred);
+
+        return items.Distinct(StringComparer.Ordinal).ToArray();
     }
 }

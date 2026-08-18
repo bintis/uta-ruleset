@@ -2,6 +2,7 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using osu.Framework.Bindables;
 using osu.Game.Beatmaps;
@@ -37,6 +38,11 @@ public sealed partial class UtaScoreProcessor : ScoreProcessor
     private long currentTechniqueEarnedUnits;
     private long fullMaximumUnits;
     private bool scoringEnabled;
+    private IReadOnlyList<HitObject> orderedHitObjects = Array.Empty<HitObject>();
+
+    public double ForcedCompletionTime => orderedHitObjects.Count == 0
+        ? 0
+        : orderedHitObjects.Max(hitObject => hitObject.GetEndTime()) + 1000;
 
     public UtaScoreProcessor(Ruleset ruleset, UtaScoringOptions? options = null)
         : base(ruleset)
@@ -47,8 +53,31 @@ public sealed partial class UtaScoreProcessor : ScoreProcessor
 
     public override void ApplyBeatmap(IBeatmap beatmap)
     {
+        orderedHitObjects = enumerateRecursively(beatmap.HitObjects).ToArray();
         scoringEnabled = beatmap.HitObjects.OfType<UtaNote>().Any(note => note.ScoringEnabled);
         base.ApplyBeatmap(beatmap);
+    }
+
+    public void CompleteRemainingAsMisses()
+    {
+        for (int i = JudgedHits; i < orderedHitObjects.Count; i++)
+        {
+            HitObject hitObject = orderedHitObjects[i];
+            JudgementResult result = CreateResult(hitObject, hitObject.Judgement);
+            result.Type = result.Judgement.MinResult;
+            ApplyResult(result);
+        }
+    }
+
+    private static IEnumerable<HitObject> enumerateRecursively(IEnumerable<HitObject> hitObjects)
+    {
+        foreach (HitObject hitObject in hitObjects)
+        {
+            foreach (HitObject nested in enumerateRecursively(hitObject.NestedHitObjects))
+                yield return nested;
+
+            yield return hitObject;
+        }
     }
 
     protected override JudgementResult CreateResult(HitObject hitObject, Judgement judgement)

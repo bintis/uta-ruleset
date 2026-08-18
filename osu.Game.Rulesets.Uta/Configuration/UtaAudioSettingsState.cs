@@ -37,21 +37,21 @@ internal sealed class UtaAudioSettingsState : IDisposable
         if (initialised)
             return;
 
-        BackgroundMusicVolume.BindTo(config.GetBindable<double>(UtaRulesetSetting.BackgroundMusicVolume));
-        OriginalVocalsVolume.BindTo(config.GetBindable<float>(UtaRulesetSetting.OriginalVocalsVolume));
-        BackgroundMusicOutputDevice.BindTo(config.GetBindable<string>(UtaRulesetSetting.BackgroundMusicOutputDevice));
-        OriginalVocalsOutputDevice.BindTo(config.GetBindable<string>(UtaRulesetSetting.OriginalVocalsOutputDevice));
-        MicrophoneDevice.BindTo(config.GetBindable<string>(UtaRulesetSetting.MicrophoneDevice));
-        MicrophoneOutputDevice.BindTo(config.GetBindable<string>(UtaRulesetSetting.MicrophoneOutputDevice));
-        MicrophoneInputGain.BindTo(config.GetBindable<float>(UtaRulesetSetting.MicrophoneInputGain));
-        MicrophoneMonitorVolume.BindTo(config.GetBindable<float>(UtaRulesetSetting.MicrophoneMonitorVolume));
-        MicrophoneLatency.BindTo(config.GetBindable<float>(UtaRulesetSetting.MicrophoneLatency));
-        KeyShiftSemitones.BindTo(config.GetBindable<float>(UtaRulesetSetting.KeyShiftSemitones));
-        AccompanimentLatency.BindTo(config.GetBindable<float>(UtaRulesetSetting.AccompanimentLatency));
-        LyricsLatency.BindTo(config.GetBindable<float>(UtaRulesetSetting.LyricsLatency));
-        DebugDiagnostics.BindTo(config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics));
-        PitchSamplingInterval.BindTo(config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval));
-        PhraseLoopLeadIn.BindTo(config.GetBindable<float>(UtaRulesetSetting.PhraseLoopLeadIn));
+        bindTwoWay(BackgroundMusicVolume, config.GetBindable<double>(UtaRulesetSetting.BackgroundMusicVolume));
+        bindTwoWay(OriginalVocalsVolume, config.GetBindable<float>(UtaRulesetSetting.OriginalVocalsVolume));
+        bindTwoWay(BackgroundMusicOutputDevice, config.GetBindable<string>(UtaRulesetSetting.BackgroundMusicOutputDevice));
+        bindTwoWay(OriginalVocalsOutputDevice, config.GetBindable<string>(UtaRulesetSetting.OriginalVocalsOutputDevice));
+        bindTwoWay(MicrophoneDevice, config.GetBindable<string>(UtaRulesetSetting.MicrophoneDevice));
+        bindTwoWay(MicrophoneOutputDevice, config.GetBindable<string>(UtaRulesetSetting.MicrophoneOutputDevice));
+        bindTwoWay(MicrophoneInputGain, config.GetBindable<float>(UtaRulesetSetting.MicrophoneInputGain));
+        bindTwoWay(MicrophoneMonitorVolume, config.GetBindable<float>(UtaRulesetSetting.MicrophoneMonitorVolume));
+        bindTwoWay(MicrophoneLatency, config.GetBindable<float>(UtaRulesetSetting.MicrophoneLatency));
+        bindTwoWay(KeyShiftSemitones, config.GetBindable<float>(UtaRulesetSetting.KeyShiftSemitones));
+        bindTwoWay(AccompanimentLatency, config.GetBindable<float>(UtaRulesetSetting.AccompanimentLatency));
+        bindTwoWay(LyricsLatency, config.GetBindable<float>(UtaRulesetSetting.LyricsLatency));
+        bindTwoWay(DebugDiagnostics, config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics));
+        bindTwoWay(PitchSamplingInterval, config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval));
+        bindTwoWay(PhraseLoopLeadIn, config.GetBindable<float>(UtaRulesetSetting.PhraseLoopLeadIn));
         initialised = true;
 
         if (DebugDiagnostics.Value)
@@ -59,6 +59,12 @@ internal sealed class UtaAudioSettingsState : IDisposable
             Logger.Log($"Uta debug audio settings: initialised from config instance {config.GetHashCode()} - "
                        + $"mic-output loaded as '{MicrophoneOutputDevice.Value}' bgm-output='{BackgroundMusicOutputDevice.Value}'");
         }
+    }
+
+    private static void bindTwoWay<T>(Bindable<T> session, Bindable<T> persistent)
+    {
+        session.BindTo(persistent);
+        session.BindValueChanged(change => persistent.Value = change.NewValue);
     }
 
     public void Dispose()

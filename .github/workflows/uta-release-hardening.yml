@@ -1,0 +1,41 @@
+name: uta release hardening
+
+on:
+  push:
+    paths:
+      - 'osu.Game.Rulesets.Uta/**'
+      - 'osu.Game.Rulesets.Uta.Tests/**'
+      - 'web/uta-remote-wasm/**'
+      - 'scripts/**'
+      - '.github/workflows/uta-release-hardening.yml'
+  pull_request:
+    paths:
+      - 'osu.Game.Rulesets.Uta/**'
+      - 'osu.Game.Rulesets.Uta.Tests/**'
+      - 'web/uta-remote-wasm/**'
+      - 'scripts/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: python3 scripts/build_remote_wasm.py --require-rust
+      - run: python3 scripts/verify_single_file_remote.py
+      - run: python3 scripts/audit_overlay.py --repo .
+      - run: dotnet restore osu.Game.Rulesets.Uta.Tests/osu.Game.Rulesets.Uta.Tests.csproj
+      - run: dotnet format osu.Game.Rulesets.Uta/osu.Game.Rulesets.Uta.csproj --no-restore --verify-no-changes
+      - run: dotnet build osu.Game.Rulesets.Uta/osu.Game.Rulesets.Uta.csproj -c Release --no-restore
+      - run: dotnet test osu.Game.Rulesets.Uta.Tests/osu.Game.Rulesets.Uta.Tests.csproj -c Release --no-restore

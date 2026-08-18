@@ -186,6 +186,8 @@ public class UtaCoreTests
             Assert.That(note.Midi, Is.EqualTo(69));
             Assert.That(note.StartTime, Is.Zero);
             Assert.That(note.Duration, Is.EqualTo(1000));
+            Assert.That(note, Is.Not.SameAs(decoded.HitObjects.OfType<UtaNote>().Single()),
+                "Playable notes must be clones so a same-chart restart cannot mutate live drawable hitobjects.");
             Assert.That(decoded.BeatmapInfo.Metadata.AudioFile, Is.EqualTo("audio/instrumental.mp3"));
             Assert.That(decoded.BeatmapInfo.Metadata.BackgroundFile, Is.EqualTo("artwork/cover.jpg"));
         });

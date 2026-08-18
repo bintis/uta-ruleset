@@ -21,5 +21,6 @@
     <Compile Include="UtaRecordingAndFollowUpTests.cs" />
     <Compile Include="UtaGameplayScoringIntegrationTests.cs" />
     <Compile Include="UtaHotPathRegressionTests.cs" />
+    <Compile Include="UtaReleaseRegressionTests.cs" />
   </ItemGroup>
 </Project>

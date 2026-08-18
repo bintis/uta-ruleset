@@ -44,6 +44,12 @@ public enum UtaAction
     ToggleScoreHud,
     [Description("Toggle practice HUD")]
     TogglePracticeHud,
+    [Description("Next queued song")]
+    ToggleQueueOverlay,
+    [Description("Toggle Uta mobile remote")]
+    ToggleRemoteOverlay,
+    [Description("Toggle Uta song queue")]
+    OpenQueueOverlay,
 }
 
 public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
@@ -66,6 +72,8 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
     private bool pitchUpdateScheduled;
     private bool octaveFoldEnabled;
     private bool autoEnabled;
+    private long lastAutoFrameTimestamp;
+    private UtaRuntimeModeState? runtimeModes;
     private readonly BindableFloat microphoneLatency = new();
     private readonly BindableFloat keyShiftSemitones = new();
     private GameplayClockContainer? gameplayClock;
@@ -81,14 +89,17 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
     [BackgroundDependencyLoader]
     private void load(UtaBeatmap beatmap, UtaAudioSettingsState audioSettings, AudioManager audioManager, UtaAudioRouter audioRouter,
                       IBindable<IReadOnlyList<Mod>> mods, GameplayClockContainer gameplayClock,
-                      UtaGameplayScoringController scoringController, UtaRecordingRuntime recordingRuntime)
+                      UtaGameplayScoringController scoringController, UtaRecordingRuntime recordingRuntime,
+                      UtaRuntimeModeState runtimeModes)
     {
         audioRouter.Initialise(audioManager);
         this.beatmap = beatmap;
         this.gameplayClock = gameplayClock;
         this.scoringController = scoringController;
         this.recordingRuntime = recordingRuntime;
-        octaveFoldEnabled = beatmap.OctaveTolerance || mods.Value.Any(mod => mod is UtaModOctaveFold);
+        this.runtimeModes = runtimeModes;
+        octaveFoldEnabled = runtimeModes.OctaveFoldEnabled.Value;
+        runtimeModes.OctaveFoldEnabled.ValueChanged += onOctaveFoldChanged;
         autoEnabled = mods.Value.Any(mod => mod is UtaModAutoplay);
         notes = beatmap.HitObjects.OfType<UtaNote>().OrderBy(note => note.StartTime).ToArray();
         microphoneLatency.BindTo(audioSettings.MicrophoneLatency);
@@ -118,10 +129,23 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
 
     private void updateAuto(double current)
     {
+        long now = Stopwatch.GetTimestamp();
+        if (lastAutoFrameTimestamp != 0
+            && Stopwatch.GetElapsedTime(lastAutoFrameTimestamp, now).TotalMilliseconds < UtaAutoplayFrameFactory.FRAME_DURATION_MILLISECONDS)
+            return;
+
+        lastAutoFrameTimestamp = now;
         UtaNote? active = findNoteAt(current);
-        if (active?.Midi is { } targetMidi)
+        int semitones = (int)MathF.Round(keyShiftSemitones.Value);
+        UtaPitchFrame frame = UtaAutoplayFrameFactory.Create(active, semitones, now);
+
+        // Auto is a formal scoring source, not just a visual shortcut. Feeding the same
+        // bounded capture/scoring pipeline makes HUD, results and regression tests agree.
+        scoringController.Enqueue(frame);
+
+        if (active?.Midi is { } targetMidi && frame.Hertz != null)
         {
-            LiveDetectedPitchMidi.Value = targetMidi + MathF.Round(keyShiftSemitones.Value);
+            LiveDetectedPitchMidi.Value = targetMidi + semitones;
             LivePitchDeviation.Value = 0;
             LivePitchSimilarity.Value = 1;
             LiveDetectedPitchTime.Value = current;
@@ -133,12 +157,17 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
         {
             LiveVoiceActive.Value = false;
             LivePitchSimilarity.Value = 0;
+            LivePitchClarity.Value = 0;
         }
     }
+
+    private void onOctaveFoldChanged(ValueChangedEvent<bool> value)
+        => octaveFoldEnabled = value.NewValue;
 
     private void onSeek()
     {
         smoothedMidi = null;
+        lastAutoFrameTimestamp = 0;
         LiveVoiceActive.Value = false;
         LivePitchSimilarity.Value = 0;
     }
@@ -251,6 +280,8 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
             microphone.PitchDetected -= onPitchDetected;
         if (gameplayClock != null)
             gameplayClock.OnSeek -= onSeek;
+        if (runtimeModes != null)
+            runtimeModes.OctaveFoldEnabled.ValueChanged -= onOctaveFoldChanged;
         microphoneLatency.UnbindAll();
         keyShiftSemitones.UnbindAll();
         base.Dispose(isDisposing);

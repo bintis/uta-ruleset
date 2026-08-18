@@ -3,6 +3,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
@@ -28,6 +30,7 @@ using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Formats;
 using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Rulesets.Uta.Recording;
+using osu.Game.Rulesets.Uta.Remote;
 using osu.Game.Rulesets.Uta.Scoring;
 using osu.Game.Rulesets.Uta.Skinning;
 using osu.Game.Rulesets.Uta.UI;
@@ -91,6 +94,9 @@ public sealed partial class UtaRuleset : Ruleset
             new KeyBinding(InputKey.L, UtaAction.ToggleCurrentPhraseLoop),
             new KeyBinding(InputKey.S, UtaAction.ToggleScoreHud),
             new KeyBinding(InputKey.P, UtaAction.TogglePracticeHud),
+            new KeyBinding(InputKey.N, UtaAction.ToggleQueueOverlay),
+            new KeyBinding(InputKey.F8, UtaAction.OpenQueueOverlay),
+            new KeyBinding(InputKey.K, UtaAction.ToggleRemoteOverlay),
         };
 
     public override IEnumerable<HitResult> GetValidHitResults()
@@ -152,17 +158,55 @@ public sealed partial class UtaRuleset : Ruleset
                 new UtaModAutoplay(),
                 new UtaModRecording(),
                 new UtaModPractice(),
+                new UtaModImmersiveQueue(),
             },
             _ => Array.Empty<Mod>(),
         };
 
     public override IRulesetConfigManager CreateConfig(SettingsStore? settings)
     {
+        repairCorruptedIntegerSettings(settings);
+
         var config = new UtaRulesetConfigManager(settings, RulesetInfo);
         var root = config.GetBindable<string>(UtaRulesetSetting.PerformanceRootDirectory);
         UtaPerformanceRootRegistry.SetConfiguredRoot(root.Value);
         root.BindValueChanged(value => UtaPerformanceRootRegistry.SetConfiguredRoot(value.NewValue));
         return config;
+    }
+
+    // A now-fixed overload resolution bug in UtaRulesetConfigManager.InitialiseDefaults() previously caused these
+    // int-typed settings to be persisted as float-formatted strings (e.g. "0.0"). BindableInt.Parse() cannot read
+    // that format, which crashes config load on every subsequent run for anyone who ran the affected build.
+    // Drop any surviving non-integer values so they get recreated cleanly from defaults.
+    private static void repairCorruptedIntegerSettings(SettingsStore? settings)
+    {
+        var realm = settings?.Realm;
+
+        if (realm == null)
+            return;
+
+        var integerKeys = new HashSet<string>
+        {
+            nameof(UtaRulesetSetting.RemoteControlPort),
+        };
+
+        realm.Write(r =>
+        {
+            // Realm's LINQ provider can't translate HashSet.Contains(), so filter by ruleset in the query
+            // and match keys/parse values against the materialised list instead.
+            var candidates = r.All<RealmRulesetSetting>()
+                               .Where(s => s.RulesetName == SHORT_NAME)
+                               .ToList();
+
+            foreach (var setting in candidates)
+            {
+                if (!integerKeys.Contains(setting.Key))
+                    continue;
+
+                if (!int.TryParse(setting.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                    r.Remove(setting);
+            }
+        });
     }
 
     public override RulesetSettingsSubsection CreateSettings() => new UtaSettingsSubsection(this);

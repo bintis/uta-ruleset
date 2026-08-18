@@ -2,6 +2,7 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -19,6 +20,7 @@ using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
+using osu.Game.Rulesets.Uta.UI;
 using osu.Game.Rulesets.Uta.Pitch;
 using osuTK.Graphics;
 
@@ -102,6 +104,27 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     HintText = "Write Uta frame, memory, microphone and curve metrics to the runtime log every five seconds.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics),
                 }),
+                new UtaImportDiagnosticsView(),
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = "Reduced motion",
+                    HintText = "Disable optional singing/scoring particles and minimise non-essential animation.",
+                    Current = config.GetBindable<bool>(UtaRulesetSetting.ReducedMotion),
+                }),
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = "Show background video",
+                    HintText = "Allow the lazer-native video event included by the imported .utz package.",
+                    Current = config.GetBindable<bool>(UtaRulesetSetting.VideoVisible),
+                }),
+                slider("Video dim", "Additional ruleset video/background dim level.",
+                    config.GetBindable<float>(UtaRulesetSetting.VideoDim), value => $"{value:P0}", 0.05f),
+                slider("Video blur", "Additional ruleset video/background blur level.",
+                    config.GetBindable<float>(UtaRulesetSetting.VideoBlur), value => $"{value:P0}", 0.05f),
+                slider("Video offset", "Ruleset-specific correction added to the packaged video offset.",
+                    config.GetBindable<float>(UtaRulesetSetting.VideoOffset), value => $"{value:+0;-0;0} ms", 1),
+                slider("Particle intensity", "Intensity of optional singing/scoring feedback; zero disables it.",
+                    config.GetBindable<float>(UtaRulesetSetting.ParticleIntensity), value => $"{value:P0}", 0.05f),
                 new SettingsItemV2(new FormEnumDropdown<UtaScoreHudPosition>
                 {
                     Caption = "Score HUD position",
@@ -114,8 +137,9 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                 {
                     Caption = "Microphone",
                     HintText = "The input device used for live pitch detection.",
+                    // Items must be assigned before Current - see buildDeviceItems().
+                    Items = UtaDeviceItems.Build(microphoneDevice.Value, UtaMicrophoneDevices.Enumerate().Select(device => device.Name)),
                     Current = microphoneDevice,
-                    Items = new[] { string.Empty }.Concat(UtaMicrophoneDevices.Enumerate().Select(device => device.Name)),
                 }),
                 new SettingsButton
                 {
@@ -310,8 +334,9 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
         {
             Caption = caption,
             HintText = hint,
+            // Items must be assigned before Current - see buildDeviceItems().
+            Items = UtaDeviceItems.Build(current.Value, UtaAudioDevices.Enumerate().Select(device => device.Name)),
             Current = current,
-            Items = new[] { string.Empty }.Concat(UtaAudioDevices.Enumerate().Select(device => device.Name)).Distinct(),
         });
 
     private static SettingsItemV2 slider<T>(LocalisableString caption, LocalisableString hint, osu.Framework.Bindables.Bindable<T> current,

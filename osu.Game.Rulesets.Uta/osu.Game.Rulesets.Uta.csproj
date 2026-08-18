@@ -3,7 +3,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyTitle>osu.Game.Rulesets.Uta</AssemblyTitle>
     <RootNamespace>osu.Game.Rulesets.Uta</RootNamespace>
-    <Version>0.7.2</Version>
+    <Version>0.8.0</Version>
     <OutputType>Library</OutputType>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
@@ -34,6 +34,14 @@
     <Compile Include="Core\**\*.cs" />
     <Compile Include="Formats\*.cs" />
     <Compile Include="Localisation\*.cs" />
+    <Compile Include="Import\**\*.cs" />
+    <Compile Include="Gameplay\**\*.cs" />
+    <Compile Include="Global\**\*.cs" />
+    <Compile Include="Library\**\*.cs" />
+    <Compile Include="Playback\**\*.cs" />
+    <Compile Include="Queue\**\*.cs" />
+    <Compile Include="Remote\**\*.cs" />
+    <Compile Include="Storage\**\*.cs" />
     <Compile Include="Mods\*.cs" />
     <Compile Include="Pitch\*.cs" />
     <Compile Include="Scoring\**\*.cs" />
@@ -41,6 +49,10 @@
     <Compile Include="Performance\**\*.cs" />
     <Compile Include="Skinning\*.cs" />
     <Compile Include="UI\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Remote\Assets\uta-remote.html" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">

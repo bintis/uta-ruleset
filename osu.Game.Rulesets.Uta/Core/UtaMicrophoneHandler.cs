@@ -56,12 +56,16 @@ internal sealed class UtaMicrophoneHandler : InputHandler
     };
 
     private const int window_size = 2048;
+    private const int monitor_target_buffer_ms = 60;
+    private const int monitor_clock_adjustment_interval = 10;
+    private const float monitor_max_clock_correction = 0.005f;
     private readonly float[] samples = new float[window_size];
     private float[] interleavedBuffer = Array.Empty<float>();
     private readonly int deviceIndex;
     private readonly UtaAudioRouter audioRouter;
     private int recordingStream;
     private int monitorStream;
+    private int monitorClockAdjustmentCounter;
     private int frequency;
     private int channels;
     private int sampleWriteIndex;
@@ -143,6 +147,7 @@ internal sealed class UtaMicrophoneHandler : InputHandler
         if (monitorStream != 0)
         {
             Bass.ChannelSetAttribute(monitorStream, ChannelAttribute.Volume, monitorVolume);
+            primeMonitorBuffer(monitorStream);
         }
 
         recordingActive = true;
@@ -175,7 +180,7 @@ internal sealed class UtaMicrophoneHandler : InputHandler
         if (gain != 1)
         {
             for (int i = 0; i < interleavedCount; i++)
-                interleaved[i] *= gain;
+                interleaved[i] = Math.Clamp(interleaved[i] * gain, -1, 1);
         }
 
         // Recording is tapped after input gain and before monitor routing. The sink is
@@ -191,8 +196,8 @@ internal sealed class UtaMicrophoneHandler : InputHandler
         }
 
         CalibrationCapture? capture = Volatile.Read(ref calibrationCapture);
-        if (capture == null && monitorStream != 0 && monitorVolume > 0)
-            Bass.StreamPutData(monitorStream, interleaved, length);
+        if (capture == null && monitorStream != 0)
+            pushMonitorAudio(interleaved, length);
 
         int frameCount = interleavedCount / channels;
         for (int frame = 0; frame < frameCount; frame++)
@@ -247,6 +252,45 @@ internal sealed class UtaMicrophoneHandler : InputHandler
 
         return true;
     }
+
+    private void primeMonitorBuffer(int stream)
+    {
+        int targetBytes = getMonitorTargetBufferBytes();
+        Bass.StreamPutData(stream, new float[targetBytes / sizeof(float)], targetBytes);
+        monitorClockAdjustmentCounter = 0;
+    }
+
+    private void pushMonitorAudio(float[] source, int byteLength)
+    {
+        int stream = monitorStream;
+
+        if (++monitorClockAdjustmentCounter >= monitor_clock_adjustment_interval)
+        {
+            monitorClockAdjustmentCounter = 0;
+
+            int targetBytes = getMonitorTargetBufferBytes();
+            int queuedBytes = Bass.ChannelGetData(stream, IntPtr.Zero, (int)DataFlags.Available);
+
+            if (queuedBytes >= 0)
+            {
+                if (queuedBytes < targetBytes / 3)
+                {
+                    int missingBytes = targetBytes - queuedBytes;
+                    Bass.StreamPutData(stream, new float[missingBytes / sizeof(float)], missingBytes);
+                    queuedBytes = targetBytes;
+                }
+
+                float bufferError = (queuedBytes - targetBytes) / (float)targetBytes;
+                float correction = Math.Clamp(bufferError * 0.01f, -monitor_max_clock_correction, monitor_max_clock_correction);
+                Bass.ChannelSetAttribute(stream, ChannelAttribute.Frequency, frequency * (1 + correction));
+            }
+        }
+
+        Bass.StreamPutData(stream, source, byteLength);
+    }
+
+    private int getMonitorTargetBufferBytes()
+        => frequency * channels * sizeof(float) * monitor_target_buffer_ms / 1000;
 
     private void ensureInterleavedCapacity(int required)
     {

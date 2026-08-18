@@ -3,6 +3,76 @@
 This file records user-visible changes to `uta!`. Future work remains in the
 [README roadmap](README.md#roadmap--todo).
 
+## 0.8.0 - 2026-08-18
+
+### Added
+
+- Added an optional local-network mobile remote. Press `K` to open the
+  overlay, start the listener and show a pairing QR code. The phone loads one
+  embedded HTML page over HTTP and talks to the same host over WebSocket.
+- Pairing tickets are 90-second, single-use credentials. Reconnects use a
+  per-tab session secret. Desktop start is required before any controller is
+  accepted; exiting gameplay stops the listener and revokes every ticket and
+  session.
+- Added a read-only spectator role. Spectators can watch lyrics, pitch and
+  score, and may only send `ping`, `disconnect`, library search and a song
+  request.
+- The mobile client covers play, pause, seek, speed, A-B loops, phrase
+  navigation, mixer, Transpose, VOX, OCT and latency controls, with the same
+  bounds as the desktop UI. English, Chinese and Japanese are selectable on
+  the page, and `prefers-reduced-motion` is honoured.
+- Added a global song queue (`F8`) with search, add, reorder, play-now and
+  skip. `N` skips to the next queued song. The `Immersive Queue` (`IQ`) MOD
+  continues to the next queued song after results.
+- Added a bounded, path-stripped import diagnostics view for failed `.utz`
+  packages. Full exceptions stay in the lazer log.
+- Auto now emits 20 ms synthetic analysis frames through the formal scoring
+  path, so native judgements, the Score HUD and the results screen share one
+  pipeline.
+- Added ruleset-native skin lookup identifiers, accessible colour fallbacks,
+  reduced-motion / particle-intensity settings, and video visibility, dim,
+  blur and offset controls.
+
+### Changed
+
+- Historical configuration keys 0-22 are frozen. New settings are appended so
+  an older `RulesetConfigManager` cannot reread a later value under the wrong
+  numeric key. Microphone monitor output stays on its original key.
+- Changing Transpose or OCT during a run starts a new timeline epoch, resets
+  the streaming session and marks the performance non-comparable.
+- Remote credentials are hashed in process only and are never written to
+  ruleset configuration. The listener accepts loopback, RFC1918 and
+  link-local clients; public addresses and cross-origin browser requests are
+  rejected.
+
+### Fixed
+
+- PCM capture completion and disposal are now atomic and idempotent, so a
+  producer/channel race cannot leak a rented buffer or drop the last block.
+- Import failures no longer surface raw paths or stack traces in the user
+  view.
+
+### Validation
+
+- Added pairing, replay-guard, private-network, spectator, command-bound,
+  QR-finder and PCM-queue regression tests.
+- CI verifies the embedded remote page is a single self-contained HTML file
+  and rebuilds the WASM helper on the release-hardening workflow.
+
+### Known issues
+
+- Real-device LAN, firewall/URL-ACL, mobile-browser and accessibility passes
+  remain a release gate; they are documented in
+  [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md) rather than treated as done.
+- Skin lookups and video settings are present, but existing pitch/lyrics
+  drawables are not yet fully replaced by those lookups, and the exact
+  ruleset video drawable binding still needs a pass against the target lazer
+  background/video hierarchy.
+- The 0.7.2 microphone-monitor persistence issue is still open.
+
+See [REMOTE-PROTOCOL.md](REMOTE-PROTOCOL.md) and
+[REMOTE-SECURITY.md](REMOTE-SECURITY.md) for the local-network contract.
+
 ## 0.7.2 - 2026-08-18
 
 ### Fixed
@@ -312,6 +382,8 @@ This file records user-visible changes to `uta!`. Future work remains in the
   gap skipping and karaoke-focused MODs.
 - Added native lazer settings, volume HUD integration and Uta-only song filtering.
 
+[0.8.0]: https://github.com/bintis/uta-ruleset/compare/v0.7.2...v0.8.0
+[0.7.2]: https://github.com/bintis/uta-ruleset/compare/v0.6.2...v0.7.2
 [0.5.1]: https://github.com/bintis/uta-ruleset/compare/v0.5.0...v0.5.1
 [0.3.0]: https://github.com/bintis/uta-ruleset/compare/v0.2.1...main
 [0.4.0]: https://github.com/bintis/uta-ruleset/compare/v0.3.0...main

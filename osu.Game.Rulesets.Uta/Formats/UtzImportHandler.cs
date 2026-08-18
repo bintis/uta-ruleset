@@ -12,6 +12,7 @@ using osu.Game.Beatmaps;
 using osu.Game.Database;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Notifications;
+using osu.Game.Rulesets.Uta.Import;
 
 namespace osu.Game.Rulesets.Uta.Formats;
 
@@ -70,11 +71,11 @@ public sealed class UtzImportHandler : ICanAcceptFiles
             {
                 if (task.Stream != null)
                 {
-                    if (task.Stream.CanSeek)
-                        task.Stream.Position = 0;
+                    using Stream input = task.Stream;
+                    if (input.CanSeek)
+                        input.Position = 0;
 
-                    UtzBeatmapSetConverter.Convert(task.Stream, output);
-                    task.Stream.Dispose();
+                    UtzBeatmapSetConverter.Convert(input, output);
                 }
                 else
                 {
@@ -90,9 +91,10 @@ public sealed class UtzImportHandler : ICanAcceptFiles
             {
                 output.Dispose();
                 Logger.Error(ex, $"Could not import UTZ package '{task.Path}'.");
+                UtaImportDiagnostic diagnostic = UtaImportDiagnostics.Record(task.Path, ex);
                 notifications?.Post(new SimpleNotification
                 {
-                    Text = $"Could not import {Path.GetFileName(task.Path)}: {ex.Message}",
+                    Text = $"{diagnostic.Category}: {diagnostic.FileName} — {diagnostic.Message}",
                 });
             }
         }

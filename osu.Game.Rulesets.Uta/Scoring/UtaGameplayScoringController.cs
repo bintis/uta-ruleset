@@ -10,10 +10,8 @@ using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Logging;
-using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
-using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Rulesets.Uta.Performance;
 using osu.Game.Rulesets.Uta.Pitch;
 using osu.Game.Screens.Play;
@@ -47,8 +45,11 @@ internal sealed partial class UtaGameplayScoringController : Component
 
     private GameplayClockContainer gameplayClock = null!;
     private readonly BindableFloat microphoneLatency = new();
+    private readonly BindableFloat keyShiftSemitones = new();
+    private readonly BindableBool octaveFoldEnabled = new();
     private readonly BindableBool debugDiagnostics = new();
     private volatile bool debugDiagnosticsEnabled;
+    private volatile bool forceCompletionRequested;
     private UtaStreamingScoringSession session = null!;
     private UtaScoringOptions options = null!;
     private UtaPerformanceScore? emptyPerformance;
@@ -75,6 +76,7 @@ internal sealed partial class UtaGameplayScoringController : Component
     public bool ScoringEnabled => scoringEnabled;
     public bool CaptureEnabled => captureEnabled;
     public bool Comparable => scoringEnabled && comparable && !queue.Overflowed;
+    public bool ForceCompletionRequested => forceCompletionRequested;
     public int TimelineEpoch => mapper.CurrentTimelineEpoch;
     public UtaVocalRangeAdvisor VocalRangeAdvisor => vocalRangeAdvisor;
     public IReadOnlyList<UtaPerformancePitchFrame> ReplayFrames
@@ -111,14 +113,18 @@ internal sealed partial class UtaGameplayScoringController : Component
         mappedFrameConsumer = onMappedFrame;
     }
 
+    public void RequestForceCompletion() => forceCompletionRequested = true;
+
     [BackgroundDependencyLoader]
     private void load(
         GameplayClockContainer gameplayClock,
         UtaAudioSettingsState audioSettings,
-        IBindable<IReadOnlyList<Mod>> mods)
+        UtaRuntimeModeState runtimeModes)
     {
         this.gameplayClock = gameplayClock;
         microphoneLatency.BindTo(audioSettings.MicrophoneLatency);
+        keyShiftSemitones.BindTo(audioSettings.KeyShiftSemitones);
+        octaveFoldEnabled.BindTo(runtimeModes.OctaveFoldEnabled);
         debugDiagnostics.BindTo(audioSettings.DebugDiagnostics);
         debugDiagnostics.BindValueChanged(value =>
         {
@@ -128,11 +134,13 @@ internal sealed partial class UtaGameplayScoringController : Component
 
         options = new UtaScoringOptions
         {
-            TransposeSemitones = (int)MathF.Round(audioSettings.KeyShiftSemitones.Value),
-            AllowOctaveTolerance = mods.Value.Any(mod => mod is UtaModOctaveFold) || beatmap.OctaveTolerance,
+            TransposeSemitones = (int)MathF.Round(keyShiftSemitones.Value),
+            AllowOctaveTolerance = octaveFoldEnabled.Value || beatmap.OctaveTolerance,
             TimelineEpoch = 0,
         };
         session = new UtaStreamingScoringSession(targets, options);
+        keyShiftSemitones.BindValueChanged(onTransposeChanged);
+        octaveFoldEnabled.BindValueChanged(onOctaveFoldChanged);
 
         long now = Stopwatch.GetTimestamp();
         lastRate = gameplayClock.Rate;
@@ -356,8 +364,8 @@ internal sealed partial class UtaGameplayScoringController : Component
         queue.Clear();
         options = new UtaScoringOptions
         {
-            TransposeSemitones = options.TransposeSemitones,
-            AllowOctaveTolerance = options.AllowOctaveTolerance,
+            TransposeSemitones = (int)MathF.Round(keyShiftSemitones.Value),
+            AllowOctaveTolerance = octaveFoldEnabled.Value || beatmap.OctaveTolerance,
             TimelineEpoch = epoch,
         };
         session.Reset(options);
@@ -371,6 +379,36 @@ internal sealed partial class UtaGameplayScoringController : Component
         }
     }
 
+    private void onTransposeChanged(ValueChangedEvent<float> _) => resetRuntimeScoringOptions();
+
+    private void onOctaveFoldChanged(ValueChangedEvent<bool> _) => resetRuntimeScoringOptions();
+
+    private void resetRuntimeScoringOptions()
+    {
+        long now = Stopwatch.GetTimestamp();
+        int epoch = mapper.AddAnchor(
+            now,
+            toMicroseconds(gameplayClock.CurrentTime),
+            gameplayClock.IsPaused.Value ? 0 : gameplayClock.Rate,
+            startsNewTimelineEpoch: true);
+
+        queue.Clear();
+        options = new UtaScoringOptions
+        {
+            TransposeSemitones = (int)MathF.Round(keyShiftSemitones.Value),
+            AllowOctaveTolerance = octaveFoldEnabled.Value || beatmap.OctaveTolerance,
+            TimelineEpoch = epoch,
+        };
+        session.Reset(options);
+        emptyPerformance = null;
+        lastScoringWatermarkMicroseconds = long.MinValue;
+        if (scoringEnabled)
+        {
+            comparable = false;
+            archiveStatus.Value = "Non-comparable: scoring option changed during play";
+        }
+    }
+
     private static long toMicroseconds(double milliseconds)
         => checked((long)Math.Round(milliseconds * 1000, MidpointRounding.AwayFromZero));
 
@@ -379,6 +417,8 @@ internal sealed partial class UtaGameplayScoringController : Component
         if (gameplayClock != null)
             gameplayClock.OnSeek -= onSeek;
         microphoneLatency.UnbindAll();
+        keyShiftSemitones.UnbindAll();
+        octaveFoldEnabled.UnbindAll();
         debugDiagnostics.UnbindAll();
         base.Dispose(isDisposing);
     }

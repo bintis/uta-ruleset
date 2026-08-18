@@ -2,10 +2,8 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Audio;
 using osu.Framework.Audio.Track;
@@ -13,10 +11,8 @@ using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Logging;
 using osu.Game.Beatmaps;
-using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
-using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Screens.Play;
 
 namespace osu.Game.Rulesets.Uta.UI;
@@ -33,6 +29,7 @@ internal sealed partial class UtaAudioController : Component
     private readonly Bindable<string> vocalsOutput = new();
     private readonly BindableDouble mainTrackVolumeAdjustment = new(1);
     private readonly BindableFloat keyShiftSemitones = new();
+    private readonly BindableBool originalVocalsEnabled = new();
     private readonly BindableFloat accompanimentLatency = new();
     private readonly BindableBool debugDiagnostics = new();
     private IBindable<bool> gameplayPaused = null!;
@@ -48,7 +45,7 @@ internal sealed partial class UtaAudioController : Component
     [BackgroundDependencyLoader]
     private void load(AudioManager audioManager, UtaAudioRouter router, IBindable<WorkingBeatmap> workingBeatmap,
                       GameplayClockContainer gameplayClock, UtaBeatmap beatmap,
-                      UtaAudioSettingsState audioSettings, IBindable<IReadOnlyList<Mod>> mods)
+                      UtaAudioSettingsState audioSettings, UtaRuntimeModeState runtimeModes)
     {
         this.gameplayClock = gameplayClock;
         router.Initialise(audioManager);
@@ -60,16 +57,15 @@ internal sealed partial class UtaAudioController : Component
         vocalsVolume.BindTo(audioSettings.OriginalVocalsVolume);
         vocalsOutput.BindTo(audioSettings.OriginalVocalsOutputDevice);
         keyShiftSemitones.BindTo(audioSettings.KeyShiftSemitones);
+        originalVocalsEnabled.BindTo(runtimeModes.OriginalVocalsEnabled);
         accompanimentLatency.BindTo(audioSettings.AccompanimentLatency);
         debugDiagnostics.BindTo(audioSettings.DebugDiagnostics);
 
         backgroundMusic = tryCreateTrack(router, working, working.Metadata.AudioFile, backgroundMusicOutput.Value, "BGM");
 
-        // Original vocals are opt-in. Do not create a vocal bus unless VOX is selected.
-        bool originalVocalsEnabled = mods.Value.Any(mod => mod is UtaModOriginalVocals);
-        string? vocalFile = originalVocalsEnabled
-            ? beatmap.OriginalAudioFile ?? beatmap.GuideVocalsFile
-            : null;
+        // Create the optional vocal route once; session-scoped VOX state gates its
+        // effective volume so desktop and remote controls share one authoritative path.
+        string? vocalFile = beatmap.OriginalAudioFile ?? beatmap.GuideVocalsFile;
 
         if (string.IsNullOrWhiteSpace(vocalFile))
             Logger.Log("This UTZ package has no guide-vocal or original audio track; the vocals control is unavailable.");
@@ -92,8 +88,14 @@ internal sealed partial class UtaAudioController : Component
             if (vocals == null)
                 return;
 
-            vocals.SetVolume(value.NewValue);
-            Logger.Log($"Uta vocals volume applied: {value.NewValue:P0}");
+            float effective = originalVocalsEnabled.Value ? value.NewValue : 0;
+            vocals.SetVolume(effective);
+            Logger.Log($"Uta vocals volume applied: {effective:P0} (enabled={originalVocalsEnabled.Value})");
+        }, true);
+        originalVocalsEnabled.BindValueChanged(value =>
+        {
+            if (vocals != null)
+                vocals.SetVolume(value.NewValue ? vocalsVolume.Value : 0);
         }, true);
         backgroundMusicOutput.BindValueChanged(value => backgroundMusic?.SetOutput(value.NewValue));
         vocalsOutput.BindValueChanged(value => vocals?.SetOutput(value.NewValue));
@@ -142,7 +144,10 @@ internal sealed partial class UtaAudioController : Component
         bool shouldRun = !gameplayPaused.Value && gameplayClock.IsRunning && sourceTime >= 0;
         double rate = gameplayClock.Rate;
         updateSource(backgroundMusic, sourceTime, rate, shouldRun);
-        updateSource(vocals, sourceTime, rate, shouldRun);
+        // Only decode/mix the vocal route while VOX is actually enabled - keeping it running
+        // muted at all times doubles the concurrent audio processing load on every play and was
+        // causing audible crackling versus main, where the stream simply didn't exist unless used.
+        updateSource(vocals, sourceTime, rate, shouldRun && originalVocalsEnabled.Value);
 
         if (debugDiagnostics.Value)
             logDiagnostics(rate, sourceTime, shouldRun);
@@ -250,6 +255,7 @@ internal sealed partial class UtaAudioController : Component
         backgroundMusicOutput.UnbindAll();
         vocalsOutput.UnbindAll();
         keyShiftSemitones.UnbindAll();
+        originalVocalsEnabled.UnbindAll();
         accompanimentLatency.UnbindAll();
         debugDiagnostics.UnbindAll();
         if (gameplayPaused != null)

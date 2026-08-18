@@ -12,16 +12,20 @@ namespace osu.Game.Rulesets.Uta.Recording;
 /// <summary>
 /// Non-blocking PCM boundary for the microphone callback. The producer only
 /// rents/copies and TryWrite()s; all file IO occurs on the single consumer.
+/// Completion and disposal are race-safe and idempotent.
 /// </summary>
 public sealed class UtaPcmCaptureQueue : IAsyncDisposable
 {
     private readonly Channel<UtaPcmCaptureBlock> channel;
+    private readonly object disposeSync = new();
     private long queuedFrames;
     private long rejectedBlocks;
-    private bool completed;
+    private int completionState;
+    private Task? disposeTask;
 
     public long QueuedFrames => Interlocked.Read(ref queuedFrames);
     public long RejectedBlocks => Interlocked.Read(ref rejectedBlocks);
+    public bool IsCompleted => Volatile.Read(ref completionState) != 0;
 
     public UtaPcmCaptureQueue(int capacityBlocks = 256)
     {
@@ -30,7 +34,9 @@ public sealed class UtaPcmCaptureQueue : IAsyncDisposable
 
         channel = Channel.CreateBounded<UtaPcmCaptureBlock>(new BoundedChannelOptions(capacityBlocks)
         {
-            SingleReader = true,
+            // DisposeAsync may drain after the writer/consumer stops, so the channel must
+            // remain correct even if shutdown briefly overlaps the normal reader.
+            SingleReader = false,
             SingleWriter = false,
             FullMode = BoundedChannelFullMode.Wait,
             AllowSynchronousContinuations = false,
@@ -44,7 +50,7 @@ public sealed class UtaPcmCaptureQueue : IAsyncDisposable
         long captureEndTimestamp,
         float inputGain)
     {
-        if (completed)
+        if (Volatile.Read(ref completionState) != 0)
             return false;
         if (sampleRate <= 0)
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
@@ -63,6 +69,8 @@ public sealed class UtaPcmCaptureQueue : IAsyncDisposable
             captureEndTimestamp,
             inputGain);
 
+        // Complete() may race after the first state read. Channel.TryWrite is the final
+        // authority; a failed hand-off always returns the pooled buffer immediately.
         if (!channel.Writer.TryWrite(block))
         {
             block.Dispose();
@@ -90,17 +98,26 @@ public sealed class UtaPcmCaptureQueue : IAsyncDisposable
 
     public void Complete()
     {
-        completed = true;
-        channel.Writer.TryComplete();
+        if (Interlocked.Exchange(ref completionState, 1) == 0)
+            channel.Writer.TryComplete();
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        lock (disposeSync)
+            return new ValueTask(disposeTask ??= disposeCoreAsync());
+    }
+
+    private async Task disposeCoreAsync()
     {
         Complete();
         while (await channel.Reader.WaitToReadAsync().ConfigureAwait(false))
         {
             while (channel.Reader.TryRead(out UtaPcmCaptureBlock? block))
+            {
+                Interlocked.Add(ref queuedFrames, -block.FrameCount);
                 block.Dispose();
+            }
         }
     }
 }
@@ -115,7 +132,7 @@ public sealed class UtaPcmCaptureBlock : IDisposable
     public long CaptureEndTimestamp { get; }
     public float InputGain { get; }
     public int FrameCount => SampleCount / Channels;
-    public ReadOnlySpan<float> Samples => samples.AsSpan(0, SampleCount);
+    public ReadOnlySpan<float> Samples => samples is { } buffer ? buffer.AsSpan(0, SampleCount) : ReadOnlySpan<float>.Empty;
 
     internal UtaPcmCaptureBlock(
         float[] samples,

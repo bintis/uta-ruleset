@@ -16,6 +16,9 @@ using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Rulesets.Uta.Recording;
+using osu.Game.Rulesets.Uta.Gameplay;
+using osu.Game.Rulesets.Uta.Global;
+using osu.Game.Rulesets.Uta.Remote;
 using osu.Game.Rulesets.Uta.Scoring;
 using osu.Game.Rulesets.Uta.Skinning;
 using osu.Game.Rulesets.Uta.UI;
@@ -32,6 +35,9 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
     private readonly UtaGameplayScoringController scoringController;
     private readonly UtaRecordingRuntime recordingRuntime;
     private readonly UtaQuickSettingsContainer quickSettings;
+    private readonly UtaRuntimeModeState runtimeModes;
+    private readonly UtaGameplaySessionBridge gameplaySessionBridge;
+    private readonly UtaGlobalExtension gameplayServices;
     private readonly IReadOnlyList<Mod> selectedMods;
     private readonly bool scoringEnabled;
     private readonly bool recordingEnabled;
@@ -46,6 +52,10 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         scoringEnabled = selectedMods.All(mod => mod is not UtaModRelax);
         recordingEnabled = selectedMods.Any(mod => mod is UtaModRecording);
         practiceEnabled = selectedMods.Any(mod => mod is UtaModPractice);
+        runtimeModes = new UtaRuntimeModeState();
+        runtimeModes.OriginalVocalsEnabled.Value = selectedMods.Any(mod => mod is UtaModOriginalVocals);
+        runtimeModes.OctaveFoldEnabled.Value = ((UtaBeatmap)beatmap).OctaveTolerance
+                                                || selectedMods.Any(mod => mod is UtaModOctaveFold);
 
         practiceController = new UtaPracticeController((UtaBeatmap)beatmap);
         pitchViewport = new UtaPitchViewport((UtaBeatmap)beatmap);
@@ -57,6 +67,12 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
             scoringEnabled || recordingEnabled);
         Overlays.Add(scoringController);
         Overlays.Add(recordingRuntime);
+        gameplayServices = new UtaGlobalExtension();
+        bool immersiveQueueEnabled = selectedMods.Any(mod => mod is UtaModImmersiveQueue);
+        gameplaySessionBridge = new UtaGameplaySessionBridge(
+            (UtaBeatmap)beatmap,
+            immersiveQueueEnabled);
+        Overlays.Add(gameplaySessionBridge);
         if (recordingEnabled)
             Overlays.Add(new UtaRecordingHud());
         quickSettings = new UtaQuickSettingsContainer();
@@ -71,6 +87,8 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         Overlays.Add(new UtaVolumeOverlayExtension());
         if (scoringEnabled)
             Overlays.Add(new UtaScoringHud());
+        Overlays.Add(gameplayServices);
+        Overlays.Add(new UtaImmersiveRemotePrompt(gameplayServices.RemoteServerController, gameplayServices.Playback));
     }
 
     private static IBeatmap prepareBeatmap(IBeatmap beatmap, IReadOnlyList<Mod>? mods)
@@ -88,12 +106,17 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         audioSettings.Initialise((UtaRulesetConfigManager)Config);
         audioSettings.KeyShiftSemitones.Value = selectedMods.OfType<UtaModTranspose>().SingleOrDefault()?.Semitones ?? 0;
         dependencies.CacheAs((UtaBeatmap)Beatmap);
+        dependencies.CacheAs(KeyBindingInputManager);
         dependencies.CacheAs(audioRouter);
         dependencies.CacheAs(audioSettings);
         dependencies.CacheAs(practiceController);
         dependencies.CacheAs(pitchViewport);
         dependencies.CacheAs(scoringController);
         dependencies.CacheAs(recordingRuntime);
+        dependencies.CacheAs(runtimeModes);
+        dependencies.CacheAs(gameplaySessionBridge);
+        dependencies.CacheAs(gameplayServices.GameplaySessions);
+        dependencies.CacheAs(gameplayServices.Playback);
         dependencies.CacheAs(quickSettings.Overlay);
         return dependencies;
     }
@@ -133,6 +156,12 @@ internal sealed partial class DrawableUtaHitObject : DrawableHitObject<UtaHitObj
 {
     public override bool DisplayResult => false;
 
+    public void CompleteAsMiss()
+    {
+        if (!Result.HasResult)
+            ApplyMinResult();
+    }
+
     private UtaGameplayScoringController scoringController = null!;
 
     public DrawableUtaHitObject(UtaHitObject hitObject)
@@ -150,6 +179,9 @@ internal sealed partial class DrawableUtaHitObject : DrawableHitObject<UtaHitObj
 
     protected override void CheckForResult(bool userTriggered, double timeOffset)
     {
+        if (scoringController.ForceCompletionRequested)
+            return;
+
         if (HitObject is not UtaNote note)
         {
             if (timeOffset >= 0)

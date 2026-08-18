@@ -83,6 +83,12 @@ public sealed class UtaBeatmapConverter : BeatmapConverter<UtaHitObject>
     protected override Beatmap<UtaHitObject> ConvertBeatmap(IBeatmap original, CancellationToken cancellationToken)
     {
         var converted = (UtaBeatmap)base.ConvertBeatmap(original, cancellationToken);
+
+        // The decoder-cached beatmap already contains UtaHitObjects, so the base converter
+        // reuses those instances. A same-chart Player.Restart then ApplyDefaults them on a
+        // load thread while the outgoing play still has DrawableHitObjects subscribed.
+        converted.HitObjects = converted.HitObjects.Select(CloneForPlayable).ToList();
+
         UtaMetadataHitObject? carrier = converted.HitObjects.OfType<UtaMetadataHitObject>().SingleOrDefault();
 
         if (carrier == null)
@@ -97,6 +103,31 @@ public sealed class UtaBeatmapConverter : BeatmapConverter<UtaHitObject>
         converted.HitObjects.Remove(carrier);
         return converted;
     }
+
+    internal static UtaHitObject CloneForPlayable(UtaHitObject source) => source switch
+    {
+        UtaMetadataHitObject metadata => new UtaMetadataHitObject
+        {
+            Metadata = metadata.Metadata,
+            StartTime = metadata.StartTime,
+            Duration = metadata.Duration,
+        },
+        UtaNote note => new UtaNote
+        {
+            StartTime = note.StartTime,
+            Duration = note.Duration,
+            Midi = note.Midi,
+            NoteKind = note.NoteKind,
+            TargetConfidence = note.TargetConfidence,
+            ScoringIndex = note.ScoringIndex,
+            ScoringEnabled = note.ScoringEnabled,
+        },
+        _ => new UtaHitObject
+        {
+            StartTime = source.StartTime,
+            Duration = source.Duration,
+        },
+    };
 
     protected override IEnumerable<UtaHitObject> ConvertHitObject(HitObject original, IBeatmap beatmap, CancellationToken cancellationToken)
         => Array.Empty<UtaHitObject>();
