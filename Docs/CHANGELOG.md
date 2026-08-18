@@ -58,12 +58,12 @@ This file records user-visible changes to `uta!`. Future work remains in the
   QR-finder and PCM-queue regression tests.
 - CI verifies the embedded remote page is a single self-contained HTML file
   and rebuilds the WASM helper on the release-hardening workflow.
+- Real-device LAN, firewall/URL-ACL and mobile-browser acceptance passed
+  (pairing, private-network bind policy and the phone client on a live
+  session). See [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md).
 
 ### Known issues
 
-- Real-device LAN, firewall/URL-ACL, mobile-browser and accessibility passes
-  remain a release gate; they are documented in
-  [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md) rather than treated as done.
 - Skin lookups and video settings are present, but existing pitch/lyrics
   drawables are not yet fully replaced by those lookups, and the exact
   ruleset video drawable binding still needs a pass against the target lazer

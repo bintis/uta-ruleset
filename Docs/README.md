@@ -198,7 +198,7 @@ A global song queue (`F8` / `N` / `IQ`) ships in the same release. Protocol
 and security notes live in [REMOTE-PROTOCOL.md](REMOTE-PROTOCOL.md) and
 [REMOTE-SECURITY.md](REMOTE-SECURITY.md). Full item list in
 [CHANGELOG.md](CHANGELOG.md#080---2026-08-18). Real-device LAN, firewall and
-mobile-browser soak tests remain a later release gate.
+mobile-browser acceptance passed.
 
 ### 0.9.0 - Skins, video and interface polish
 
