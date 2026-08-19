@@ -20,22 +20,55 @@ internal static class UtaAudioDevices
         }
     }
 
+    public static bool IsPlaceholderOutput(string? name)
+        => string.IsNullOrWhiteSpace(name)
+           || name.Equals("Default", StringComparison.OrdinalIgnoreCase)
+           || name.Equals("No Sound", StringComparison.OrdinalIgnoreCase)
+           || name.Equals("Default Audio Device", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsInitialisedOutput(int device)
+    {
+        if (device < 1)
+            return false;
+
+        DeviceInfo info = Bass.GetDeviceInfo(device);
+        return info.IsInitialized;
+    }
+
+    /// <summary>
+    /// Prefer an already-initialised BASS output. A device named Default that
+    /// osu already opened is valid; an uninitialised MARANTZ index is not
+    /// (second-device Init on Pulse is Parameter / Init).
+    /// </summary>
+    public static int SkipPlaceholder(int device)
+    {
+        if (IsInitialisedOutput(device))
+            return device;
+
+        return Resolve(null);
+    }
+
     public static int Resolve(string? name)
     {
-        if (!string.IsNullOrWhiteSpace(name))
+        if (!string.IsNullOrWhiteSpace(name) && !IsPlaceholderOutput(name))
         {
             var match = Enumerate().FirstOrDefault(device => device.Name == name);
-            if (match.Index > 0)
+            if (match.Index > 0 && IsInitialisedOutput(match.Index))
                 return match.Index;
         }
 
         int current = Bass.CurrentDevice;
-        if (current > 0)
+        if (IsInitialisedOutput(current))
             return current;
 
-        return Enumerate().FirstOrDefault(device => Bass.GetDeviceInfo(device.Index).IsDefault).Index is > 0 and var defaultDevice
-            ? defaultDevice
-            : 1;
+        var markedDefault = Enumerate().FirstOrDefault(device =>
+            !IsPlaceholderOutput(device.Name) && IsInitialisedOutput(device.Index));
+        if (markedDefault.Index > 0)
+            return markedDefault.Index;
+
+        var firstReal = Enumerate().FirstOrDefault(device =>
+            !IsPlaceholderOutput(device.Name) && IsInitialisedOutput(device.Index));
+        return firstReal.Index > 0 ? firstReal.Index : current;
     }
 }
 

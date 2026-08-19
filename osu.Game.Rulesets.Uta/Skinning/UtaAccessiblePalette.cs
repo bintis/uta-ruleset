@@ -10,7 +10,7 @@ internal static class UtaAccessiblePalette
 {
     public static readonly Color4 Background = new(10, 12, 22, 255);
     public static readonly Color4 Grid = new(75, 82, 111, 130);
-    public static readonly Color4 Target = new(255, 197, 63, 255);
+    public static readonly Color4 Target = new(130, 199, 255, 255);
     public static readonly Color4 SongCurve = new(100, 183, 255, 255);
     public static readonly Color4 LiveCurve = new(111, 231, 166, 255);
     public static readonly Color4 Playhead = Color4.White;

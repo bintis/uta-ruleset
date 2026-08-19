@@ -40,8 +40,10 @@ internal sealed partial class UtaGameplayScoringController : Component
     private readonly Bindable<UtaNoteGrade> lastGrade = new();
     private readonly Bindable<UtaPitchFault> lastFaults = new();
     private readonly BindableInt lastBiasCents = new();
+    private readonly Bindable<UtaPhraseScore?> lastPhraseScore = new();
     private readonly Bindable<string> archiveStatus = new();
     private readonly Action<UtaCapturedPitchFrame, UtaScoringFrame> mappedFrameConsumer;
+    private readonly List<UtaNoteScore> completedScores = new();
 
     private GameplayClockContainer gameplayClock = null!;
     private readonly BindableFloat microphoneLatency = new();
@@ -70,6 +72,7 @@ internal sealed partial class UtaGameplayScoringController : Component
     private int diagnosticApplyLogSlots;
     private int diagnosticPostEndChecks;
     private int diagnosticCommitDelayPassed;
+    private int nextPhraseAnalysisIndex;
 
     public event Action<UtaNoteScore>? NoteCompleted;
 
@@ -91,6 +94,7 @@ internal sealed partial class UtaGameplayScoringController : Component
     public IBindable<UtaNoteGrade> LastGrade => lastGrade;
     public IBindable<UtaPitchFault> LastFaults => lastFaults;
     public IBindable<int> LastBiasCents => lastBiasCents;
+    public IBindable<UtaPhraseScore?> LastPhraseScore => lastPhraseScore;
     public IBindable<string> ArchiveStatus => archiveStatus;
 
     public UtaGameplayScoringController(UtaBeatmap beatmap, bool scoringEnabled, bool captureEnabled)
@@ -129,7 +133,7 @@ internal sealed partial class UtaGameplayScoringController : Component
         debugDiagnostics.BindValueChanged(value =>
         {
             debugDiagnosticsEnabled = value.NewValue;
-            diagnosticIntervalStart = Stopwatch.GetTimestamp();
+            diagnosticIntervalStart = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 9 / 4;
         }, true);
 
         options = new UtaScoringOptions
@@ -224,8 +228,11 @@ internal sealed partial class UtaGameplayScoringController : Component
                     lastGrade.Value = score.Grade;
                     lastFaults.Value = score.Faults;
                     lastBiasCents.Value = score.BiasCents;
+                    completedScores.Add(score);
                     NoteCompleted?.Invoke(score);
                 }
+
+                publishCompletedPhrases(safeWatermark);
             }
             else
             {
@@ -352,6 +359,39 @@ internal sealed partial class UtaGameplayScoringController : Component
             ? UtaPhraseAnalytics.Analyse(CompletePerformance().Notes, beatmap.Transcript)
             : Array.Empty<UtaPhraseScore>();
 
+    private void publishCompletedPhrases(long watermarkMicroseconds)
+    {
+        while (nextPhraseAnalysisIndex < beatmap.Transcript.Count)
+        {
+            var segment = beatmap.Transcript[nextPhraseAnalysisIndex];
+            long end = checked((long)Math.Round(segment.End * 1_000_000, MidpointRounding.AwayFromZero));
+            if (end > watermarkMicroseconds)
+                return;
+
+            lastPhraseScore.Value = UtaPhraseAnalytics.AnalysePhrase(
+                completedScores,
+                segment,
+                nextPhraseAnalysisIndex);
+            nextPhraseAnalysisIndex++;
+        }
+    }
+
+    private void resetPhraseTracking(long songTimeMicroseconds)
+    {
+        completedScores.Clear();
+        lastPhraseScore.Value = null;
+        nextPhraseAnalysisIndex = 0;
+
+        while (nextPhraseAnalysisIndex < beatmap.Transcript.Count)
+        {
+            double endSeconds = beatmap.Transcript[nextPhraseAnalysisIndex].End;
+            long end = checked((long)Math.Round(endSeconds * 1_000_000, MidpointRounding.AwayFromZero));
+            if (end > songTimeMicroseconds)
+                break;
+            nextPhraseAnalysisIndex++;
+        }
+    }
+
     private void onSeek()
     {
         long now = Stopwatch.GetTimestamp();
@@ -370,6 +410,7 @@ internal sealed partial class UtaGameplayScoringController : Component
         };
         session.Reset(options);
         emptyPerformance = null;
+        resetPhraseTracking(toMicroseconds(gameplayClock.CurrentTime));
 
         if (scoringEnabled)
         {
@@ -401,6 +442,7 @@ internal sealed partial class UtaGameplayScoringController : Component
         };
         session.Reset(options);
         emptyPerformance = null;
+        resetPhraseTracking(toMicroseconds(gameplayClock.CurrentTime));
         lastScoringWatermarkMicroseconds = long.MinValue;
         if (scoringEnabled)
         {

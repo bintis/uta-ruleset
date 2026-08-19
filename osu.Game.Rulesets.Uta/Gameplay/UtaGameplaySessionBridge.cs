@@ -2,6 +2,7 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -16,6 +17,7 @@ using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Playback;
+using osu.Game.Rulesets.Uta.Queue;
 using osu.Game.Rulesets.Uta.Scoring;
 using osu.Game.Rulesets.Uta.UI;
 using osu.Game.Rulesets.Uta.Remote;
@@ -29,8 +31,12 @@ namespace osu.Game.Rulesets.Uta.Gameplay;
 /// </summary>
 internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplaySession
 {
+    private static readonly long snapshot_interval_ticks = Stopwatch.Frequency / 10;
+    private bool leftGameplay;
+
     private readonly UtaBeatmap beatmap;
     private readonly bool immersiveQueue;
+    private readonly double songLength;
 
     private GameplayClockContainer gameplayClock = null!;
     private DrawableRuleset drawableRuleset = null!;
@@ -43,6 +49,7 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
     private UtaScoreProcessor? score;
     private bool debugDiagnostics;
     private long revision;
+    private long lastSnapshotCaptureTimestamp;
     private UtaRemoteSnapshot latestSnapshot;
     private GameplayLease? lease;
     private UtaGameplaySessionRegistry sessions = null!;
@@ -64,6 +71,7 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
     {
         this.beatmap = beatmap;
         this.immersiveQueue = immersiveQueue;
+        songLength = calculateSongLength(beatmap);
         latestSnapshot = createEmptySnapshot();
     }
 
@@ -99,11 +107,35 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
         this.selectedBeatmap = selectedBeatmap;
         score = scoreProcessor as UtaScoreProcessor;
         debugDiagnostics = config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics).Value;
+        gameplayClock.IsPaused.BindValueChanged(onGameplayPausedChanged);
+    }
+
+    private void onGameplayPausedChanged(ValueChangedEvent<bool> paused)
+    {
+        if (!paused.NewValue)
+            return;
+
+        if (player != null)
+            UtaRulesetRuntime.Instance.RememberPlayedBeatmap(player.Beatmap.Value);
     }
 
     protected override void Update()
     {
         base.Update();
+        if (!leftGameplay && player != null && !player.IsCurrentScreen())
+        {
+            leftGameplay = true;
+            // Same teardown as QL/F7 LeaveForQueuedChart: destroy mixers, then
+            // silence MusicController so song select cannot resume chart A.
+            UtaAudioController.DestroyAllPlayback();
+            UtaRulesetRuntime.Instance.StopLeftoverOnLeave();
+        }
+
+        long now = Stopwatch.GetTimestamp();
+        if (now - lastSnapshotCaptureTimestamp < snapshot_interval_ticks)
+            return;
+
+        lastSnapshotCaptureTimestamp = now;
         Volatile.Write(ref latestSnapshot, captureSnapshot());
     }
 
@@ -119,67 +151,38 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
     }
 
     /// <summary>
-    /// Point the live player lease at <paramref name="target"/> and restart.
-    /// Works from gameplay and from the results screen (player is still in the
-    /// stack). Must not go through SongSelect: OnResuming there calls
-    /// PrepareTrackForPreview on a beatmap with no track and freezes the game.
+    /// Leave the current player so the queue can start <paramref name="target"/>
+    /// from song select. Player.Restart keeps PlayerLoader and races the leased
+    /// beatmap bindable, which loads the previous chart with the next song's audio.
     /// </summary>
-    internal bool TryRestartWith(WorkingBeatmap target)
+    internal bool LeaveForQueuedChart(WorkingBeatmap target)
     {
         Player? currentPlayer = player;
         if (currentPlayer == null)
         {
-            osu.Framework.Logging.Logger.Log($"Uta session restart skipped: player=null beatmap={target.BeatmapInfo.ID}");
+            osu.Framework.Logging.Logger.Log($"Uta queue leave skipped: player=null beatmap={target.BeatmapInfo.ID}");
             return false;
-        }
-
-        try
-        {
-            currentPlayer.Beatmap.Value = target;
-        }
-        catch (Exception exception)
-        {
-            osu.Framework.Logging.Logger.Log($"Uta session restart assign failed: {exception.Message}");
         }
 
         UtaRulesetRuntime.Instance.RememberPlayedBeatmap(target);
+        UtaRulesetRuntime.Instance.TryPublishWorkingBeatmap(target);
 
-        if (currentPlayer.Beatmap.Value.BeatmapInfo.ID != target.BeatmapInfo.ID)
-        {
-            osu.Framework.Logging.Logger.Log(
-                $"Uta session restart assign mismatch have={currentPlayer.Beatmap.Value.BeatmapInfo.ID} want={target.BeatmapInfo.ID}");
-            return false;
-        }
-
-        if (!currentPlayer.Beatmap.Value.TrackLoaded)
+        if (!target.TrackLoaded)
         {
             try
             {
-                currentPlayer.Beatmap.Value.LoadTrack();
+                target.LoadTrack();
             }
             catch (Exception exception)
             {
-                osu.Framework.Logging.Logger.Log($"Uta session restart track load failed: {exception.Message}");
+                osu.Framework.Logging.Logger.Log($"Uta queue leave track load failed: {exception.Message}");
                 return false;
             }
         }
 
-        if (!currentPlayer.Beatmap.Value.TrackLoaded)
-            return false;
-
-        // Restart() from results (player not current) is preferred over MakeCurrent:
-        // MakeCurrent+Exit has been unwinding PlayerLoader all the way to song select,
-        // which then resumes without a preview track and crashes on the next mouse exit.
-        bool restarted = currentPlayer.Restart(quickRestart: currentPlayer.IsCurrentScreen())
-                         || currentPlayer.Restart(quickRestart: false);
-        UtaRulesetRuntime.Instance.PrepareSongSelectPreview();
-        if (!restarted)
-        {
-            osu.Framework.Logging.Logger.Log("Uta session restart rejected by the player.");
-            return false;
-        }
-
-        osu.Framework.Logging.Logger.Log($"Uta session restart accepted: {target.BeatmapInfo.ID}");
+        osu.Framework.Logging.Logger.Log($"Uta queue leaving gameplay for {target.BeatmapInfo.ID}");
+        UtaAudioController.DestroyAllPlayback();
+        currentPlayer.Exit();
         return true;
     }
 
@@ -279,12 +282,10 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
                 return seek(gameplayClock.CurrentTime + command.Number!.Value);
 
             case UtaRemoteCommands.Speed:
-                if (gameplayClock is not MasterGameplayClockContainer master)
-                    return UtaRemoteCommandResult.Reject("Live speed control is unavailable for this gameplay clock.");
-                master.UserPlaybackRate.Value = Math.Clamp(
+                audio.PlaybackTempo.Value = Math.Clamp(
                     command.Number!.Value,
-                    master.UserPlaybackRate.MinValue,
-                    master.UserPlaybackRate.MaxValue);
+                    audio.PlaybackTempo.MinValue,
+                    audio.PlaybackTempo.MaxValue);
                 return UtaRemoteCommandResult.Ok();
 
             case UtaRemoteCommands.SetLoopA:
@@ -336,8 +337,12 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
                 return UtaRemoteCommandResult.Ok();
 
             case UtaRemoteCommands.OriginalVocals:
-                modes.OriginalVocalsEnabled.Value = command.Enabled!.Value;
-                return UtaRemoteCommandResult.Ok();
+                {
+                    QueueMutationResult result = playback.SetRemoteMod("VOX", command.Enabled!.Value);
+                    return result.Succeeded
+                        ? UtaRemoteCommandResult.Ok()
+                        : UtaRemoteCommandResult.Reject(result.Error ?? "Could not set the VOX mod.");
+                }
 
             case UtaRemoteCommands.MicrophoneLatency:
                 audio.MicrophoneLatency.Value = (float)command.Number!.Value;
@@ -404,13 +409,7 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
         if (wasPaused)
             gameplayClock.Start();
 
-        bool succeeded = UtaGameplaySeeker.Seek(
-            gameplayClock,
-            drawableRuleset,
-            action => Schedule(action),
-            target,
-            "remote seek",
-            debugDiagnostics);
+        bool succeeded = UtaGameplaySeeker.Seek(gameplayClock, target, "remote seek", debugDiagnostics);
 
         if (wasPaused)
             gameplayClock.Stop();
@@ -432,18 +431,14 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
                 nextLyrics = beatmap.Transcript[transcriptIndex + 1].Text;
         }
 
-        double length = Math.Max(
-            beatmap.HitObjects.Count == 0 ? 0 : beatmap.HitObjects.Max(hitObject => hitObject.EndTime),
-            beatmap.Transcript.Count == 0 ? 0 : beatmap.Transcript.Max(segment => segment.End * 1000));
-
-        double speed = gameplayClock is MasterGameplayClockContainer master ? master.UserPlaybackRate.Value : gameplayClock.Rate;
+        double speed = audio.PlaybackTempo.Value;
         double? pitch = input.LiveVoiceActive.Value ? input.LiveDetectedPitchMidi.Value : null;
-        double totalScore = score == null ? 0 : score.TotalScore.Value / (double)UtaScoringOptions.MAX_SCORE * 100;
+        double totalScore = score?.TotalScore.Value ?? 0;
 
         return new UtaRemoteSnapshot(
             Interlocked.Increment(ref revision),
             time,
-            length,
+            songLength,
             gameplayClock.IsPaused.Value,
             speed,
             phraseIndex,
@@ -471,6 +466,16 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
             SongArtist: beatmap.BeatmapInfo.Metadata.Artist,
             SongDifficulty: beatmap.BeatmapInfo.DifficultyName,
             SongCreator: beatmap.BeatmapInfo.Metadata.Author.Username);
+    }
+
+    private static double calculateSongLength(UtaBeatmap beatmap)
+    {
+        double length = 0;
+        foreach (var hitObject in beatmap.HitObjects)
+            length = Math.Max(length, hitObject.EndTime);
+        foreach (var segment in beatmap.Transcript)
+            length = Math.Max(length, segment.End * 1000);
+        return length;
     }
 
     private int phraseIndexAt(double time)
@@ -517,6 +522,8 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
     {
         immersiveAdvanceCancellation.Cancel();
         immersiveAdvanceCancellation.Dispose();
+        if (gameplayClock != null)
+            gameplayClock.IsPaused.ValueChanged -= onGameplayPausedChanged;
         if (player != null)
             player.OnShowingResults -= onShowingResults;
         // SongSelect.OnResuming calls beginLooping on the *game-wide* beatmap,

@@ -56,17 +56,32 @@ internal sealed class UtaTakePlaybackController : IDisposable
         if (!double.IsFinite(recordedTakeRate) || recordedTakeRate <= 0)
             throw new ArgumentOutOfRangeException(nameof(recordedTakeRate));
 
-        backgroundMusic?.SetRate(playbackRate);
-        originalVocal?.SetRate(playbackRate);
-        playerTake?.SetRate(playbackRate / recordedTakeRate);
+        applyMixRates(playbackRate, recordedTakeRate, lastSemitones);
     }
+
+    private int lastSemitones;
 
     public void SetTranspose(int semitones)
     {
-        backgroundMusic?.SetPitch(semitones);
-        originalVocal?.SetPitch(semitones);
-        // The take already contains the singer's performed pitch and is never
-        // transposed a second time.
+        lastSemitones = semitones;
+        applyMixRates(lastPlaybackRate, lastRecordedTakeRate, semitones);
+    }
+
+    private double lastPlaybackRate = 1;
+    private double lastRecordedTakeRate = 1;
+
+    private void applyMixRates(double playbackRate, double recordedTakeRate, int semitones)
+    {
+        lastPlaybackRate = playbackRate;
+        lastRecordedTakeRate = recordedTakeRate;
+        lastSemitones = semitones;
+        (double frequency, double tempo) = UtaAudioMath.TransposeFactors(semitones);
+        backgroundMusic?.SetFrequency(frequency);
+        backgroundMusic?.SetTempo(playbackRate * tempo);
+        originalVocal?.SetFrequency(frequency);
+        originalVocal?.SetTempo(playbackRate * tempo);
+        playerTake?.SetFrequency(1);
+        playerTake?.SetTempo(playbackRate / recordedTakeRate);
     }
 
     public void Select(UtaComparisonSide side)

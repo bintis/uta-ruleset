@@ -4,6 +4,7 @@
 using System;
 using osu.Framework.Bindables;
 using osu.Framework.Logging;
+using osu.Game.Rulesets.Uta.Remote;
 
 namespace osu.Game.Rulesets.Uta.Configuration;
 
@@ -16,6 +17,7 @@ internal sealed class UtaAudioSettingsState : IDisposable
 {
     public readonly BindableDouble BackgroundMusicVolume = new();
     public readonly BindableFloat OriginalVocalsVolume = new();
+    public readonly BindableBool OriginalVocalsEnabled = new();
     public readonly Bindable<string> BackgroundMusicOutputDevice = new();
     public readonly Bindable<string> OriginalVocalsOutputDevice = new();
     public readonly Bindable<string> MicrophoneDevice = new();
@@ -24,6 +26,12 @@ internal sealed class UtaAudioSettingsState : IDisposable
     public readonly BindableFloat MicrophoneMonitorVolume = new();
     public readonly BindableFloat MicrophoneLatency = new();
     public readonly BindableFloat KeyShiftSemitones = new();
+    public readonly BindableDouble PlaybackTempo = new(1)
+    {
+        MinValue = 0.05,
+        MaxValue = 2,
+        Precision = 0.01,
+    };
     public readonly BindableFloat AccompanimentLatency = new();
     public readonly BindableFloat LyricsLatency = new();
     public readonly BindableBool DebugDiagnostics = new();
@@ -39,6 +47,9 @@ internal sealed class UtaAudioSettingsState : IDisposable
 
         bindTwoWay(BackgroundMusicVolume, config.GetBindable<double>(UtaRulesetSetting.BackgroundMusicVolume));
         bindTwoWay(OriginalVocalsVolume, config.GetBindable<float>(UtaRulesetSetting.OriginalVocalsVolume));
+        bindTwoWay(OriginalVocalsEnabled, config.GetBindable<bool>(UtaRulesetSetting.OriginalVocalsEnabled));
+        UtaRulesetRuntime.Instance.SeedOriginalVocalsPreference(OriginalVocalsEnabled.Value);
+        OriginalVocalsEnabled.BindValueChanged(change => UtaRulesetRuntime.Instance.RememberOriginalVocals(change.NewValue));
         bindTwoWay(BackgroundMusicOutputDevice, config.GetBindable<string>(UtaRulesetSetting.BackgroundMusicOutputDevice));
         bindTwoWay(OriginalVocalsOutputDevice, config.GetBindable<string>(UtaRulesetSetting.OriginalVocalsOutputDevice));
         bindTwoWay(MicrophoneDevice, config.GetBindable<string>(UtaRulesetSetting.MicrophoneDevice));
@@ -52,6 +63,7 @@ internal sealed class UtaAudioSettingsState : IDisposable
         bindTwoWay(DebugDiagnostics, config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics));
         bindTwoWay(PitchSamplingInterval, config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval));
         bindTwoWay(PhraseLoopLeadIn, config.GetBindable<float>(UtaRulesetSetting.PhraseLoopLeadIn));
+        repairCaptureDeviceUsedAsOutput();
         initialised = true;
 
         if (DebugDiagnostics.Value)
@@ -59,6 +71,29 @@ internal sealed class UtaAudioSettingsState : IDisposable
             Logger.Log($"Uta debug audio settings: initialised from config instance {config.GetHashCode()} - "
                        + $"mic-output loaded as '{MicrophoneOutputDevice.Value}' bgm-output='{BackgroundMusicOutputDevice.Value}'");
         }
+    }
+
+    private void repairCaptureDeviceUsedAsOutput()
+    {
+        string capture = MicrophoneDevice.Value;
+        string monitorOutput = MicrophoneOutputDevice.Value;
+        if (string.IsNullOrWhiteSpace(capture) || string.IsNullOrWhiteSpace(monitorOutput)
+            || string.Equals(capture, monitorOutput, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        bool repairedBgm = string.Equals(BackgroundMusicOutputDevice.Value, capture, StringComparison.OrdinalIgnoreCase);
+        bool repairedVocals = string.Equals(OriginalVocalsOutputDevice.Value, capture, StringComparison.OrdinalIgnoreCase);
+        if (!repairedBgm && !repairedVocals)
+            return;
+
+        if (repairedBgm)
+            BackgroundMusicOutputDevice.Value = monitorOutput;
+        if (repairedVocals)
+            OriginalVocalsOutputDevice.Value = monitorOutput;
+
+        Logger.Log(
+            $"Uta repaired capture device used as playback output: capture='{capture}' output='{monitorOutput}' "
+            + $"bgm={repairedBgm} vocals={repairedVocals}.");
     }
 
     private static void bindTwoWay<T>(Bindable<T> session, Bindable<T> persistent)
@@ -71,6 +106,7 @@ internal sealed class UtaAudioSettingsState : IDisposable
     {
         BackgroundMusicVolume.UnbindAll();
         OriginalVocalsVolume.UnbindAll();
+        OriginalVocalsEnabled.UnbindAll();
         BackgroundMusicOutputDevice.UnbindAll();
         OriginalVocalsOutputDevice.UnbindAll();
         MicrophoneDevice.UnbindAll();
@@ -79,6 +115,7 @@ internal sealed class UtaAudioSettingsState : IDisposable
         MicrophoneMonitorVolume.UnbindAll();
         MicrophoneLatency.UnbindAll();
         KeyShiftSemitones.UnbindAll();
+        PlaybackTempo.UnbindAll();
         AccompanimentLatency.UnbindAll();
         LyricsLatency.UnbindAll();
         DebugDiagnostics.UnbindAll();

@@ -86,6 +86,42 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     HintText = "Use one of lazer's bundled typefaces; missing glyphs still use its fallback fonts.",
                     Current = config.GetBindable<UtaLyricsTypeface>(UtaRulesetSetting.LyricsTypeface),
                 }),
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = "Show upcoming lyrics",
+                    HintText = "Show the next lyric line when the responsive HUD has room.",
+                    Current = config.GetBindable<bool>(UtaRulesetSetting.LyricsShowUpcoming),
+                }),
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = "Show lyric readings",
+                    HintText = "Show authored readings or furigana above lyric tokens.",
+                    Current = config.GetBindable<bool>(UtaRulesetSetting.LyricsShowReading),
+                }),
+                slider("Lyrics panel opacity", "Opacity of the protected lyrics readability surface.",
+                    config.GetBindable<float>(UtaRulesetSetting.LyricsPanelOpacity), value => $"{value:P0}", 0.05f),
+                new SettingsItemV2(new FormEnumDropdown<UtaLyricsProgressStyle>
+                {
+                    Caption = "Lyrics progress style",
+                    HintText = "Show active word progress as an underline, fill or marker.",
+                    Current = config.GetBindable<UtaLyricsProgressStyle>(UtaRulesetSetting.LyricsProgressStyle),
+                }),
+                new SettingsItemV2(new FormEnumDropdown<UtaPitchHudSize>
+                {
+                    Caption = "Pitch HUD size",
+                    HintText = "Choose a constrained pitch panel size without changing its gameplay time window.",
+                    Current = config.GetBindable<UtaPitchHudSize>(UtaRulesetSetting.PitchHudSize),
+                }),
+                slider("Pitch HUD opacity", "Opacity of the pitch panel while preserving critical cues.",
+                    config.GetBindable<float>(UtaRulesetSetting.PitchHudOpacity), value => $"{value:P0}", 0.05f),
+                new SettingsItemV2(new FormEnumDropdown<UtaPitchHudLayout>
+                {
+                    Caption = "Pitch HUD layout",
+                    HintText = "Use responsive inset bounds or an explicit full-width panel.",
+                    Current = config.GetBindable<UtaPitchHudLayout>(UtaRulesetSetting.PitchHudLayout),
+                }),
+                slider("HUD safe area padding", "Additional inset reserved around uta! gameplay HUD elements.",
+                    config.GetBindable<float>(UtaRulesetSetting.HudSafeAreaPadding), value => $"{value:0} px", 1),
                 new SettingsItemV2(new PitchCurveDisplayDropdown
                 {
                     Caption = "Pitch curves",
@@ -148,7 +184,13 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                 },
                 slider("Background music", "Volume of the instrumental track during Uta gameplay.",
                     config.GetBindable<double>(UtaRulesetSetting.BackgroundMusicVolume), value => $"{value:P0}", 0.05f),
-                slider("Original vocals", "Volume of the independently routed guide-vocal or original track.",
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = "Play original vocals",
+                    HintText = "Keep the packaged vocal track on across song changes. The VOX mod also turns this on. The slider below is level only.",
+                    Current = config.GetBindable<bool>(UtaRulesetSetting.OriginalVocalsEnabled),
+                }),
+                slider("Original vocals", "Level of the original vocal track. Does not turn the track on by itself.",
                     config.GetBindable<float>(UtaRulesetSetting.OriginalVocalsVolume), value => $"{value:P0}", 0.05f)),
             microphoneSettings = page(
                 new SettingsButton
@@ -161,7 +203,7 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     config.GetBindable<float>(UtaRulesetSetting.MicrophoneInputGain), value => $"{value:0.00}×", 0.05f),
                 slider("Pitch sampling interval", "Time between pitch analyses. Lower values update faster but use more CPU.",
                     config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval), value => $"{value:0} ms", 1),
-                slider("Microphone monitor", "Hear your microphone through the active output. Headphones are recommended.",
+                slider("Ear monitor", "Hear your microphone through the active output. Headphones are recommended.",
                     config.GetBindable<float>(UtaRulesetSetting.MicrophoneMonitorVolume), value => $"{value:P0}", 0.05f),
                 slider("Microphone latency", "Positive values compare detected voice with an earlier point in the song.",
                     config.GetBindable<float>(UtaRulesetSetting.MicrophoneLatency), value => $"{value:+0;-0;0} ms", 1),

@@ -6,6 +6,7 @@ using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Game.Rulesets.Uta.Core;
+using osu.Game.Rulesets.Uta.UI.HUD.Pitch;
 using osu.Game.Screens.Play;
 
 namespace osu.Game.Rulesets.Uta.UI;
@@ -31,7 +32,7 @@ internal sealed partial class UtaPitchViewport : osu.Framework.Graphics.Containe
                        .OrderBy(note => note.StartTime)
                        .ToArray();
         maximumNoteDuration = notes.Length == 0 ? 0 : notes.Max(note => note.Duration);
-        CentreMidi = new BindableFloat(UtaPitchGuide.CalculateFixedCentre(notes));
+        CentreMidi = new BindableFloat(UtaPitchGuideRenderer.CalculateFixedCentre(notes));
     }
 
     [BackgroundDependencyLoader]
@@ -63,7 +64,7 @@ internal sealed partial class UtaPitchViewport : osu.Framework.Graphics.Containe
     private float targetCentre(double current)
     {
         double visibleStart = current - 200;
-        double visibleEnd = current + UtaPitchGuide.LOOK_AHEAD * relevance_lookahead_fraction;
+        double visibleEnd = current + UtaPitchTimelineGeometry.LOOK_AHEAD * relevance_lookahead_fraction;
         int end = upperBoundStart(visibleEnd);
         int start = lowerBoundStart(visibleStart - maximumNoteDuration);
         float low = float.PositiveInfinity;
@@ -118,14 +119,14 @@ internal sealed partial class UtaPitchViewport : osu.Framework.Graphics.Containe
     private static float calculateCentre(float low, float high)
     {
         float targetCentre = neutral_centre;
-        if (high - low > UtaPitchGuide.VIEW_SPAN - edge_margin * 2)
+        if (high - low > UtaPitchTimelineGeometry.VIEW_SPAN - edge_margin * 2)
             targetCentre = (low + high) / 2;
         else if (low < 48)
-            targetCentre = low - edge_margin + UtaPitchGuide.VIEW_SPAN / 2;
+            targetCentre = low - edge_margin + UtaPitchTimelineGeometry.VIEW_SPAN / 2;
         else if (high > 67)
-            targetCentre = high + edge_margin - UtaPitchGuide.VIEW_SPAN / 2;
+            targetCentre = high + edge_margin - UtaPitchTimelineGeometry.VIEW_SPAN / 2;
 
-        return MathF.Round(Math.Clamp(targetCentre, 40 + UtaPitchGuide.VIEW_SPAN / 2, 88 - UtaPitchGuide.VIEW_SPAN / 2) * 2) / 2;
+        return MathF.Round(Math.Clamp(targetCentre, 40 + UtaPitchTimelineGeometry.VIEW_SPAN / 2, 88 - UtaPitchTimelineGeometry.VIEW_SPAN / 2) * 2) / 2;
     }
 
     internal static float StepCentre(float current, float target, float dt)

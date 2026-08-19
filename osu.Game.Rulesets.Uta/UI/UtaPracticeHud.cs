@@ -55,7 +55,7 @@ internal sealed partial class UtaPracticeHud : CompositeDrawable, IKeyBindingHan
     private readonly SettingsButton nextPhrase;
 
     private UtaPracticeController practiceController = null!;
-    private BindableNumber<double>? userPlaybackRate;
+    private BindableNumber<double> playbackTempo = null!;
 
     public UtaPracticeHud()
     {
@@ -121,7 +121,7 @@ internal sealed partial class UtaPracticeHud : CompositeDrawable, IKeyBindingHan
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaPracticeController practiceController, UtaRulesetConfigManager config, FrameworkConfigManager frameworkConfig, GameplayClockContainer gameplayClock)
+    private void load(UtaPracticeController practiceController, UtaRulesetConfigManager config, FrameworkConfigManager frameworkConfig, UtaAudioSettingsState audioSettings)
     {
         this.practiceController = practiceController;
         debugDiagnostics = config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics).Value;
@@ -129,20 +129,9 @@ internal sealed partial class UtaPracticeHud : CompositeDrawable, IKeyBindingHan
         if (debugDiagnostics)
             Logger.Log("Uta debug practice hud: loaded and bound to UtaPracticeController.");
 
-        // The concrete gameplay clock is always a MasterGameplayClockContainer in a real Player;
-        // UserPlaybackRate is lazer's own live/mid-song playback-rate control - already wired into
-        // clock rate, audio tempo, and scoring generically - so binding the slider straight to it
-        // gets a genuinely live speed change for free, no custom mod-side plumbing required.
-        if (gameplayClock is MasterGameplayClockContainer master)
-        {
-            userPlaybackRate = master.UserPlaybackRate;
-            speedSlider.Current = userPlaybackRate;
-            // SetDefault() rather than a hardcoded 1.0 - it snaps back to whatever lazer's own
-            // bindable considers "no adjustment" rather than us guessing at that value.
-            resetSpeed.Action = () => userPlaybackRate.SetDefault();
-        }
-        else if (debugDiagnostics)
-            Logger.Log($"Uta debug practice hud: gameplay clock is {gameplayClock.GetType().Name}, not MasterGameplayClockContainer - speed slider stays inert.");
+        playbackTempo = audioSettings.PlaybackTempo;
+        speedSlider.Current = playbackTempo;
+        resetSpeed.Action = () => playbackTempo.SetDefault();
 
         setLoopA.Action = practiceController.SetLoopPointA;
         setLoopB.Action = practiceController.SetLoopPointB;
@@ -179,8 +168,7 @@ internal sealed partial class UtaPracticeHud : CompositeDrawable, IKeyBindingHan
     {
         base.Update();
 
-        if (userPlaybackRate != null)
-            speedValueText.Text = string.Format(UtaStrings.Get("practice.current_speed", language), userPlaybackRate.Value * 100);
+        speedValueText.Text = string.Format(UtaStrings.Get("practice.current_speed", language), playbackTempo.Value * 100);
 
         string a = practiceController.LoopPointA.Value is { } pointA ? formatTime(pointA) : "-";
         string b = practiceController.LoopPointB.Value is { } pointB ? formatTime(pointB) : "-";

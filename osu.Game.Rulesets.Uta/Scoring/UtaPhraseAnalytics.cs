@@ -27,44 +27,51 @@ public static class UtaPhraseAnalytics
 
         var result = new List<UtaPhraseScore>(transcript.Count);
         for (int i = 0; i < transcript.Count; i++)
-        {
-            UtaTranscriptSegment segment = transcript[i];
-            long start = checked((long)Math.Round(segment.Start * 1_000_000, MidpointRounding.AwayFromZero));
-            long end = checked((long)Math.Round(segment.End * 1_000_000, MidpointRounding.AwayFromZero));
-
-            UtaNoteScore[] phraseNotes = notes.Where(note =>
-            {
-                long centre = note.Target.StartTimeMicroseconds
-                              + (note.Target.EndTimeMicroseconds - note.Target.StartTimeMicroseconds) / 2;
-                return centre >= start && centre < end;
-            }).ToArray();
-
-            if (phraseNotes.Length == 0)
-            {
-                result.Add(new UtaPhraseScore(
-                    i, start, end, segment.Text ?? string.Empty,
-                    0, 0, 0, 0, 0, Array.Empty<UtaMissedSection>()));
-                continue;
-            }
-
-            long maximum = phraseNotes.Sum(n => n.MaximumUnits);
-            ushort pitch = weightedPermille(phraseNotes, n => n.PitchEarnedUnits, maximum);
-            ushort coverage = weightedPermille(phraseNotes, n => n.VoicedUnits, maximum);
-            ushort stability = weightedQuality(phraseNotes, n => n.StabilityPermille);
-            int bias = weightedBias(phraseNotes);
-            ushort rating = weightedQuality(phraseNotes, n => n.Profiles.FinalPermille);
-
-            UtaMissedSection[] missed = phraseNotes
-                .Where(n => n.Grade == UtaNoteGrade.Miss)
-                .Select(n => new UtaMissedSection(n.Target.StartTimeMicroseconds, n.Target.EndTimeMicroseconds))
-                .ToArray();
-
-            result.Add(new UtaPhraseScore(
-                i, start, end, segment.Text ?? string.Empty,
-                pitch, coverage, stability, rating, bias, missed));
-        }
+            result.Add(AnalysePhrase(notes, transcript[i], i));
 
         return result;
+    }
+
+    public static UtaPhraseScore AnalysePhrase(
+        IReadOnlyList<UtaNoteScore> notes,
+        UtaTranscriptSegment segment,
+        int phraseIndex)
+    {
+        ArgumentNullException.ThrowIfNull(notes);
+        ArgumentNullException.ThrowIfNull(segment);
+
+        long start = checked((long)Math.Round(segment.Start * 1_000_000, MidpointRounding.AwayFromZero));
+        long end = checked((long)Math.Round(segment.End * 1_000_000, MidpointRounding.AwayFromZero));
+
+        UtaNoteScore[] phraseNotes = notes.Where(note =>
+        {
+            long centre = note.Target.StartTimeMicroseconds
+                          + (note.Target.EndTimeMicroseconds - note.Target.StartTimeMicroseconds) / 2;
+            return centre >= start && centre < end;
+        }).ToArray();
+
+        if (phraseNotes.Length == 0)
+        {
+            return new UtaPhraseScore(
+                phraseIndex, start, end, segment.Text ?? string.Empty,
+                0, 0, 0, 0, 0, Array.Empty<UtaMissedSection>());
+        }
+
+        long maximum = phraseNotes.Sum(n => n.MaximumUnits);
+        ushort pitch = weightedPermille(phraseNotes, n => n.PitchEarnedUnits, maximum);
+        ushort coverage = weightedPermille(phraseNotes, n => n.VoicedUnits, maximum);
+        ushort stability = weightedQuality(phraseNotes, n => n.StabilityPermille);
+        int bias = weightedBias(phraseNotes);
+        ushort rating = weightedQuality(phraseNotes, n => n.Profiles.FinalPermille);
+
+        UtaMissedSection[] missed = phraseNotes
+            .Where(n => n.Grade == UtaNoteGrade.Miss)
+            .Select(n => new UtaMissedSection(n.Target.StartTimeMicroseconds, n.Target.EndTimeMicroseconds))
+            .ToArray();
+
+        return new UtaPhraseScore(
+            phraseIndex, start, end, segment.Text ?? string.Empty,
+            pitch, coverage, stability, rating, bias, missed);
     }
 
     private static ushort weightedPermille(UtaNoteScore[] notes, Func<UtaNoteScore, long> numerator, long denominator)

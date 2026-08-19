@@ -11,6 +11,8 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.Uta.Configuration;
+using osu.Game.Rulesets.Uta.Skinning;
+using osu.Game.Rulesets.Uta.UI.HUD.Pitch;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Screens.Play;
 using osuTK;
@@ -52,6 +54,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
     private float geometryWidth = -1;
     private float geometryHeight = -1;
     private GameplayClockContainer? gameplayClock;
+    private UtaPitchStyle style = UtaVisualStyle.Prism().Pitch;
 
     public UtaPitchGuideTrail()
     {
@@ -61,6 +64,12 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
             glowLayer = new Container { RelativeSizeAxes = Axes.Y },
             traceLayer = new Container { RelativeSizeAxes = Axes.Y },
         };
+    }
+
+    public void ApplyStyle(UtaPitchStyle value)
+    {
+        style = value;
+        geometryReady = false;
     }
 
     [BackgroundDependencyLoader]
@@ -74,7 +83,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
                        .OrderBy(note => note.StartTime)
                        .ToArray();
         centreMidi.BindTo(pitchViewport.CentreMidi);
-        timelineEndTime = (notes.Length > 0 ? notes[^1].EndTime : 0) + UtaPitchGuide.LOOK_AHEAD;
+        timelineEndTime = (notes.Length > 0 ? notes[^1].EndTime : 0) + UtaPitchTimelineGeometry.LOOK_AHEAD;
         enabled.BindTo(config.GetBindable<bool>(UtaRulesetSetting.ShowPitchGuideTrail));
         keyShiftSemitones.BindTo(config.GetBindable<float>(UtaRulesetSetting.KeyShiftSemitones));
 
@@ -104,16 +113,25 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         double sampleTime = detectedPitchTime.Value;
         if (voiceActive.Value && sampleTime - lastSampleTime >= sample_interval)
         {
+            // A negative calibrated microphone latency intentionally places the scoring
+            // timestamp slightly ahead of the gameplay clock. That timestamp is correct for
+            // target lookup, but using it as drawable history made the new segment alternate
+            // between the future-removal path and the visible path as scheduling age varied.
+            // Keep presentation time monotonic and never ahead of the current frame.
+            double presentationTime = Math.Max(
+                samples.Count == 0 ? double.NegativeInfinity : samples[^1].Time,
+                Math.Min(sampleTime, current));
+
             // The target chart is immutable during gameplay. Cache this lookup once when the
             // sample arrives instead of repeating a binary note lookup for every segment on
             // every trail rebuild.
-            samples.Add(new TrailSample(sampleTime, detectedPitchMidi.Value, pitchSimilarity.Value, findNoteAt(sampleTime) != null));
+            samples.Add(new TrailSample(presentationTime, detectedPitchMidi.Value, pitchSimilarity.Value, findNoteAt(sampleTime) != null));
             lastSampleTime = sampleTime;
             samplesChanged = true;
         }
 
         int removeCount = 0;
-        double oldestVisibleTime = current - UtaPitchGuide.LOOK_BEHIND - 200;
+        double oldestVisibleTime = current - UtaPitchTimelineGeometry.LOOK_BEHIND - 200;
         while (removeCount < samples.Count && samples[removeCount].Time < oldestVisibleTime)
             removeCount++;
 
@@ -178,10 +196,10 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
             Color4 colour = trailColour(similarity, sample.HasTarget);
 
             Box segment = getSegment(traceSegments, traceLayer, used);
-            setSegment(segment, start, delta, colour, 3.2f + similarity * 1.6f, 0.76f + similarity * 0.24f);
+            setSegment(segment, start, delta, colour, style.TrailWeight, 0.76f + similarity * 0.24f);
 
             Box glow = getSegment(glowSegments, glowLayer, used);
-            setSegment(glow, start, delta, colour, 8 + similarity * 4, 0.08f + similarity * 0.22f);
+            setSegment(glow, start, delta, colour, style.TrailGlow, 0.08f + similarity * 0.22f);
             used++;
         }
 
@@ -222,15 +240,15 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
             segments[i].Alpha = 0;
     }
 
-    private static Color4 trailColour(float similarity, bool hasTarget)
+    private Color4 trailColour(float similarity, bool hasTarget)
     {
         if (!hasTarget)
-            return new Color4(105, 187, 211, 255);
+            return style.LiveNeutral;
 
         float amount = Math.Clamp(similarity, 0, 1);
         return amount < 0.65f
-            ? blend(inaccurate_voice, close_voice, amount / 0.65f)
-            : blend(close_voice, accurate_voice, (amount - 0.65f) / 0.35f);
+            ? blend(style.LiveOff, style.LiveNear, amount / 0.65f)
+            : blend(style.LiveNear, style.LiveAccurate, (amount - 0.65f) / 0.35f);
     }
 
     private static Color4 blend(Color4 from, Color4 to, float amount) => new(

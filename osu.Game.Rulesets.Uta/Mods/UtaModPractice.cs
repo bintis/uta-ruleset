@@ -8,12 +8,9 @@ using osu.Game.Rulesets.Mods;
 namespace osu.Game.Rulesets.Uta.Mods;
 
 /// <summary>
-/// Gates the practice HUD (P): without this mod, P does nothing. The HUD's speed slider does not
-/// go through this mod at all - it binds directly to <c>MasterGameplayClockContainer</c>'s own
-/// <c>UserPlaybackRate</c>, lazer's built-in live/mid-song playback-rate control (already wired
-/// into clock rate, audio tempo, and scoring generically). An early version drove speed through
-/// <see cref="IApplicableToRate"/> on this mod instead; that turned out to only be evaluated once
-/// at Player start, not continuously, so the HUD's slider had no live effect.
+/// Gates the practice HUD (P): without this mod, P does nothing. The HUD's speed slider binds
+/// to a Tempo adjustment on osu's TrackBass (<c>UtaAudioSettingsState.PlaybackTempo</c>) so
+/// live speed stays pitch-preserving and stacks with Nightcore/Daycore Frequency.
 /// </summary>
 public sealed class UtaModPractice : Mod, IApplicableMod
 {

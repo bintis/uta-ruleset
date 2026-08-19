@@ -43,6 +43,7 @@ internal sealed partial class UtaVolumeOverlayExtension : Component
     private string backgroundMusicLabelText = string.Empty;
     private string vocalsLabelText = string.Empty;
     private bool remapped;
+    private bool suppressMeterWrites;
     private readonly IBindable<Visibility> settingsOverlayState = new Bindable<Visibility>();
 
     [BackgroundDependencyLoader(true)]
@@ -101,12 +102,20 @@ internal sealed partial class UtaVolumeOverlayExtension : Component
         backgroundMusicMeter.Bindable.UnbindFrom(audioManager.Volume);
         vocalsMeter.Bindable.UnbindFrom(audioManager.VolumeTrack);
 
+        // The music meter is bound to lazer's track volume, which Uta forces to 0
+        // while routed BGM is playing. Applying that 0 back into OriginalVocalsVolume
+        // muted the packaged vocal track and cleared VOX until the user moved a slider.
+        suppressMeterWrites = true;
         microphoneConfig.BindValueChanged(onMicrophoneConfigChanged, true);
         backgroundMusicConfig.BindValueChanged(onBackgroundMusicConfigChanged, true);
         vocalsConfig.BindValueChanged(onVocalsConfigChanged, true);
         microphoneMeter.Bindable.BindValueChanged(onMicrophoneMeterChanged);
         backgroundMusicMeter.Bindable.BindValueChanged(onBackgroundMusicMeterChanged);
         vocalsMeter.Bindable.BindValueChanged(onVocalsMeterChanged);
+        microphoneMeter.Bindable.Value = microphoneConfig.Value;
+        backgroundMusicMeter.Bindable.Value = backgroundMusicConfig.Value;
+        vocalsMeter.Bindable.Value = vocalsConfig.Value;
+        Schedule(() => suppressMeterWrites = false);
 
         microphoneLabel = findLabel(microphoneMeter);
         backgroundMusicLabel = findLabel(backgroundMusicMeter);
@@ -116,7 +125,7 @@ internal sealed partial class UtaVolumeOverlayExtension : Component
         vocalsLabelText = vocalsLabel?.Text.ToString() ?? string.Empty;
 
         if (microphoneLabel != null)
-            microphoneLabel.Text = "MY VOICE";
+            microphoneLabel.Text = "EAR MONITOR";
         if (backgroundMusicLabel != null)
             backgroundMusicLabel.Text = "BGM";
         if (vocalsLabel != null)
@@ -137,14 +146,28 @@ internal sealed partial class UtaVolumeOverlayExtension : Component
 
     private void onVocalsConfigChanged(ValueChangedEvent<float> value) => vocalsMeter!.Bindable.Value = value.NewValue;
 
-    private void onMicrophoneMeterChanged(ValueChangedEvent<double> value) => microphoneConfig.Value = (float)value.NewValue;
+    private void onMicrophoneMeterChanged(ValueChangedEvent<double> value)
+    {
+        if (suppressMeterWrites)
+            return;
 
-    private void onBackgroundMusicMeterChanged(ValueChangedEvent<double> value) => backgroundMusicConfig.Value = value.NewValue;
+        microphoneConfig.Value = (float)value.NewValue;
+    }
+
+    private void onBackgroundMusicMeterChanged(ValueChangedEvent<double> value)
+    {
+        if (suppressMeterWrites)
+            return;
+
+        backgroundMusicConfig.Value = value.NewValue;
+    }
 
     private void onVocalsMeterChanged(ValueChangedEvent<double> value)
     {
+        if (suppressMeterWrites)
+            return;
+
         vocalsConfig.Value = (float)value.NewValue;
-        Logger.Log($"Uta native vocals meter changed: {value.NewValue:P0}.");
     }
 
     protected override void Dispose(bool isDisposing)

@@ -9,7 +9,6 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Input.Bindings;
 using osu.Framework.Input.Events;
-using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Screens.Play;
@@ -29,7 +28,6 @@ internal sealed partial class UtaPracticeController : CompositeDrawable, IKeyBin
     private readonly BindableFloat phraseLoopLeadIn = new();
     private readonly BindableBool debugDiagnostics = new();
     private GameplayClockContainer gameplayClock = null!;
-    private DrawableRuleset drawableRuleset = null!;
 
     public UtaPracticeController(UtaBeatmap beatmap)
     {
@@ -38,10 +36,9 @@ internal sealed partial class UtaPracticeController : CompositeDrawable, IKeyBin
     }
 
     [BackgroundDependencyLoader]
-    private void load(GameplayClockContainer clock, DrawableRuleset drawableRuleset, UtaAudioSettingsState audioSettings)
+    private void load(GameplayClockContainer clock, UtaAudioSettingsState audioSettings)
     {
         gameplayClock = clock;
-        this.drawableRuleset = drawableRuleset;
         phraseLoopLeadIn.BindTo(audioSettings.PhraseLoopLeadIn);
         debugDiagnostics.BindTo(audioSettings.DebugDiagnostics);
 
@@ -144,7 +141,7 @@ internal sealed partial class UtaPracticeController : CompositeDrawable, IKeyBin
     }
 
     private void seek(double target, string context)
-        => UtaGameplaySeeker.Seek(gameplayClock, drawableRuleset, action => Schedule(action), target, $"practice {context}", debugDiagnostics.Value);
+        => UtaGameplaySeeker.Seek(gameplayClock, target, $"practice {context}", debugDiagnostics.Value);
 
     public bool OnPressed(KeyBindingPressEvent<UtaAction> e)
     {

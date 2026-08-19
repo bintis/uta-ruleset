@@ -13,7 +13,8 @@ internal static class UtaMicrophoneDevices
     {
         for (int i = 0; i < Bass.RecordingDeviceCount; i++)
         {
-            DeviceInfo info = Bass.RecordGetDeviceInfo(i);
+            if (!Bass.RecordGetDeviceInfo(i, out DeviceInfo info))
+                continue;
             if (info.IsEnabled && !string.IsNullOrWhiteSpace(info.Name))
                 yield return (i, info.Name);
         }
@@ -28,6 +29,6 @@ internal static class UtaMicrophoneDevices
                 return match.Index;
         }
 
-        return Bass.DefaultDevice;
+        return 0;
     }
 }

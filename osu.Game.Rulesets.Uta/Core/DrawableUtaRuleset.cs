@@ -1,12 +1,16 @@
 // Copyright (c) bintis. Licensed under the GPL Licence.
 // See the LICENSE file in the repository root for full licence text.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using osu.Framework.Allocation;
+using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Input;
 using osu.Framework.Logging;
+using osu.Game;
 using osu.Game.Beatmaps;
 using osu.Game.Input.Handlers;
 using osu.Game.Rulesets.Judgements;
@@ -22,6 +26,7 @@ using osu.Game.Rulesets.Uta.Remote;
 using osu.Game.Rulesets.Uta.Scoring;
 using osu.Game.Rulesets.Uta.Skinning;
 using osu.Game.Rulesets.Uta.UI;
+using osu.Game.Rulesets.Uta.UI.HUD;
 using osu.Game.Rulesets.Scoring;
 
 namespace osu.Game.Rulesets.Uta.Core;
@@ -39,11 +44,15 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
     private readonly UtaGameplaySessionBridge gameplaySessionBridge;
     private readonly UtaGlobalExtension gameplayServices;
     private readonly IReadOnlyList<Mod> selectedMods;
+    private IBindable<IReadOnlyList<Mod>> liveMods = null!;
+    private IBindable<IReadOnlyList<Mod>>? gameWideMods;
     private readonly bool scoringEnabled;
     private readonly bool recordingEnabled;
     private readonly bool practiceEnabled;
 
     public new UtaInputManager KeyBindingInputManager => (UtaInputManager)base.KeyBindingInputManager;
+
+    internal UtaRuntimeModeState RuntimeModes => runtimeModes;
 
     public DrawableUtaRuleset(Ruleset ruleset, IBeatmap beatmap, IReadOnlyList<Mod>? mods)
         : base(ruleset, prepareBeatmap(beatmap, mods), mods)
@@ -53,9 +62,15 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         recordingEnabled = selectedMods.Any(mod => mod is UtaModRecording);
         practiceEnabled = selectedMods.Any(mod => mod is UtaModPractice);
         runtimeModes = new UtaRuntimeModeState();
-        runtimeModes.OriginalVocalsEnabled.Value = selectedMods.Any(mod => mod is UtaModOriginalVocals);
+        runtimeModes.OriginalVocalsEnabled.Value = UtaRulesetRuntime.Instance.ShouldPlayOriginalVocals(
+            selectedMods.Any(mod => mod is UtaModOriginalVocals));
         runtimeModes.OctaveFoldEnabled.Value = ((UtaBeatmap)beatmap).OctaveTolerance
                                                 || selectedMods.Any(mod => mod is UtaModOctaveFold);
+        Logger.Log(
+            $"Uta debug ruleset mods: [{string.Join(",", selectedMods.Select(mod => mod.Acronym))}] "
+            + $"originalVocalsEnabled={runtimeModes.OriginalVocalsEnabled.Value} "
+            + $"preferred={UtaRulesetRuntime.Instance.OriginalVocalsPreferred} "
+            + $"octaveFoldEnabled={runtimeModes.OctaveFoldEnabled.Value}");
 
         practiceController = new UtaPracticeController((UtaBeatmap)beatmap);
         pitchViewport = new UtaPitchViewport((UtaBeatmap)beatmap);
@@ -73,22 +88,23 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
             (UtaBeatmap)beatmap,
             immersiveQueueEnabled);
         Overlays.Add(gameplaySessionBridge);
-        if (recordingEnabled)
-            Overlays.Add(new UtaRecordingHud());
+        Overlays.Add(new UtaGameplayHudLayer(
+            selectedMods.All(mod => mod is not UtaModHidePitchGuide),
+            selectedMods.All(mod => mod is not UtaModHideLyrics),
+            scoringEnabled,
+            practiceEnabled,
+            recordingEnabled));
         quickSettings = new UtaQuickSettingsContainer();
         Overlays.Add(quickSettings);
         Overlays.Add(new UtaAudioController());
         Overlays.Add(new UtaPerformanceDiagnostics());
         Overlays.Add(new UtaGapSkipController((UtaBeatmap)beatmap));
         Overlays.Add(practiceController);
-        if (practiceEnabled)
-            Overlays.Add(new UtaPracticeHud());
         Overlays.Add(pitchViewport);
         Overlays.Add(new UtaVolumeOverlayExtension());
-        if (scoringEnabled)
-            Overlays.Add(new UtaScoringHud());
         Overlays.Add(gameplayServices);
-        Overlays.Add(new UtaImmersiveRemotePrompt(gameplayServices.RemoteServerController, gameplayServices.Playback));
+        if (immersiveQueueEnabled)
+            Overlays.Add(new UtaImmersiveRemotePrompt(gameplayServices.RemoteServerController, gameplayServices.Playback));
     }
 
     private static IBeatmap prepareBeatmap(IBeatmap beatmap, IReadOnlyList<Mod>? mods)
@@ -105,6 +121,8 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         var dependencies = new DependencyContainer(base.CreateChildDependencies(parent));
         audioSettings.Initialise((UtaRulesetConfigManager)Config);
         audioSettings.KeyShiftSemitones.Value = selectedMods.OfType<UtaModTranspose>().SingleOrDefault()?.Semitones ?? 0;
+        runtimeModes.OriginalVocalsEnabled.Value = UtaRulesetRuntime.Instance.ShouldPlayOriginalVocals(
+            selectedMods.Any(mod => mod is UtaModOriginalVocals) || audioSettings.OriginalVocalsEnabled.Value);
         dependencies.CacheAs((UtaBeatmap)Beatmap);
         dependencies.CacheAs(KeyBindingInputManager);
         dependencies.CacheAs(audioRouter);
@@ -121,7 +139,75 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         return dependencies;
     }
 
-    protected override Playfield CreatePlayfield() => new UtaPlayfield(Mods);
+    [Resolved(canBeNull: true)]
+    private OsuGameBase? game { get; set; }
+
+    [BackgroundDependencyLoader]
+    private void load(IBindable<IReadOnlyList<Mod>> mods)
+    {
+        liveMods = mods.GetBoundCopy();
+        if (game != null)
+        {
+            object? selected = typeof(OsuGameBase)
+                .GetField("SelectedMods", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                ?.GetValue(game);
+            if (selected is IBindable<IReadOnlyList<Mod>> gameMods)
+                gameWideMods = gameMods.GetBoundCopy();
+        }
+
+        liveMods.BindValueChanged(onLiveModsChanged, true);
+        gameWideMods?.BindValueChanged(_ => applyOriginalVocalsFromMods(), true);
+        audioSettings.OriginalVocalsEnabled.BindValueChanged(_ => applyOriginalVocalsFromMods());
+    }
+
+    private void onLiveModsChanged(ValueChangedEvent<IReadOnlyList<Mod>> change)
+    {
+        // Only a falling edge on the live bindable is an explicit VOX off.
+        // constructor=[] after 切歌 must not clear the persisted preference.
+        if (hasOriginalVocals(change.OldValue) && !hasOriginalVocals(change.NewValue))
+        {
+            UtaRulesetRuntime.Instance.RememberOriginalVocals(false);
+            audioSettings.OriginalVocalsEnabled.Value = false;
+        }
+
+        applyOriginalVocalsFromMods();
+    }
+
+    private void applyOriginalVocalsFromMods()
+    {
+        bool fromMods = hasOriginalVocals(selectedMods)
+                        || hasOriginalVocals(liveMods.Value)
+                        || hasOriginalVocals(gameWideMods?.Value);
+        if (fromMods)
+            audioSettings.OriginalVocalsEnabled.Value = true;
+
+        bool enabled = UtaRulesetRuntime.Instance.ShouldPlayOriginalVocals(
+            fromMods || audioSettings.OriginalVocalsEnabled.Value);
+        if (runtimeModes.OriginalVocalsEnabled.Value == enabled)
+            return;
+
+        Logger.Log(
+            $"Uta original vocals {(enabled ? "on" : "off")} "
+            + $"constructor=[{formatMods(selectedMods)}] "
+            + $"live=[{formatMods(liveMods.Value)}] "
+            + $"game=[{formatMods(gameWideMods?.Value)}] "
+            + $"preferred={UtaRulesetRuntime.Instance.OriginalVocalsPreferred}");
+        runtimeModes.OriginalVocalsEnabled.Value = enabled;
+    }
+
+    private static bool hasOriginalVocals(IReadOnlyList<Mod>? mods)
+        => mods?.Any(mod => mod is UtaModOriginalVocals) == true;
+
+    private static string formatMods(IReadOnlyList<Mod>? mods)
+        => mods == null ? string.Empty : string.Join(",", mods.Select(mod => mod.Acronym));
+
+    protected override void LoadComplete()
+    {
+        base.LoadComplete();
+        UtaGameplaySeeker.DisableFrameStability(this);
+    }
+
+    protected override Playfield CreatePlayfield() => new UtaPlayfield();
 
     protected override PassThroughInputManager CreateInputManager() => new UtaInputManager(Ruleset.RulesetInfo);
 
@@ -130,6 +216,8 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
 
     protected override void Dispose(bool isDisposing)
     {
+        liveMods?.UnbindAll();
+        gameWideMods?.UnbindAll();
         base.Dispose(isDisposing);
         audioSettings.Dispose();
         audioRouter.Dispose();
@@ -138,18 +226,6 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
 
 internal sealed partial class UtaPlayfield : Playfield
 {
-    private readonly UtaLyricsDisplay? lyrics;
-
-    public UtaPlayfield(IReadOnlyList<Mod> mods)
-    {
-        if (mods.All(mod => mod is not UtaModHidePitchGuide))
-            AddInternal(new UtaPitchGuide());
-        if (mods.All(mod => mod is not UtaModHideLyrics))
-            AddInternal(lyrics = new UtaLyricsDisplay());
-    }
-
-    [BackgroundDependencyLoader]
-    private void load(UtaBeatmap beatmap) => lyrics?.SetSegments(beatmap.Transcript);
 }
 
 internal sealed partial class DrawableUtaHitObject : DrawableHitObject<UtaHitObject>

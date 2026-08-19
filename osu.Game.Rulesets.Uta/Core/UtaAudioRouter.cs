@@ -13,15 +13,19 @@ using osu.Framework.Logging;
 namespace osu.Game.Rulesets.Uta.Core;
 
 /// <summary>
-/// Owns one BASS mix bus per physical output. BGM, vocals and microphone
-/// monitoring routed to the same device therefore share one software mixer.
+/// One process-wide BASS mix bus per physical output. Used only when a route
+/// must leave lazer's default TrackBass mixer (another device, or a push monitor).
 /// </summary>
 internal sealed class UtaAudioRouter : IDisposable
 {
-    private readonly Dictionary<int, int> buses = new();
     private static readonly object plugin_lock = new();
+    private static readonly object bus_lock = new();
+    private static readonly Dictionary<int, int> buses = new();
+    private static readonly HashSet<int> protected_sources = new();
     private static int flacPlugin;
     private int defaultDevice;
+
+    public int DefaultDevice => defaultDevice;
 
     public void Initialise(AudioManager manager)
     {
@@ -29,80 +33,168 @@ internal sealed class UtaAudioRouter : IDisposable
             return;
 
         defaultDevice = UtaAudioDevices.Resolve(manager.AudioDevice.Value);
+        Logger.Log($"Uta audio output resolved: '{safeDeviceName(defaultDevice)}' requested='{manager.AudioDevice.Value}'");
         LoadBundledFlacPlugin();
+    }
+
+    public static void HaltAllPlayback()
+    {
+        try
+        {
+            int streams = UtaRoutedAudioStream.HaltAll();
+            int mixerChannels = drainBuses();
+            int stopped = stopBuses();
+            Logger.Log($"Uta halted leftover playback: streams={streams} mixerChannels={mixerChannels} busesStopped={stopped}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Uta leftover halt failed: {ex.Message}", level: LogLevel.Error);
+        }
+    }
+
+    public static void DestroyBuses()
+    {
+        HaltAllPlayback();
+        lock (bus_lock)
+        {
+            foreach ((int device, int bus) in buses)
+            {
+                int previous = Bass.CurrentDevice;
+                if (device > 0)
+                    Bass.CurrentDevice = device;
+                try
+                {
+                    Bass.ChannelStop(bus);
+                    Bass.StreamFree(bus);
+                }
+                finally
+                {
+                    Bass.CurrentDevice = previous;
+                }
+            }
+
+            buses.Clear();
+            protected_sources.Clear();
+        }
+    }
+
+    private static int stopBuses()
+    {
+        int stopped = 0;
+        lock (bus_lock)
+        {
+            foreach ((int device, int bus) in buses)
+            {
+                int previous = Bass.CurrentDevice;
+                if (device > 0)
+                    Bass.CurrentDevice = device;
+                try
+                {
+                    if (Bass.ChannelStop(bus))
+                        stopped++;
+                }
+                finally
+                {
+                    Bass.CurrentDevice = previous;
+                }
+            }
+        }
+
+        return stopped;
+    }
+
+    public void ProtectSource(int handle)
+    {
+        if (handle == 0)
+            return;
+
+        lock (bus_lock)
+            protected_sources.Add(handle);
+    }
+
+    public void UnprotectSource(int handle)
+    {
+        if (handle == 0)
+            return;
+
+        lock (bus_lock)
+            protected_sources.Remove(handle);
+    }
+
+    private static int drainBuses()
+    {
+        int drained = 0;
+
+        lock (bus_lock)
+        {
+            foreach ((int device, int bus) in buses)
+            {
+                int previous = Bass.CurrentDevice;
+                if (device > 0)
+                    Bass.CurrentDevice = device;
+
+                try
+                {
+                    int[]? channels = BassMix.MixerGetChannels(bus);
+                    if (channels == null)
+                        continue;
+
+                    foreach (int channel in channels)
+                    {
+                        if (protected_sources.Contains(channel))
+                            continue;
+
+                        BassMix.MixerRemoveChannel(channel);
+                        Bass.ChannelStop(channel);
+                        Bass.StreamFree(channel);
+                        drained++;
+                    }
+                }
+                finally
+                {
+                    Bass.CurrentDevice = previous;
+                }
+            }
+        }
+
+        return drained;
     }
 
     public UtaRoutedAudioStream CreateTrack(string filePath, string? outputDevice)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
-        int device = resolve(outputDevice);
-        int previous = Bass.CurrentDevice;
-        ensureInitialised(device);
-        Bass.CurrentDevice = device;
-
-        int source = Bass.CreateStream(filePath, 0, 0, BassFlags.Decode | BassFlags.Float | BassFlags.Prescan);
-        Errors error = Bass.LastError;
-        if (previous > 0)
-            Bass.CurrentDevice = previous;
-        if (source == 0)
-            throw new InvalidOperationException($"Could not decode routed audio file: {error}");
-
-        int tempo = BassFx.TempoCreate(source, BassFlags.Decode | BassFlags.FxFreeSource);
-        if (tempo == 0)
-        {
-            error = Bass.LastError;
-            Bass.StreamFree(source);
-            throw new InvalidOperationException($"Could not create pitch/tempo stream: {error}");
-        }
-
-        Logger.Log($"Uta debug router: track '{Path.GetFileName(filePath)}' requested output='{outputDevice}' resolved device={device} source={source} tempo={tempo}");
-        route(tempo, device, true);
-        return new UtaRoutedAudioStream(this, tempo, device);
+        return createTempoStream(
+            device => Bass.CreateStream(filePath, 0, 0, BassFlags.Decode | BassFlags.Float | BassFlags.Prescan),
+            outputDevice);
     }
 
     public UtaRoutedAudioStream CreateTrack(byte[] data, string? outputDevice)
-    {
-        int device = resolve(outputDevice);
-        int previous = Bass.CurrentDevice;
-        ensureInitialised(device);
-        Bass.CurrentDevice = device;
-
-        int source = Bass.CreateStream(data, 0, data.Length, BassFlags.Decode | BassFlags.Float | BassFlags.Prescan);
-        Errors error = Bass.LastError;
-
-        if (previous > 0)
-            Bass.CurrentDevice = previous;
-
-        if (source == 0)
-            throw new InvalidOperationException($"Could not decode routed audio: {error}");
-
-        int tempo = BassFx.TempoCreate(source, BassFlags.Decode | BassFlags.FxFreeSource);
-        if (tempo == 0)
-        {
-            error = Bass.LastError;
-            Bass.StreamFree(source);
-            throw new InvalidOperationException($"Could not create pitch/tempo stream: {error}");
-        }
-
-        Logger.Log($"Uta debug router: track (bytes) requested output='{outputDevice}' resolved device={device} source={source} tempo={tempo}");
-        route(tempo, device, true);
-        return new UtaRoutedAudioStream(this, tempo, device);
-    }
+        => createTempoStream(
+            device => Bass.CreateStream(data, 0, data.Length, BassFlags.Decode | BassFlags.Float | BassFlags.Prescan),
+            outputDevice);
 
     public int CreateMonitor(int frequency, int channels, string? outputDevice)
     {
         int device = resolve(outputDevice);
         int previous = Bass.CurrentDevice;
-        ensureInitialised(device);
-        Bass.CurrentDevice = device;
-        int stream = Bass.CreateStream(frequency, channels, BassFlags.Decode | BassFlags.Float, StreamProcedureType.Push);
-        if (previous > 0)
+        int stream;
+        try
+        {
+            ensureInitialised(device);
+            Bass.CurrentDevice = device;
+            stream = Bass.CreateStream(frequency, channels, BassFlags.Decode | BassFlags.Float, StreamProcedureType.Push);
+        }
+        finally
+        {
             Bass.CurrentDevice = previous;
-
-        Logger.Log($"Uta debug router: monitor requested output='{outputDevice}' resolved device={device} stream={stream}");
+        }
 
         if (stream != 0)
+        {
             route(stream, device, false);
+            ProtectSource(stream);
+        }
+
         return stream;
     }
 
@@ -125,9 +217,46 @@ internal sealed class UtaAudioRouter : IDisposable
         }
         finally
         {
-            if (previous > 0)
-                Bass.CurrentDevice = previous;
+            // Always restore, including Bass.DefaultDevice (-1). Skipping that
+            // leaves CurrentDevice on the Uta mixer and the next native VOX
+            // TrackBass is created on the wrong graph (AUDIO leftover doc §24).
+            Bass.CurrentDevice = previous;
         }
+    }
+
+    private UtaRoutedAudioStream createTempoStream(Func<int, int> createSource, string? outputDevice)
+    {
+        int device = resolve(outputDevice);
+        int previous = Bass.CurrentDevice;
+        int source;
+        Errors error;
+        try
+        {
+            ensureInitialised(device);
+            Bass.CurrentDevice = device;
+            source = createSource(device);
+            error = Bass.LastError;
+        }
+        finally
+        {
+            // Track creation can throw (missing/corrupt audio). Restore even then,
+            // otherwise the next native TrackBass/VOX lands on Uta's mixer device.
+            Bass.CurrentDevice = previous;
+        }
+
+        if (source == 0)
+            throw new InvalidOperationException($"Could not decode routed audio: {error}");
+
+        int tempo = BassFx.TempoCreate(source, BassFlags.Decode | BassFlags.FxFreeSource);
+        if (tempo == 0)
+        {
+            error = Bass.LastError;
+            Bass.StreamFree(source);
+            throw new InvalidOperationException($"Could not create pitch/tempo stream: {error}");
+        }
+
+        route(tempo, device, true);
+        return new UtaRoutedAudioStream(this, tempo, device);
     }
 
     private void route(int source, int device, bool paused)
@@ -147,45 +276,122 @@ internal sealed class UtaAudioRouter : IDisposable
 
             int bus = getBus(device);
             BassFlags flags = paused ? BassFlags.MixerChanPause : BassFlags.Default;
-            bool added = BassMix.MixerAddChannel(bus, source, flags);
-            Logger.Log($"Uta debug router: route source={source} -> device={device} bus={bus} paused={paused} added={added}"
-                       + (added ? string.Empty : $" error={Bass.LastError}"));
-            if (!added)
+            if (!BassMix.MixerAddChannel(bus, source, flags))
                 throw new InvalidOperationException($"Could not add Uta source to output mixer: {Bass.LastError}");
         }
         finally
         {
-            if (previous > 0)
-                Bass.CurrentDevice = previous;
+            // Always restore, including Bass.DefaultDevice (-1). Skipping that
+            // leaves CurrentDevice on the Uta mixer and the next native VOX
+            // TrackBass is created on the wrong graph (AUDIO leftover doc §24).
+            Bass.CurrentDevice = previous;
         }
     }
 
-    private int getBus(int device)
+    private static int getBus(int device)
     {
-        lock (buses)
+        lock (bus_lock)
         {
+            int requested = device;
+            device = UtaAudioDevices.SkipPlaceholder(device);
+            if (device != requested)
+                Logger.Log($"Uta skipped unusable output '{safeDeviceName(requested)}', using '{safeDeviceName(device)}'");
+
             if (buses.TryGetValue(device, out int cached))
+            {
+                playBus(device, cached);
                 return cached;
+            }
 
-            int previous = Bass.CurrentDevice;
-            ensureInitialised(device);
-            Bass.CurrentDevice = device;
-            int bus = BassMix.CreateMixerStream(48000, 2, BassFlags.Float | BassFlags.MixerNonStop);
-            if (bus != 0)
-                Bass.ChannelPlay(bus);
-            if (previous > 0)
-                Bass.CurrentDevice = previous;
-
+            int bus = tryCreateBus(device);
             if (bus == 0)
-                throw new InvalidOperationException($"Could not create output mixer for '{Bass.GetDeviceInfo(device).Name}': {Bass.LastError}");
+            {
+                int current = Bass.CurrentDevice;
+                if (current != device)
+                    bus = tryCreateBus(current);
+                if (bus != 0)
+                {
+                    buses.Add(current, bus);
+                    Logger.Log($"Uta output mixer ready: {safeDeviceName(current)} (fell back from '{safeDeviceName(device)}')");
+                    return bus;
+                }
+
+                throw new InvalidOperationException(
+                    $"Could not create output mixer for '{safeDeviceName(device)}': {Bass.LastError}");
+            }
 
             buses.Add(device, bus);
-            Logger.Log($"Uta output mixer ready: {Bass.GetDeviceInfo(device).Name} (device={device} bus={bus})");
+            Logger.Log($"Uta output mixer ready: {safeDeviceName(device)}");
             return bus;
         }
     }
 
-    private int resolve(string? name) => string.IsNullOrWhiteSpace(name) ? defaultDevice : UtaAudioDevices.Resolve(name);
+    private static int tryCreateBus(int device)
+    {
+        int previous = Bass.CurrentDevice;
+        try
+        {
+            ensureInitialised(device);
+            Bass.CurrentDevice = device;
+            // osu's BassAudioMixer is 44100 + MixerNonStop (no Float). 48000+Float
+            // is ILLPARAM on the TestScene/default Pulse device (AUDIO leftover doc §26).
+            int bus = BassMix.CreateMixerStream(44100, 2, BassFlags.MixerNonStop);
+            if (bus != 0)
+            {
+                Bass.ChannelPlay(bus);
+                return bus;
+            }
+
+            Logger.Log($"Uta output mixer create failed for '{safeDeviceName(device)}': {Bass.LastError}");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Logger.Log($"Uta output mixer init failed for '{safeDeviceName(device)}': {exception.Message}");
+            return 0;
+        }
+        finally
+        {
+            Bass.CurrentDevice = previous;
+        }
+    }
+
+    private static void playBus(int device, int bus)
+    {
+        int previousDevice = Bass.CurrentDevice;
+        try
+        {
+            if (device > 0)
+                Bass.CurrentDevice = device;
+            Bass.ChannelPlay(bus);
+        }
+        finally
+        {
+            Bass.CurrentDevice = previousDevice;
+        }
+    }
+
+    private static string safeDeviceName(int device)
+    {
+        DeviceInfo info = Bass.GetDeviceInfo(device);
+        return string.IsNullOrWhiteSpace(info.Name) ? $"device {device}" : info.Name;
+    }
+
+    internal int CaptureDevice() => Bass.CurrentDevice;
+
+    internal void RestoreDevice(int previous) => Bass.CurrentDevice = previous;
+
+    internal void UseDefaultDevice()
+    {
+        if (defaultDevice > 0)
+            Bass.CurrentDevice = defaultDevice;
+    }
+
+    private int resolve(string? name)
+    {
+        int device = string.IsNullOrWhiteSpace(name) ? defaultDevice : UtaAudioDevices.Resolve(name);
+        return UtaAudioDevices.SkipPlaceholder(device);
+    }
 
     private static void ensureInitialised(int device)
     {
@@ -221,91 +427,179 @@ internal sealed class UtaAudioRouter : IDisposable
 
     public void Dispose()
     {
-        foreach (int bus in buses.Values)
-            Bass.StreamFree(bus);
-        buses.Clear();
+        // Buses are process-wide so a late DrawableRuleset dispose cannot free
+        // the mixer the next chart is already playing through.
     }
 }
 
 internal sealed class UtaRoutedAudioStream : IDisposable
 {
+    private static readonly object live_lock = new();
+    private static readonly List<UtaRoutedAudioStream> live = new();
+
     private readonly UtaAudioRouter router;
+    private int handle;
     private int device;
+    private readonly float baseFrequency;
     private float volume = 1;
     private float appliedTempo = float.NaN;
-    private float appliedPitch = float.NaN;
-    public int Handle { get; }
+    private float appliedFrequency = float.NaN;
+    public int Handle => handle;
     public bool IsRunning { get; private set; }
 
     internal UtaRoutedAudioStream(UtaAudioRouter router, int handle, int device)
     {
         this.router = router;
-        Handle = handle;
+        this.handle = handle;
         this.device = device;
+        float frequency = 44100;
+        onDevice(() => Bass.ChannelGetAttribute(handle, ChannelAttribute.Frequency, out frequency));
+        baseFrequency = frequency > 0 ? frequency : 44100;
+        lock (live_lock)
+            live.Add(this);
+    }
+
+    internal static int HaltAll()
+    {
+        UtaRoutedAudioStream[] snapshot;
+        lock (live_lock)
+        {
+            snapshot = live.ToArray();
+            live.Clear();
+        }
+
+        int halted = 0;
+        foreach (UtaRoutedAudioStream stream in snapshot)
+        {
+            if (stream.release())
+                halted++;
+        }
+
+        return halted;
     }
 
     public void SetOutput(string? outputDevice)
     {
-        device = router.Route(Handle, outputDevice, !IsRunning);
+        if (handle == 0)
+            return;
+
+        device = router.Route(handle, outputDevice, !IsRunning);
         SetVolume(volume);
     }
 
     public void SetVolume(float volume)
     {
         this.volume = volume;
-        if (!onDevice(() => Bass.ChannelSetAttribute(Handle, ChannelAttribute.Volume, volume)))
+        if (handle == 0)
+            return;
+
+        if (!onDevice(() => Bass.ChannelSetAttribute(handle, ChannelAttribute.Volume, volume)))
             Logger.Log($"Could not set Uta routed-track volume: {Bass.LastError}", level: LogLevel.Error);
     }
 
-    public void SetRate(double rate)
+    public void SetFrequency(double relative)
     {
-        float tempo = ((float)Math.Abs(rate) - 1) * 100;
+        if (handle == 0)
+            return;
+
+        float value = (float)Math.Abs(relative);
+        if (value.Equals(appliedFrequency))
+            return;
+
+        if (onDevice(() => Bass.ChannelSetAttribute(handle, ChannelAttribute.Frequency, Math.Max(100, baseFrequency * value))))
+            appliedFrequency = value;
+    }
+
+    public void SetTempo(double relative)
+    {
+        if (handle == 0)
+            return;
+
+        float tempo = ((float)Math.Abs(relative) - 1) * 100;
         if (tempo.Equals(appliedTempo))
             return;
 
-        if (onDevice(() => Bass.ChannelSetAttribute(Handle, ChannelAttribute.Tempo, tempo)))
+        if (onDevice(() => Bass.ChannelSetAttribute(handle, ChannelAttribute.Tempo, tempo)))
             appliedTempo = tempo;
     }
 
-    public void SetPitch(int semitones)
+    public void Seek(double time)
     {
-        if ((float)semitones == appliedPitch)
+        if (handle == 0)
             return;
 
-        if (onDevice(() => Bass.ChannelSetAttribute(Handle, ChannelAttribute.Pitch, semitones)))
-            appliedPitch = semitones;
+        onDevice(() => Bass.ChannelSetPosition(handle, Bass.ChannelSeconds2Bytes(handle, Math.Max(0, time) / 1000)));
     }
 
-    public void Seek(double time)
-        => onDevice(() => Bass.ChannelSetPosition(Handle, Bass.ChannelSeconds2Bytes(Handle, Math.Max(0, time) / 1000)));
-
-    /// <summary>The stream's actual playback position, for comparing against the expected gameplay-clock-derived target.</summary>
     public double GetPositionMs()
-        => onDevice(() => Bass.ChannelBytes2Seconds(Handle, Bass.ChannelGetPosition(Handle)) * 1000);
+    {
+        if (handle == 0)
+            return 0;
+
+        return onDevice(() => Bass.ChannelBytes2Seconds(handle, Bass.ChannelGetPosition(handle)) * 1000);
+    }
 
     public void Start()
     {
-        onDevice(() => BassMix.ChannelRemoveFlag(Handle, BassFlags.MixerChanPause));
+        if (handle == 0)
+            return;
+
+        onDevice(() => BassMix.ChannelRemoveFlag(handle, BassFlags.MixerChanPause));
         IsRunning = true;
     }
 
     public void Stop()
     {
-        onDevice(() => BassMix.ChannelAddFlag(Handle, BassFlags.MixerChanPause));
+        if (handle == 0)
+        {
+            IsRunning = false;
+            return;
+        }
+
+        onDevice(() => BassMix.ChannelAddFlag(handle, BassFlags.MixerChanPause));
         IsRunning = false;
     }
 
     public void Dispose()
     {
-        onDevice(() =>
+        lock (live_lock)
+            live.Remove(this);
+        release();
+    }
+
+    private bool release()
+    {
+        int current = handle;
+        if (current == 0)
+            return false;
+
+        handle = 0;
+        IsRunning = false;
+        int previous = Bass.CurrentDevice;
+        if (device > 0)
+            Bass.CurrentDevice = device;
+
+        try
         {
-            BassMix.MixerRemoveChannel(Handle);
-            return Bass.StreamFree(Handle);
-        });
+            BassMix.MixerRemoveChannel(current);
+            Bass.ChannelStop(current);
+            Bass.StreamFree(current);
+            return true;
+        }
+        finally
+        {
+            // Always restore, including Bass.DefaultDevice (-1). Skipping that
+            // leaves CurrentDevice on the Uta mixer and the next native VOX
+            // TrackBass is created on the wrong graph (AUDIO leftover doc §24).
+            Bass.CurrentDevice = previous;
+        }
     }
 
     private T onDevice<T>(Func<T> action)
     {
+        if (handle == 0)
+            return default!;
+
         int previous = Bass.CurrentDevice;
         if (device > 0)
             Bass.CurrentDevice = device;
@@ -316,8 +610,10 @@ internal sealed class UtaRoutedAudioStream : IDisposable
         }
         finally
         {
-            if (previous > 0)
-                Bass.CurrentDevice = previous;
+            // Always restore, including Bass.DefaultDevice (-1). Skipping that
+            // leaves CurrentDevice on the Uta mixer and the next native VOX
+            // TrackBass is created on the wrong graph (AUDIO leftover doc §24).
+            Bass.CurrentDevice = previous;
         }
     }
 }

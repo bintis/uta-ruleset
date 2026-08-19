@@ -138,10 +138,32 @@ public sealed class UtaRemoteCommandRouter : IUtaRemoteCommandTarget
                 autoAdvanceEnabled.Value = command.Enabled!.Value;
                 return ValueTask.FromResult(UtaRemoteCommandResult.Ok());
 
+            case UtaRemoteCommands.OriginalVocals:
+                {
+                    bool enabled = command.Enabled!.Value;
+                    UtaRulesetRuntime.Instance.RememberOriginalVocals(enabled);
+                    UtaPlaybackCoordinator? voxPlayback = Volatile.Read(ref playback);
+                    if (voxPlayback == null)
+                        return ValueTask.FromResult(UtaRemoteCommandResult.Ok());
+                    QueueMutationResult voxResult = voxPlayback.SetRemoteMod("VOX", enabled);
+                    return ValueTask.FromResult(voxResult.Succeeded
+                        ? UtaRemoteCommandResult.Ok()
+                        : UtaRemoteCommandResult.Reject(voxResult.Error!));
+                }
+
             case UtaRemoteCommands.SetMod:
                 UtaPlaybackCoordinator? modPlayback = Volatile.Read(ref playback);
                 if (modPlayback == null)
+                {
+                    if (string.Equals(command.Text, "VOX", StringComparison.OrdinalIgnoreCase))
+                    {
+                        UtaRulesetRuntime.Instance.RememberOriginalVocals(command.Enabled!.Value);
+                        return ValueTask.FromResult(UtaRemoteCommandResult.Ok());
+                    }
+
                     return reject("no_active_gameplay");
+                }
+
                 QueueMutationResult modResult = modPlayback.SetRemoteMod(command.Text, command.Enabled!.Value);
                 return ValueTask.FromResult(modResult.Succeeded ? UtaRemoteCommandResult.Ok() : UtaRemoteCommandResult.Reject(modResult.Error!));
 

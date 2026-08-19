@@ -10,7 +10,6 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Logging;
 using osu.Game.Beatmaps;
-using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Formats;
 using osu.Game.Screens.Play;
@@ -28,7 +27,6 @@ internal sealed partial class UtaGapSkipController : CompositeDrawable
     private readonly Activity[] activities;
     private IReadOnlyList<SkippableGap> gaps = Array.Empty<SkippableGap>();
     private GameplayClockContainer gameplayClock = null!;
-    private DrawableRuleset drawableRuleset = null!;
     private SkipOverlay? activeOverlay;
     private int gapIndex;
 
@@ -42,10 +40,9 @@ internal sealed partial class UtaGapSkipController : CompositeDrawable
     }
 
     [BackgroundDependencyLoader]
-    private void load(GameplayClockContainer clock, DrawableRuleset drawableRuleset, IBindable<WorkingBeatmap> workingBeatmap)
+    private void load(GameplayClockContainer clock, IBindable<WorkingBeatmap> workingBeatmap)
     {
         gameplayClock = clock;
-        this.drawableRuleset = drawableRuleset;
         gaps = findSkippableGaps(activities, workingBeatmap.Value.Track.Length);
     }
 
@@ -79,7 +76,7 @@ internal sealed partial class UtaGapSkipController : CompositeDrawable
         if (target - gameplayClock.CurrentTime < 50)
             return;
 
-        UtaGameplaySeeker.Seek(gameplayClock, drawableRuleset, action => Schedule(action), target, "gap skip", true);
+        UtaGameplaySeeker.Seek(gameplayClock, target, "gap skip", true);
     }
 
     internal static IReadOnlyList<SkippableGap> FindSkippableGaps(

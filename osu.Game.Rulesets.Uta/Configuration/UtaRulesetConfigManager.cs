@@ -47,6 +47,15 @@ public sealed class UtaRulesetConfigManager : RulesetConfigManager<UtaRulesetSet
         SetDefault(UtaRulesetSetting.VideoBlur, 0f, 0f, 1f, 0.01f);
         SetDefault(UtaRulesetSetting.VideoOffset, 0f, -5000f, 5000f, 1f);
         SetDefault(UtaRulesetSetting.ParticleIntensity, 0.65f, 0f, 1f, 0.05f);
+        SetDefault(UtaRulesetSetting.PitchHudSize, UtaPitchHudSize.Normal);
+        SetDefault(UtaRulesetSetting.PitchHudOpacity, 1f, 0.5f, 1f, 0.05f);
+        SetDefault(UtaRulesetSetting.PitchHudLayout, UtaPitchHudLayout.Auto);
+        SetDefault(UtaRulesetSetting.LyricsShowUpcoming, true);
+        SetDefault(UtaRulesetSetting.LyricsShowReading, true);
+        SetDefault(UtaRulesetSetting.LyricsPanelOpacity, 0.72f, 0f, 0.95f, 0.05f);
+        SetDefault(UtaRulesetSetting.LyricsProgressStyle, UtaLyricsProgressStyle.Underline);
+        SetDefault(UtaRulesetSetting.HudSafeAreaPadding, 0f, 0f, 64f, 1f);
+        SetDefault(UtaRulesetSetting.OriginalVocalsEnabled, false);
     }
 
 }
@@ -93,6 +102,15 @@ public enum UtaRulesetSetting
     VideoBlur = 29,
     VideoOffset = 30,
     ParticleIntensity = 31,
+    PitchHudSize = 32,
+    PitchHudOpacity = 33,
+    PitchHudLayout = 34,
+    LyricsShowUpcoming = 35,
+    LyricsShowReading = 36,
+    LyricsPanelOpacity = 37,
+    LyricsProgressStyle = 38,
+    HudSafeAreaPadding = 39,
+    OriginalVocalsEnabled = 40,
 }
 
 public enum UtaScoreHudPosition
@@ -130,4 +148,25 @@ public enum UtaPitchCurveDisplay
     Song,
     MyVoice,
     Both,
+}
+
+public enum UtaPitchHudSize
+{
+    Compact,
+    Normal,
+    Large,
+}
+
+public enum UtaPitchHudLayout
+{
+    Auto,
+    FullWidth,
+    Inset,
+}
+
+public enum UtaLyricsProgressStyle
+{
+    Underline,
+    Fill,
+    Marker,
 }

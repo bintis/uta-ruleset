@@ -21,6 +21,8 @@ using osu.Game.Rulesets.Uta.Formats;
 using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Rulesets.Uta.Pitch;
 using osu.Game.Rulesets.Uta.UI;
+using osu.Game.Rulesets.Uta.UI.HUD.Lyrics;
+using osu.Game.Rulesets.Uta.UI.HUD.Pitch;
 using osu.Game.Screens.Select;
 
 namespace osu.Game.Rulesets.Uta.Tests;
@@ -44,6 +46,54 @@ public class UtaCoreTests
 
         Assert.That(audioConsumer.Value, Is.EqualTo(0.12f));
         state.Dispose();
+    }
+
+    [Test]
+    public void AudioMathKeepsTransposeRateNeutralAndGatesVocals()
+    {
+        (double upFreq, double upTempo) = UtaAudioMath.TransposeFactors(12);
+        (double downFreq, double downTempo) = UtaAudioMath.TransposeFactors(-12);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(UtaAudioMath.TransposeFactors(0), Is.EqualTo((1d, 1d)));
+            Assert.That(upFreq * upTempo, Is.EqualTo(1).Within(1e-9));
+            Assert.That(upFreq, Is.EqualTo(2).Within(1e-9));
+            Assert.That(downFreq * downTempo, Is.EqualTo(1).Within(1e-9));
+            Assert.That(downFreq, Is.EqualTo(0.5).Within(1e-9));
+            Assert.That(UtaAudioMath.EffectiveVocalsVolume(false, 0.8f), Is.EqualTo(0));
+            Assert.That(UtaAudioMath.EffectiveVocalsVolume(true, 0.8f), Is.EqualTo(0.8f));
+            Assert.That(UtaAudioMath.OriginalVocalsShouldPlay(false, false), Is.False);
+            Assert.That(UtaAudioMath.OriginalVocalsShouldPlay(true, false), Is.True);
+            Assert.That(UtaAudioMath.OriginalVocalsShouldPlay(false, true), Is.True, "切歌 with empty constructor mods must keep the last original-vocals preference.");
+            Assert.That(UtaAudioMath.NeedsRoutedBgm(false, 0), Is.False);
+            Assert.That(UtaAudioMath.NeedsRoutedBgm(true, 0), Is.True);
+            Assert.That(UtaAudioMath.NeedsRoutedBgm(false, 1), Is.True);
+            Assert.That(UtaAudioMath.NeedsRoutedVocals(false, false), Is.False);
+            Assert.That(UtaAudioMath.NeedsRoutedVocals(true, false), Is.True);
+            Assert.That(UtaAudioMath.NeedsRoutedVocals(false, true), Is.True, "VOX must follow routed BGM after leftover halt.");
+            Assert.That(UtaAudioMath.DriftNeedsCorrection(1000, 1024), Is.False);
+            Assert.That(UtaAudioMath.DriftNeedsCorrection(1000, 1030), Is.True);
+        });
+    }
+
+    [Test]
+    public void HaltedRoutedPlaybackIsANoOpWithoutLiveStreams()
+        => Assert.That(UtaRoutedAudioStream.HaltAll(), Is.EqualTo(0));
+
+    [Test]
+    public void BassPlaceholderOutputsCannotHostAMixer()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(UtaAudioDevices.IsPlaceholderOutput(null), Is.True);
+            Assert.That(UtaAudioDevices.IsPlaceholderOutput(""), Is.True);
+            Assert.That(UtaAudioDevices.IsPlaceholderOutput("Default"), Is.True);
+            Assert.That(UtaAudioDevices.IsPlaceholderOutput("No Sound"), Is.True);
+            Assert.That(UtaAudioDevices.IsPlaceholderOutput("Default Audio Device"), Is.True);
+            Assert.That(UtaAudioDevices.IsPlaceholderOutput("MARANTZ M4U: USB Audio"), Is.False);
+            Assert.That(UtaAudioDevices.IsPlaceholderOutput("AKG C44-USB Microphone: USB Audio"), Is.False);
+        });
     }
 
     [Test]
@@ -72,40 +122,14 @@ public class UtaCoreTests
             Assert.That(UtaPitchCurveGraph.TimeToX(12000, 0, 400) + UtaPitchCurveGraph.TimeOffsetToX(0, 10000, 400),
                 Is.EqualTo(UtaPitchCurveGraph.TimeToX(12000, 10000, 400)).Within(0.0001));
             Assert.That(UtaPitchCurveGraph.MidiToY(57.5f, 57.5f, 168), Is.EqualTo(84).Within(0.0001));
-            Assert.That(UtaPitchGuide.CalculateFixedCentre(baseRange), Is.EqualTo(57.5f));
-            Assert.That(UtaPitchGuide.CalculateFixedCentre(highSong), Is.EqualTo(68));
+            Assert.That(UtaPitchGuideRenderer.CalculateFixedCentre(baseRange), Is.EqualTo(57.5f));
+            Assert.That(UtaPitchGuideRenderer.CalculateFixedCentre(highSong), Is.EqualTo(68));
             Assert.That(config.GetBindable<UtaPitchCurveDisplay>(UtaRulesetSetting.PitchCurveDisplay).Value,
                 Is.EqualTo(UtaPitchCurveDisplay.Both));
             Assert.That(config.GetBindable<bool>(UtaRulesetSetting.ShowPitchGuideTrail).Value, Is.False);
+            Assert.That(config.GetBindable<bool>(UtaRulesetSetting.OriginalVocalsEnabled).Value, Is.False);
             Assert.That(config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval).Value, Is.EqualTo(10));
         });
-    }
-
-    [Test]
-    public void NoteColoursUseNightingaleWholeNoteGrades()
-    {
-        UtaNoteColourState perfect = noteColour(1, 0);
-        UtaNoteColourState good = noteColour(0.8f, 0.5f);
-        UtaNoteColourState high = noteColour(0.2f, 1.2f);
-        UtaNoteColourState low = noteColour(0.2f, -1.2f);
-        var miss = new UtaNoteColourState();
-        miss.Accumulate(0.1, false, 0, 0);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(perfect.Grade(), Is.EqualTo(UtaNoteColourGrade.Perfect));
-            Assert.That(good.Grade(), Is.EqualTo(UtaNoteColourGrade.Good));
-            Assert.That(high.Grade(), Is.EqualTo(UtaNoteColourGrade.High));
-            Assert.That(low.Grade(), Is.EqualTo(UtaNoteColourGrade.Low));
-            Assert.That(miss.Grade(), Is.EqualTo(UtaNoteColourGrade.Miss));
-        });
-
-        static UtaNoteColourState noteColour(float similarity, float deviation)
-        {
-            var state = new UtaNoteColourState();
-            state.Accumulate(0.1, true, similarity, deviation);
-            return state;
-        }
     }
 
     [Test]
@@ -321,6 +345,30 @@ public class UtaCoreTests
     }
 
     [Test]
+    public void LyricsPresentationPreservesLatencySignAndSeeksDirectly()
+    {
+        var state = new UtaLyricsPresentationState();
+        state.SetSegments(new[]
+        {
+            new UtaTranscriptSegment { Text = "first", Start = 1, End = 2 },
+            new UtaTranscriptSegment { Text = "second", Start = 5, End = 6 },
+        });
+
+        UtaLyricsPresentationUpdate delayed = state.Update(1000, 200);
+        double delayedProgress = delayed.Frame.WordProgress[0];
+        UtaLyricsPresentationUpdate onTime = state.Update(1000, 0);
+        double onTimeProgress = onTime.Frame.WordProgress[0];
+        UtaLyricsPresentationUpdate seek = state.Update(5200, 0);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(delayedProgress, Is.LessThan(onTimeProgress), "Positive latency must delay, not advance, word progress.");
+            Assert.That(seek.Frame.SegmentIndex, Is.EqualTo(1));
+            Assert.That(seek.StructuralChange, Is.True);
+        });
+    }
+
+    [Test]
     public void PitchViewportGlidesTowardTargetWithinRateLimit()
     {
         Assert.Multiple(() =>
@@ -395,10 +443,8 @@ public class UtaCoreTests
     [Test]
     public void PracticeModIsJustAGateForTheHud()
     {
-        // UtaModPractice no longer touches rate itself - IApplicableToRate is only evaluated once
-        // at Player start, not continuously, so it can't drive a live mid-song speed slider. The
-        // HUD instead binds straight to MasterGameplayClockContainer.UserPlaybackRate; this mod's
-        // only remaining job is gating whether the practice HUD (P) exists at all.
+        // UtaModPractice no longer touches rate itself. Live speed is a Tempo adjustment on
+        // osu's TrackBass (UtaAudioSettingsState.PlaybackTempo). This mod only gates the HUD.
         var practice = new UtaModPractice();
 
         Assert.Multiple(() =>

@@ -2,11 +2,13 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using NUnit.Framework;
 using osu.Game.Rulesets.Mods;
+using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Rulesets.Uta.Playback;
 using osu.Game.Rulesets.Uta.Queue;
@@ -212,5 +214,62 @@ public sealed class UtaQueueReservationTests
             Array.Empty<Mod>(),
             out _,
             out _), Is.False);
+    }
+
+    [Test]
+    public void TestControllerOriginalVocalsCommandComposesVoxIntoQueuedPlay()
+    {
+        byte[] enable = Encoding.UTF8.GetBytes(
+            """{"type":"command","sequence":1,"command":"originalVocals","enabled":true}""");
+        byte[] setMod = Encoding.UTF8.GetBytes(
+            """{"type":"command","sequence":2,"command":"setMod","text":"VOX","enabled":true}""");
+        byte[] skip = Encoding.UTF8.GetBytes(
+            """{"type":"command","sequence":3,"command":"skipToNext"}""");
+        byte[] playNow = Encoding.UTF8.GetBytes(
+            """{"type":"command","sequence":4,"command":"queuePlayNow","text":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}""");
+
+        Assert.That(UtaRemoteProtocol.TryParseCommand(enable, UtaRemoteRole.Controller, out UtaRemoteCommand? vocals, out string vocalsError), Is.True, vocalsError);
+        Assert.That(vocals!.Name, Is.EqualTo(UtaRemoteCommands.OriginalVocals));
+        Assert.That(vocals.Enabled, Is.True);
+        Assert.That(UtaRemoteProtocol.TryParseCommand(setMod, UtaRemoteRole.Controller, out UtaRemoteCommand? mod, out string modError), Is.True, modError);
+        Assert.That(mod!.Text, Is.EqualTo("VOX"));
+        Assert.That(mod.Enabled, Is.True);
+        Assert.That(UtaRemoteProtocol.TryParseCommand(skip, UtaRemoteRole.Controller, out UtaRemoteCommand? skipped, out string skipError), Is.True, skipError);
+        Assert.That(skipped!.Name, Is.EqualTo(UtaRemoteCommands.SkipToNext));
+        Assert.That(UtaRemoteProtocol.TryParseCommand(playNow, UtaRemoteRole.Controller, out UtaRemoteCommand? play, out string playError), Is.True, playError);
+        Assert.That(play!.Name, Is.EqualTo(UtaRemoteCommands.QueuePlayNow));
+
+        Assert.That(UtaPlaybackCoordinator.TryApplyRemoteMod(Array.Empty<Mod>(), "VOX", true, out List<Mod> afterVox, out string applyError), Is.True, applyError);
+        Assert.That(afterVox, Has.Exactly(1).TypeOf<UtaModOriginalVocals>());
+
+        Assert.That(
+            UtaPlaybackCoordinator.TryComposeAutomaticVoxPlayback(
+                Array.Empty<Mod>(),
+                originalVocalsEnabled: true,
+                UtaQueuePlaybackOptions.Default,
+                out List<Mod> queued,
+                out bool shouldPlay,
+                out string composeError),
+            Is.True,
+            composeError);
+        Assert.That(queued, Has.Exactly(1).TypeOf<UtaModOriginalVocals>());
+        Assert.That(shouldPlay, Is.True);
+
+        Assert.That(
+            UtaPlaybackCoordinator.TryComposeAutomaticVoxPlayback(
+                afterVox,
+                originalVocalsEnabled: true,
+                new UtaQueuePlaybackOptions(1, 0, Array.Empty<string>()),
+                out List<Mod> kept,
+                out bool keptPlay,
+                out string keepError),
+            Is.True,
+            keepError);
+        Assert.That(kept, Has.Exactly(1).TypeOf<UtaModOriginalVocals>());
+        Assert.That(keptPlay, Is.True);
+
+        Assert.That(UtaAudioMath.OriginalVocalsShouldPlay(fromMods: false, preferred: true), Is.True);
+        Assert.That(UtaAudioMath.OriginalVocalsShouldPlay(fromMods: false, preferred: false), Is.False);
+        Assert.That(UtaAudioMath.NeedsRoutedVocals(false, true), Is.True);
     }
 }

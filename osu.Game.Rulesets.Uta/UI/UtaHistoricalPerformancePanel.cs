@@ -15,6 +15,7 @@ using osu.Game.Graphics;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Rulesets.Uta.Performance;
+using osu.Game.Rulesets.Uta.Scoring;
 using osu.Game.Scoring;
 using osuTK;
 using osuTK.Graphics;
@@ -168,7 +169,7 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
     private UtaPerformanceArchiveEntry? findFallback(UtaPerformanceLibrary library)
     {
         IEnumerable<UtaPerformanceArchiveEntry> candidates = library.Entries.Where(entry =>
-            entry.Manifest.Scoring.TotalScore == score.TotalScore
+            UtaScoreProcessor.ToDisplayScore(entry.Manifest.Scoring.TotalScore) == score.TotalScore
             && string.Equals(entry.Manifest.Song.BeatmapHash, score.BeatmapHash, StringComparison.Ordinal));
 
         if (score.Date == default)
@@ -196,11 +197,12 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
         statusText.Text = manifest.Eligibility.Comparable
             ? $"Saved {manifest.CreatedAtUtc.LocalDateTime:g} · comparable"
             : $"Saved {manifest.CreatedAtUtc.LocalDateTime:g} · practice/non-comparable";
-        string baseScore = manifest.Scoring.TotalScoreWithoutMods > 0
-                           && manifest.Scoring.TotalScoreWithoutMods != manifest.Scoring.TotalScore
-            ? $" (base {manifest.Scoring.TotalScoreWithoutMods:N0})"
+        long displayScore = UtaScoreProcessor.ToDisplayScore(manifest.Scoring.TotalScore);
+        long displayBaseScore = UtaScoreProcessor.ToDisplayScore(manifest.Scoring.TotalScoreWithoutMods);
+        string baseScore = displayBaseScore > 0 && displayBaseScore != displayScore
+            ? $" (base {displayBaseScore:N0})"
             : string.Empty;
-        summaryText.Text = $"Score {manifest.Scoring.TotalScore:N0}{baseScore}   综合 {manifest.Scoring.CompositeRatingPermille / 10.0:0.0}%   音程 {manifest.Scoring.PitchAccuracyPermille / 10.0:0.0}%   稳定 {manifest.Scoring.StabilityPermille / 10.0:0.0}%";
+        summaryText.Text = $"Score {displayScore:N0}{baseScore}   综合 {manifest.Scoring.CompositeRatingPermille / 10.0:0.0}%   音程 {manifest.Scoring.PitchAccuracyPermille / 10.0:0.0}%   稳定 {manifest.Scoring.StabilityPermille / 10.0:0.0}%";
         detailText.Text = $"Perfect {manifest.Judgements.Perfect} · Great {manifest.Judgements.Great} · Good {manifest.Judgements.Good} · Bad {manifest.Judgements.Bad} · Miss {manifest.Judgements.Miss} · High {manifest.Judgements.High} · Low {manifest.Judgements.Low} · Unstable {manifest.Judgements.Unstable}";
         if (manifest.Expression is { } expression && expression.Available)
             detailText.Text += $"\nRMS dynamic range {expression.DynamicRangeDecibelsTenths / 10.0:0.0} dB";

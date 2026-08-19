@@ -3,6 +3,59 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.2 - 2026-08-20
+
+Audio lifecycle and gameplay HUD hardening. Song switching now has an
+end-to-end tested BGM/VOX ownership path, while the pitch, lyrics and feedback
+layers share a responsive, skinnable layout.
+
+### Added
+
+- Added a responsive gameplay HUD coordinator with wide, standard, compact and
+  narrow layouts, safe-area controls, independent pitch/lyrics visibility and
+  practice-panel avoidance.
+- Added specialised skin lookups and assets for pitch notes, curves, lyrics,
+  feedback and particle layers, including a transparent-fallback test skin.
+- Added configurable pitch HUD size/layout, lyrics progress presentation and
+  persisted original-vocals preference without renumbering existing settings.
+- Added real-game visual regression scenes for two-play song switching,
+  original vocals and track cleanup.
+
+### Changed
+
+- Reworked pitch-guide geometry, lyrics timing/presentation, scoring feedback
+  and native score publication around the shared gameplay HUD layer.
+- VOX selected in song select is now observed beyond the first drawable
+  ruleset lifetime. A positive VOX selection remains authoritative if the next
+  PlayerLoader is constructed with an empty mod list.
+- Routed BGM and original vocals now share explicit device/mixer ownership;
+  transposition keeps pitch and tempo factors neutral as a pair.
+- Gameplay services needed by song select and the remote remain available
+  after the gameplay drawable is disposed.
+
+### Fixed
+
+- Fixed BGM from the previous chart continuing after exit or song switch, and
+  fixed the replacement chart losing original vocals.
+- Fixed SongSelect preview resuming with the stale gameplay track or throwing
+  `Cannot access Track without first calling LoadTrack`.
+- Fixed BASS device state leaking across routed stream creation and ensured
+  every old routed/native track is halted during teardown.
+- Fixed AKG microphone capture accidentally being reused as the BGM/VOX output;
+  playback is repaired to the configured monitor output while AKG remains the
+  capture device.
+- Fixed VOX routing, effective volume, seek/drift correction and live playback
+  position diagnostics across routed and native paths.
+
+### Validation
+
+- 132 automated tests pass.
+- The 51-step real-game song-switch acceptance ran past both skippable intros,
+  verified a live advancing VOX graph, stopped both old tracks and completed
+  three consecutive times on DP-7 with AKG capture.
+- Acceptance logs: `1787161797.runtime.log`, `1787161827.runtime.log` and
+  `1787161857.runtime.log`.
+
 ## 0.8.1 - 2026-08-18
 
 Mobile remote and queue follow-up. The phone client is now a compact

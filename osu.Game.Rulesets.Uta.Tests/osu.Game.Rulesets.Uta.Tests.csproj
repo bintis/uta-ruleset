@@ -5,7 +5,16 @@
     <IsTestProject>true</IsTestProject>
     <IsPackable>false</IsPackable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <OutputType>WinExe</OutputType>
+    <StartupObject>osu.Game.Rulesets.Uta.Tests.VisualTestRunner</StartupObject>
+    <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(OsuNixDir)' != ''">
+    <Reference Include="$(OsuNixDir)/*.dll">
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
@@ -23,5 +32,19 @@
     <Compile Include="UtaHotPathRegressionTests.cs" />
     <Compile Include="UtaReleaseRegressionTests.cs" />
     <Compile Include="UtaQueueReservationTests.cs" />
+    <Compile Include="VisualTestRunner.cs" />
+    <Compile Include="UtaPlayerTestScene.cs" />
+    <Compile Include="TestSceneUtaPlayer.cs" />
+    <Compile Include="TestSceneUtaOriginalVocals.cs" />
+    <Compile Include="TestSceneUtaPresentBeatmap.cs" />
   </ItemGroup>
+
+  <Target Name="CopyOsuNativeAudio" AfterTargets="Build" Condition="'$(OsuNixDir)' != ''">
+    <ItemGroup>
+      <OsuNativeAudio Include="$(OsuNixDir)/libbass.so" />
+      <OsuNativeAudio Include="$(OsuNixDir)/libbassmix.so" />
+      <OsuNativeAudio Include="$(OsuNixDir)/libbass_fx.so" />
+    </ItemGroup>
+    <Copy SourceFiles="@(OsuNativeAudio)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

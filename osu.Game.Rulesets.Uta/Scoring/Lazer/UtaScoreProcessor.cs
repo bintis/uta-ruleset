@@ -22,6 +22,8 @@ namespace osu.Game.Rulesets.Uta.Scoring;
 /// </summary>
 public sealed partial class UtaScoreProcessor : ScoreProcessor
 {
+    public const long DISPLAY_MAX_SCORE = 100;
+
     public readonly BindableDouble PitchAccuracy = new(1) { MinValue = 0, MaxValue = 1 };
     public readonly BindableDouble CompositeRating = new(1) { MinValue = 0, MaxValue = 1 };
     public readonly BindableDouble Coverage = new(1) { MinValue = 0, MaxValue = 1 };
@@ -49,6 +51,15 @@ public sealed partial class UtaScoreProcessor : ScoreProcessor
     {
         this.options = options ?? new UtaScoringOptions();
         this.options.Validate();
+    }
+
+    public static long ToDisplayScore(long analysisScore)
+    {
+        long bounded = Math.Clamp(analysisScore, 0, UtaScoringOptions.MAX_SCORE);
+        return Math.Clamp(
+            UtaScoringMath.RoundDivide(checked(bounded * DISPLAY_MAX_SCORE), UtaScoringOptions.MAX_SCORE),
+            0,
+            DISPLAY_MAX_SCORE);
     }
 
     public override void ApplyBeatmap(IBeatmap beatmap)
@@ -172,9 +183,9 @@ public sealed partial class UtaScoreProcessor : ScoreProcessor
             long remaining = Math.Max(0, denominator - currentMaximumUnits);
             MaximumAccuracy.Value = Math.Clamp((finalEarned + remaining) / (double)denominator, 0, 1);
             long roundedScore = UtaScoringMath.RoundDivide(
-                checked(finalEarned * UtaScoringOptions.MAX_SCORE),
+                checked(finalEarned * DISPLAY_MAX_SCORE),
                 denominator);
-            return Math.Clamp(roundedScore, 0, UtaScoringOptions.MAX_SCORE);
+            return Math.Clamp(roundedScore, 0, DISPLAY_MAX_SCORE);
         }
 
         MinimumAccuracy.Value = 0;

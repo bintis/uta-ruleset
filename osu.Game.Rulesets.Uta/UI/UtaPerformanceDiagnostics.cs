@@ -66,6 +66,7 @@ internal sealed partial class UtaPerformanceDiagnostics : Component
             $"latency-accompaniment={settings.AccompanimentLatency.Value:+0;-0;0}ms " +
             $"latency-lyrics={settings.LyricsLatency.Value:+0;-0;0}ms " +
             $"volume-bgm={settings.BackgroundMusicVolume.Value:P0} volume-vocals={settings.OriginalVocalsVolume.Value:P0} " +
+            $"volume-monitor={settings.MicrophoneMonitorVolume.Value:P0} " +
             $"mic='{device(settings.MicrophoneDevice.Value)}' mic-output='{device(settings.MicrophoneOutputDevice.Value)}' " +
             $"bgm-output='{device(settings.BackgroundMusicOutputDevice.Value)}' vocals-output='{device(settings.OriginalVocalsOutputDevice.Value)}'");
 
@@ -80,7 +81,7 @@ internal sealed partial class UtaPerformanceDiagnostics : Component
 
     private void reset()
     {
-        intervalStart = Stopwatch.GetTimestamp();
+        intervalStart = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 3 / 2;
         previousUpdate = 0;
         maximumUpdateGap = 0;
         updateCount = 0;

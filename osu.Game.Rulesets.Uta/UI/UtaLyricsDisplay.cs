@@ -8,53 +8,74 @@ using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Formats;
+using osu.Game.Rulesets.Uta.Skinning;
+using osu.Game.Rulesets.Uta.UI.HUD.Lyrics;
 using osuTK;
 using osuTK.Graphics;
 
 namespace osu.Game.Rulesets.Uta.UI;
 
-public partial class UtaLyricsDisplay : CompositeDrawable
+internal partial class UtaLyricsRenderer : CompositeDrawable
 {
     private readonly FillFlowContainer<Drawable> currentLine;
     private readonly FillFlowContainer<Drawable> nextLine;
     private readonly Container currentContainer;
     private readonly Container nextContainer;
     private readonly OsuSpriteText countdown;
+    private readonly Box panel;
+    private readonly Sprite panelTexture;
     private readonly Bindable<UtaLyricsPosition> lyricsPosition = new();
     private readonly Bindable<UtaLyricsSize> lyricsSize = new();
     private readonly Bindable<UtaLyricsTypeface> lyricsTypeface = new();
     private readonly BindableFloat lyricsLatency = new();
+    private readonly BindableBool showUpcoming = new();
+    private readonly BindableBool showReading = new();
+    private readonly Bindable<UtaLyricsProgressStyle> progressStyle = new();
 
-    private IReadOnlyList<UtaTranscriptSegment> segments = Array.Empty<UtaTranscriptSegment>();
+    private readonly UtaLyricsPresentationState presentation = new();
     private UtaWordToken[] currentTokens = Array.Empty<UtaWordToken>();
-    private double[] wordProgress = Array.Empty<double>();
-    private int segmentIndex = -1;
-    private int? displayedCountdown;
+    private UtaVisualStyle style = UtaVisualStyle.Prism();
+    private UtaVisualStyleProvider? styleProvider;
 
-    public UtaLyricsDisplay()
+    public UtaLyricsRenderer()
     {
         RelativeSizeAxes = Axes.X;
         AutoSizeAxes = Axes.Y;
-        Width = 0.80f;
-        Anchor = Anchor.BottomCentre;
-        Origin = Anchor.BottomCentre;
-        Y = -42;
+        Width = 1;
+        Anchor = Anchor.Centre;
+        Origin = Anchor.Centre;
 
-        InternalChild = new FillFlowContainer
+        InternalChildren = new Drawable[]
         {
-            RelativeSizeAxes = Axes.X,
-            AutoSizeAxes = Axes.Y,
-            Direction = FillDirection.Vertical,
-            Spacing = new Vector2(0, 8),
-            Children = new Drawable[]
+            panel = new Box
             {
-                currentContainer = createLineContainer(true, out currentLine),
-                nextContainer = createLineContainer(false, out nextLine),
+                RelativeSizeAxes = Axes.Both,
+                Colour = style.Lyrics.Panel,
+                Alpha = style.Lyrics.PanelOpacity,
+            },
+            panelTexture = new Sprite
+            {
+                RelativeSizeAxes = Axes.Both,
+                FillMode = FillMode.Stretch,
+                Alpha = 0,
+            },
+            new FillFlowContainer
+            {
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+                Direction = FillDirection.Vertical,
+                Spacing = new Vector2(0, 8),
+                Children = new Drawable[]
+                {
+                    currentContainer = createLineContainer(true, out currentLine),
+                    nextContainer = createLineContainer(false, out nextLine),
+                },
             },
         };
 
@@ -71,57 +92,55 @@ public partial class UtaLyricsDisplay : CompositeDrawable
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaRulesetConfigManager config, UtaAudioSettingsState audioSettings)
+    private void load(UtaRulesetConfigManager config, UtaAudioSettingsState audioSettings, UtaVisualStyleProvider styleProvider)
     {
+        this.styleProvider = styleProvider;
+        styleProvider.StyleChanged += applyStyle;
+        applyStyle(styleProvider.Style);
         lyricsPosition.BindTo(config.GetBindable<UtaLyricsPosition>(UtaRulesetSetting.LyricsPosition));
         lyricsSize.BindTo(config.GetBindable<UtaLyricsSize>(UtaRulesetSetting.LyricsSize));
         lyricsTypeface.BindTo(config.GetBindable<UtaLyricsTypeface>(UtaRulesetSetting.LyricsTypeface));
         lyricsLatency.BindTo(audioSettings.LyricsLatency);
+        showUpcoming.BindTo(config.GetBindable<bool>(UtaRulesetSetting.LyricsShowUpcoming));
+        showReading.BindTo(config.GetBindable<bool>(UtaRulesetSetting.LyricsShowReading));
+        progressStyle.BindTo(config.GetBindable<UtaLyricsProgressStyle>(UtaRulesetSetting.LyricsProgressStyle));
 
         lyricsPosition.BindValueChanged(_ => updateLayout(), true);
         lyricsSize.BindValueChanged(_ => updateTypography(), true);
         lyricsTypeface.BindValueChanged(_ => updateTypography(), true);
+        showUpcoming.BindValueChanged(_ => rebuild(presentation.SegmentIndex), true);
+        showReading.BindValueChanged(_ => rebuild(presentation.SegmentIndex), true);
+        progressStyle.BindValueChanged(_ => rebuild(presentation.SegmentIndex), true);
+    }
+
+    private void applyStyle(UtaVisualStyle value)
+    {
+        style = value;
+        panel.Colour = value.Lyrics.Panel;
+        panel.Alpha = value.Lyrics.PanelOpacity;
+        panelTexture.Texture = value.Assets.LyricsPanel;
+        panelTexture.Alpha = value.Assets.LyricsPanel == null ? 0 : value.Lyrics.PanelOpacity;
+        countdown.Colour = value.Lyrics.Countdown;
+        updateTypography();
     }
 
     private void updateLayout()
     {
-        Width = lyricsSize.Value switch
-        {
-            UtaLyricsSize.Compact => 0.72f,
-            UtaLyricsSize.Large => 0.90f,
-            _ => 0.80f,
-        };
-
-        switch (lyricsPosition.Value)
-        {
-            case UtaLyricsPosition.Top:
-                Anchor = Origin = Anchor.TopCentre;
-                Y = 210;
-                break;
-
-            case UtaLyricsPosition.Centre:
-                Anchor = Origin = Anchor.Centre;
-                Y = 36;
-                break;
-
-            default:
-                Anchor = Origin = Anchor.BottomCentre;
-                Y = -42;
-                break;
-        }
+        Width = 1;
+        Anchor = Origin = Anchor.Centre;
+        Y = 0;
     }
 
     private void updateTypography()
     {
         updateLayout();
-        countdown.Font = createFont(18 * sizeMultiplier, FontWeight.Bold);
-        rebuild(segmentIndex);
+        countdown.Font = createFont(style.Lyrics.UpcomingSize * sizeMultiplier, FontWeight.Bold);
+        rebuild(presentation.SegmentIndex);
     }
 
     public void SetSegments(IReadOnlyList<UtaTranscriptSegment> value)
     {
-        segments = UtaLyricsTimeline.Normalize(value);
-        segmentIndex = -1;
+        presentation.SetSegments(value);
         rebuild(-1);
     }
 
@@ -129,28 +148,25 @@ public partial class UtaLyricsDisplay : CompositeDrawable
     {
         base.Update();
 
-        if (segments.Count == 0)
+        if (presentation.Segments.Count == 0)
         {
             currentContainer.Hide();
             nextContainer.Hide();
             return;
         }
 
-        double seconds = (Time.Current - lyricsLatency.Value) / 1000;
-        var frame = UtaLyricsTimeline.Evaluate(segments, seconds, Math.Max(0, segmentIndex), wordProgress);
-        if (frame.SegmentIndex != segmentIndex)
+        UtaLyricsPresentationUpdate update = presentation.Update(Time.Current, lyricsLatency.Value);
+        UtaLyricsFrame frame = update.Frame;
+        if (update.StructuralChange)
             rebuild(frame.SegmentIndex);
 
         currentContainer.Alpha = frame.Visible ? 1 : 0;
-        nextContainer.Alpha = frame.Visible && frame.SegmentIndex + 1 < segments.Count ? 1 : 0;
+        nextContainer.Alpha = showUpcoming.Value && frame.Visible && frame.SegmentIndex + 1 < presentation.Segments.Count ? 1 : 0;
 
         // Avoid formatting a new countdown string every rendered frame. The visible value
         // only changes at integer-second boundaries.
-        if (frame.Countdown != displayedCountdown)
-        {
-            displayedCountdown = frame.Countdown;
-            countdown.Text = displayedCountdown?.ToString() ?? string.Empty;
-        }
+        if (update.CountdownChanged)
+            countdown.Text = frame.Countdown?.ToString() ?? string.Empty;
 
         for (int i = 0; i < currentTokens.Length && i < frame.WordProgress.Count; i++)
             currentTokens[i].SetProgress(frame.WordProgress[i]);
@@ -158,32 +174,29 @@ public partial class UtaLyricsDisplay : CompositeDrawable
 
     private void rebuild(int index)
     {
-        segmentIndex = index;
         currentLine.Clear();
         nextLine.Clear();
         currentTokens = Array.Empty<UtaWordToken>();
-        wordProgress = Array.Empty<double>();
 
-        if (index < 0 || index >= segments.Count)
+        if (index < 0 || index >= presentation.Segments.Count)
             return;
 
-        var current = segments[index];
+        var current = presentation.Segments[index];
         currentTokens = createTokens(current, false, sizeMultiplier, typeface).ToArray();
-        wordProgress = new double[currentTokens.Length];
         currentLine.AddRange(currentTokens);
 
-        if (index + 1 < segments.Count)
-            nextLine.AddRange(createTokens(segments[index + 1], true, sizeMultiplier, typeface));
+        if (showUpcoming.Value && index + 1 < presentation.Segments.Count)
+            nextLine.AddRange(createTokens(presentation.Segments[index + 1], true, sizeMultiplier, typeface));
     }
 
-    private static IEnumerable<UtaWordToken> createTokens(UtaTranscriptSegment segment, bool next, float sizeMultiplier, Typeface typeface)
+    private IEnumerable<UtaWordToken> createTokens(UtaTranscriptSegment segment, bool next, float sizeMultiplier, Typeface typeface)
     {
-        bool showReading = segment.Words.Any(word => !string.IsNullOrWhiteSpace(word.Reading));
+        bool hasReading = showReading.Value && segment.Words.Any(word => !string.IsNullOrWhiteSpace(word.Reading));
         bool addSpacing = segment.Text.Contains(' ');
 
         for (int i = 0; i < segment.Words.Count; i++)
         {
-            yield return new UtaWordToken(segment.Words[i], showReading, next, sizeMultiplier, typeface)
+            yield return new UtaWordToken(segment.Words[i], hasReading, next, sizeMultiplier, typeface, style, progressStyle.Value)
             {
                 Margin = new MarginPadding { Right = addSpacing && i < segment.Words.Count - 1 ? next ? 6 : 10 : 0 },
             };
@@ -214,14 +227,21 @@ public partial class UtaLyricsDisplay : CompositeDrawable
         private readonly bool estimated;
         private readonly OsuSpriteText readingText;
         private readonly OsuSpriteText wordText;
+        private readonly Box progress;
+        private readonly Sprite progressTexture;
+        private readonly UtaLyricsStyle style;
+        private readonly UtaLyricsProgressStyle progressStyle;
 
-        public UtaWordToken(UtaTranscriptWord word, bool showReading, bool next, float sizeMultiplier, Typeface typeface)
+        public UtaWordToken(UtaTranscriptWord word, bool showReading, bool next, float sizeMultiplier, Typeface typeface,
+                            UtaVisualStyle visualStyle, UtaLyricsProgressStyle progressStyle)
         {
             this.next = next;
             estimated = word.Estimated;
+            style = visualStyle.Lyrics;
+            this.progressStyle = progressStyle;
             AutoSizeAxes = Axes.Both;
 
-            Color4 colour = word.Estimated ? new Color4(220, 207, 238, 255) : new Color4(229, 231, 242, 255);
+            Color4 colour = word.Estimated ? style.Estimated : next ? style.Upcoming : style.Current;
             var content = new FillFlowContainer
             {
                 AutoSizeAxes = Axes.Both,
@@ -231,8 +251,8 @@ public partial class UtaLyricsDisplay : CompositeDrawable
                     readingText = new OsuSpriteText
                     {
                         Text = showReading ? word.Reading ?? " " : string.Empty,
-                        Font = OsuFont.GetFont(typeface, (next ? 9.5f : 11.5f) * sizeMultiplier, FontWeight.SemiBold),
-                        Colour = colour,
+                        Font = OsuFont.GetFont(typeface, style.ReadingSize * sizeMultiplier, FontWeight.SemiBold),
+                        Colour = next ? style.Upcoming : style.Reading,
                         Alpha = showReading ? 0.75f : 0,
                         Shadow = true,
                         ShadowColour = Color4.Black,
@@ -240,7 +260,7 @@ public partial class UtaLyricsDisplay : CompositeDrawable
                     wordText = new OsuSpriteText
                     {
                         Text = word.Word,
-                        Font = OsuFont.GetFont(typeface, (next ? 18 : 31) * sizeMultiplier, next ? FontWeight.Medium : FontWeight.SemiBold),
+                        Font = OsuFont.GetFont(typeface, (next ? style.UpcomingSize : style.CurrentSize) * sizeMultiplier, next ? FontWeight.Medium : FontWeight.SemiBold),
                         Colour = colour,
                         Shadow = true,
                         ShadowColour = Color4.Black,
@@ -248,7 +268,29 @@ public partial class UtaLyricsDisplay : CompositeDrawable
                 },
             };
 
-            InternalChild = content;
+            InternalChildren = new Drawable[]
+            {
+                content,
+                progress = new Box
+                {
+                    Anchor = Anchor.BottomLeft,
+                    Origin = Anchor.BottomLeft,
+                    RelativeSizeAxes = Axes.X,
+                    Height = style.ProgressThickness,
+                    Colour = style.Sung,
+                    Alpha = 0,
+                },
+                progressTexture = new Sprite
+                {
+                    Anchor = Anchor.BottomLeft,
+                    Origin = Anchor.BottomLeft,
+                    RelativeSizeAxes = Axes.X,
+                    Height = style.ProgressThickness,
+                    Texture = visualStyle.Assets.LyricsProgress ?? visualStyle.Assets.LyricsUnderline,
+                    FillMode = FillMode.Stretch,
+                    Alpha = 0,
+                },
+            };
             Alpha = next ? word.Estimated ? 0.32f : 0.56f : word.Estimated ? 0.76f : 0.88f;
         }
 
@@ -259,9 +301,36 @@ public partial class UtaLyricsDisplay : CompositeDrawable
 
             float amount = (float)Math.Clamp(progress, 0, 1);
             Alpha = 0.88f + amount * 0.12f;
+            switch (progressStyle)
+            {
+                case UtaLyricsProgressStyle.Fill:
+                    this.progress.RelativeSizeAxes = Axes.Both;
+                    this.progress.Width = amount;
+                    this.progress.Height = 1;
+                    this.progress.Alpha = amount * 0.18f;
+                    progressTexture.Alpha = 0;
+                    break;
 
-            Color4 unsung = estimated ? new Color4(220, 207, 238, 255) : new Color4(229, 231, 242, 255);
-            Color4 sung = estimated ? new Color4(201, 188, 255, 255) : new Color4(150, 224, 255, 255);
+                case UtaLyricsProgressStyle.Marker:
+                    this.progress.RelativeSizeAxes = Axes.None;
+                    this.progress.RelativePositionAxes = Axes.X;
+                    this.progress.X = amount;
+                    this.progress.Width = 3;
+                    this.progress.Height = style.CurrentSize;
+                    this.progress.Alpha = amount;
+                    progressTexture.Alpha = 0;
+                    break;
+
+                default:
+                    this.progress.Width = amount;
+                    this.progress.Alpha = progressTexture.Texture == null ? amount : 0;
+                    progressTexture.Width = amount;
+                    progressTexture.Alpha = progressTexture.Texture == null ? 0 : amount;
+                    break;
+            }
+
+            Color4 unsung = estimated ? style.Estimated : style.Current;
+            Color4 sung = estimated ? style.Estimated : style.Sung;
             Color4 colour = blend(unsung, sung, amount);
             readingText.Colour = colour;
             wordText.Colour = colour;
@@ -296,6 +365,11 @@ public partial class UtaLyricsDisplay : CompositeDrawable
         lyricsSize.UnbindAll();
         lyricsTypeface.UnbindAll();
         lyricsLatency.UnbindAll();
+        showUpcoming.UnbindAll();
+        showReading.UnbindAll();
+        progressStyle.UnbindAll();
+        if (styleProvider != null)
+            styleProvider.StyleChanged -= applyStyle;
         base.Dispose(isDisposing);
     }
 }

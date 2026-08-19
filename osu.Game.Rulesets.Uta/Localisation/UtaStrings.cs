@@ -53,6 +53,8 @@ internal static class UtaStrings
         ["hud.composite"] = ("Composite", "综合", "総合"),
         ["hud.pitch"] = ("Pitch", "音程", "音程"),
         ["hud.coverage"] = ("Coverage", "覆盖", "カバー率"),
+        ["hud.stability"] = ("Stability", "稳定", "安定度"),
+        ["hud.phrase"] = ("Phrase", "段落", "フレーズ"),
         ["hud.combo"] = ("Combo", "连击", "コンボ"),
         ["hud.accurate"] = ("Accurate", "精准", "正確"),
         ["hud.current_note"] = ("Current note", "当前音符", "現在の音符"),

@@ -2,6 +2,9 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
@@ -9,9 +12,15 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Input.Bindings;
 using osu.Framework.Input.Events;
+using osu.Framework.Screens;
+using osu.Framework.Testing;
+using osu.Game;
 using osu.Game.Beatmaps;
+using osu.Game.Screens.Play;
+using osu.Game.Screens.Select;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Sprites;
+using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Gameplay;
 using osu.Game.Rulesets.Uta.Global.Overlays;
@@ -75,16 +84,87 @@ public sealed partial class UtaGlobalExtension : CompositeDrawable, IKeyBindingH
         return dependencies;
     }
 
-    [BackgroundDependencyLoader]
-    private void load(Bindable<WorkingBeatmap> beatmap)
+    [BackgroundDependencyLoader(true)]
+    private void load(osu.Game.Overlays.MusicController? music)
     {
-        runtime.GameBeatmap = beatmap;
+        // Injecting Bindable<WorkingBeatmap> here yields PlayerLoader's lease,
+        // not the copy SongSelect.OnResuming still reads.
+        runtime.AttachMusicController(music);
+        runtime.AttachSelectedMods(findSelectedMods());
+        runtime.AttachSongSelectBeatmap(findSongSelectBeatmap(), findGameWideBeatmap());
+        hookScreenExit();
+    }
+
+    private Bindable<IReadOnlyList<Mod>>? findSelectedMods()
+    {
+        var osuGame = this.FindClosestParent<OsuGame>();
+        if (osuGame == null)
+            return null;
+
+        FieldInfo? field = typeof(OsuGameBase).GetField("SelectedMods", BindingFlags.Instance | BindingFlags.NonPublic);
+        return field?.GetValue(osuGame) as Bindable<IReadOnlyList<Mod>>;
+    }
+
+    private Bindable<WorkingBeatmap>? findGameWideBeatmap()
+    {
+        var osuGame = this.FindClosestParent<OsuGame>();
+        if (osuGame == null)
+            return null;
+
+        PropertyInfo? property = typeof(OsuGameBase).GetProperty("Beatmap", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        return property?.GetValue(osuGame) as Bindable<WorkingBeatmap>;
+    }
+
+    private Bindable<WorkingBeatmap>? findSongSelectBeatmap()
+    {
+        IScreen? cursor = this.FindClosestParent<Player>();
+        while (cursor != null)
+        {
+            if (cursor is SongSelect songSelect)
+                return songSelect.Beatmap;
+
+            cursor = cursor.GetParentScreen();
+        }
+
+        var osuGame = this.FindClosestParent<OsuGame>();
+        if (osuGame == null)
+            return null;
+
+        SongSelect? fromTree = osuGame.ChildrenOfType<SongSelect>().LastOrDefault();
+        if (fromTree != null)
+            return fromTree.Beatmap;
+
+        cursor = osuGame.ScreenStack.CurrentScreen;
+        while (cursor != null)
+        {
+            if (cursor is SongSelect songSelect)
+                return songSelect.Beatmap;
+
+            cursor = cursor.GetParentScreen();
+        }
+
+        PropertyInfo? property = typeof(OsuGameBase).GetProperty("Beatmap", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        return property?.GetValue(osuGame) as Bindable<WorkingBeatmap>;
     }
 
     protected override void LoadComplete()
     {
         base.LoadComplete();
+        // F7 lets PlayerLoader / ScreenStack UnbindAll return the lease.
+        // Returning it from Uta unbinds SongSelect from game-wide (§23 / §27).
+        runtime.AttachSelectedMods(findSelectedMods());
+        runtime.AttachSongSelectBeatmap(findSongSelectBeatmap(), findGameWideBeatmap());
+        hookScreenExit();
         gameplayServicesLease = runtime.AttachGameplayServices(library, Playback);
+    }
+
+    private void hookScreenExit()
+    {
+        var osuGame = this.FindClosestParent<OsuGame>();
+        if (osuGame == null)
+            return;
+
+        runtime.HookScreenExit(osuGame.ScreenStack);
     }
 
     public bool OnPressed(KeyBindingPressEvent<UtaAction> e)

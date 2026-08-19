@@ -3,17 +3,27 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Net.Codecrete.QrCodeGenerator;
+using osu.Framework.Bindables;
+using osu.Framework.Graphics.Primitives;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
+using osu.Game.Rulesets.Uta.Gameplay;
+using osu.Game.Rulesets.Uta.Library;
 using osu.Game.Rulesets.Uta.Playback;
+using osu.Game.Rulesets.Uta.Queue;
 using osu.Game.Rulesets.Uta.Recording;
 using osu.Game.Rulesets.Uta.Remote;
+using osu.Game.Rulesets.Uta.Skinning;
+using osu.Game.Rulesets.Uta.Skinning.Lookups;
+using osu.Game.Rulesets.Uta.UI.HUD;
+using osu.Game.Rulesets.Uta.UI.HUD.Pitch;
 
 namespace osu.Game.Rulesets.Uta.Tests;
 
@@ -21,12 +31,158 @@ namespace osu.Game.Rulesets.Uta.Tests;
 public sealed class UtaReleaseRegressionTests
 {
     [Test]
+    public void TestReturnedGameplayLeaseImmediatelyRestoresGlobalSelectionControl()
+    {
+        var global = new osu.Framework.Bindables.BindableInt(1);
+        LeasedBindable<int> gameplayLease = global.BeginLease(false);
+        Bindable<int> sessionCopy = gameplayLease.GetBoundCopy();
+
+        Assert.That(global.Disabled, Is.True);
+        Assert.That(gameplayLease.Return(), Is.True);
+
+        global.Value = 2;
+        Assert.Multiple(() =>
+        {
+            Assert.That(global.Disabled, Is.False);
+            Assert.That(global.Value, Is.EqualTo(2));
+            Assert.That(sessionCopy.Value, Is.EqualTo(1));
+            Assert.That(gameplayLease.Return(), Is.False, "Returning the host lease again must remain safe.");
+        });
+    }
+
+    [Test]
+    public void TestBoundCopyOfGameplayLeaseCannotBeReturned()
+    {
+        var global = new osu.Framework.Bindables.BindableInt(1);
+        LeasedBindable<int> gameplayLease = global.BeginLease(false);
+        var resolvedCopy = (LeasedBindable<int>)gameplayLease.GetBoundCopy();
+
+        Assert.That(
+            () => resolvedCopy.Return(),
+            Throws.InvalidOperationException.With.Message.Contains("original leased source"));
+        Assert.That(global.Disabled, Is.True);
+
+        Assert.That(gameplayLease.Return(), Is.True);
+        global.Value = 2;
+        Assert.That(global.Disabled, Is.False);
+        Assert.That(global.Value, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task TestDisposedGameplayServicesStayAvailableForSongSelect()
+    {
+        using var queue = new UtaSongQueueService();
+        var sessions = new UtaGameplaySessionRegistry();
+        var router = new UtaRemoteCommandRouter(queue, sessions, new osu.Framework.Bindables.BindableBool());
+        var library = new UtaSongLibrary();
+        var playback = new UtaPlaybackCoordinator(queue, library, sessions);
+
+        IDisposable lease = router.AttachGameplayServices(library, playback);
+        lease.Dispose();
+
+        UtaRemoteCommandResult libraryResult = await router.ExecuteAsync(
+            new UtaRemoteCommand(1, UtaRemoteCommands.LibrarySearch, null, null, string.Empty),
+            CancellationToken.None);
+        UtaRemoteCommandResult playbackResult = await router.ExecuteAsync(
+            new UtaRemoteCommand(2, UtaRemoteCommands.SkipToNext, null, null, null),
+            CancellationToken.None);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(libraryResult.Accepted, Is.True);
+            Assert.That(playbackResult.Accepted, Is.False);
+            Assert.That(playbackResult.Error, Is.EqualTo("Playback is not ready."));
+        });
+
+        playback.Dispose();
+        library.Dispose();
+    }
+
+    [Test]
     public void TestHistoricalConfigKeysRemainStable()
     {
-        Assert.That((int)UtaRulesetSetting.BackgroundMusicVolume, Is.EqualTo(0));
-        Assert.That((int)UtaRulesetSetting.MicrophoneOutputDevice, Is.EqualTo(5));
-        Assert.That((int)UtaRulesetSetting.ScoreHudPosition, Is.EqualTo(22));
-        Assert.That((int)UtaRulesetSetting.RemoteControlPort, Is.GreaterThan(22));
+        int[] values = Enum.GetValues<UtaRulesetSetting>().Select(setting => (int)setting).ToArray();
+        Assert.That(values, Is.EqualTo(Enumerable.Range(0, 41)), "Persisted 0.8 keys 0-31 must remain stable and HUD keys must only append.");
+        Assert.That((int)UtaRulesetSetting.PitchHudSize, Is.EqualTo(32));
+        Assert.That((int)UtaRulesetSetting.HudSafeAreaPadding, Is.EqualTo(39));
+        Assert.That((int)UtaRulesetSetting.OriginalVocalsEnabled, Is.EqualTo(40));
+    }
+
+    [TestCase(1280, UtaHudDensity.Wide, 180, 56)]
+    [TestCase(1279, UtaHudDensity.Standard, 168, 32)]
+    [TestCase(840, UtaHudDensity.Standard, 168, 32)]
+    [TestCase(839, UtaHudDensity.Compact, 156, 20)]
+    [TestCase(560, UtaHudDensity.Compact, 156, 20)]
+    [TestCase(559, UtaHudDensity.Narrow, 144, 12)]
+    public void TestHudLayoutDensityBoundaries(float width, UtaHudDensity density, float pitchHeight, float padding)
+    {
+        UtaHudLayoutSnapshot layout = UtaHudLayoutCoordinator.Calculate(width, 720);
+        Assert.Multiple(() =>
+        {
+            Assert.That(layout.Density, Is.EqualTo(density));
+            Assert.That(layout.PitchBounds.Height, Is.EqualTo(pitchHeight));
+            Assert.That(layout.SafeAreaPadding, Is.EqualTo(padding));
+            Assert.That(layout.PitchBounds.Left, Is.EqualTo(padding));
+            Assert.That(layout.PitchBounds.Right, Is.EqualTo(width - padding));
+        });
+    }
+
+    [Test]
+    public void TestHudVisibilityAndLyricsAvoidanceRemainIndependent()
+    {
+        UtaHudLayoutSnapshot hidePitch = UtaHudLayoutCoordinator.Calculate(840, 720, UtaLyricsPosition.Top, showPitch: false);
+        UtaHudLayoutSnapshot hideLyrics = UtaHudLayoutCoordinator.Calculate(840, 720, showLyrics: false);
+        UtaHudLayoutSnapshot practice = UtaHudLayoutCoordinator.Calculate(840, 720, showPractice: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(hidePitch.PitchBounds, Is.EqualTo(RectangleF.Empty));
+            Assert.That(hidePitch.LyricsBounds.Top, Is.GreaterThan(hidePitch.SafeAreaPadding));
+            Assert.That(hideLyrics.LyricsBounds, Is.EqualTo(RectangleF.Empty));
+            Assert.That(hideLyrics.PitchBounds, Is.Not.EqualTo(RectangleF.Empty));
+            Assert.That(practice.LyricsBounds.Bottom, Is.LessThanOrEqualTo(practice.PracticeBounds.Top - 12));
+        });
+    }
+
+    [Test]
+    public void TestPitchTimelineGeometryPreservesGameplayContract()
+    {
+        UtaPitchTargetGeometry target = UtaPitchTimelineGeometry.Target(10000, 11000, 60, 10000, 60, 400);
+        Assert.Multiple(() =>
+        {
+            Assert.That(UtaPitchTimelineGeometry.LOOK_BEHIND, Is.EqualTo(1750));
+            Assert.That(UtaPitchTimelineGeometry.LOOK_AHEAD, Is.EqualTo(5250));
+            Assert.That(UtaPitchTimelineGeometry.VIEW_SPAN, Is.EqualTo(19));
+            Assert.That(UtaPitchTimelineGeometry.PLAYHEAD_POSITION, Is.EqualTo(0.25f));
+            Assert.That(target.X, Is.EqualTo(0.25f).Within(0.0001));
+            Assert.That(target.Width, Is.EqualTo(1f / 7).Within(0.0001));
+            Assert.That(target.Y, Is.EqualTo(0.5f).Within(0.0001));
+            Assert.That(target.Visible, Is.True);
+        });
+    }
+
+    [Test]
+    public void TestSkinContractsAppendAndPrismKeepsCriticalCues()
+    {
+        UtaVisualStyle standard = UtaVisualStyle.Prism();
+        UtaVisualStyle reduced = UtaVisualStyle.Prism(UtaHudDensity.Narrow, reducedMotion: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(Enum.GetValues<UtaSkinComponents>().Select(value => (int)value), Is.EqualTo(Enumerable.Range(0, 8)));
+            Assert.That((int)UtaSkinConfiguration.AnimationIntensity, Is.EqualTo(9));
+            Assert.That((int)UtaSkinConfiguration.SurfaceColour, Is.EqualTo(10));
+            Assert.That(UtaSkinAssetNames.Marker, Is.EqualTo("uta-skin-marker"));
+            Assert.That(UtaSkinAssetNames.TargetNote(UtaTargetNoteKind.Golden), Is.EqualTo("uta-target-note-golden"));
+            Assert.That(standard.Pitch.Target.A, Is.GreaterThan(0));
+            Assert.That(UtaAccessiblePalette.Target.B, Is.GreaterThan(UtaAccessiblePalette.Target.R), "Default target notes stay cool ice-blue, not warning yellow.");
+            Assert.That(standard.Pitch.Playhead.A, Is.GreaterThan(0));
+            Assert.That(standard.Lyrics.Current.A, Is.GreaterThan(0));
+            Assert.That(reduced.Lyrics.CurrentSize, Is.GreaterThanOrEqualTo(UtaHudLayoutCoordinator.MINIMUM_LYRICS_FONT_SIZE));
+            Assert.That(reduced.Motion.MaxSingingParticles, Is.Zero);
+            Assert.That(reduced.Motion.MaxScoringParticles, Is.Zero);
+            Assert.That(reduced.Motion.LyricsTokenPulseMilliseconds, Is.Zero);
+        });
     }
 
     [Test]

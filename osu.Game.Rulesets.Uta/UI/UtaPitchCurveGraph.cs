@@ -19,6 +19,8 @@ using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Formats;
 using osu.Game.Rulesets.Uta.Pitch;
+using osu.Game.Rulesets.Uta.Skinning;
+using osu.Game.Rulesets.Uta.UI.HUD.Pitch;
 using osu.Game.Screens.Play;
 using osuTK;
 using osuTK.Graphics;
@@ -83,6 +85,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     private double diagnosticMaximumPlaybackStep;
     private string diagnosticLastClearReason = "none";
     private GameplayClockContainer? gameplayClock;
+    private UtaPitchStyle style = UtaVisualStyle.Prism().Pitch;
 
     public UtaPitchCurveGraph()
     {
@@ -93,6 +96,13 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             referenceLayer = new Container { RelativeSizeAxes = Axes.Y },
             userLayer = new Container { RelativeSizeAxes = Axes.Y },
         };
+    }
+
+    public void ApplyStyle(UtaPitchStyle value)
+    {
+        style = value;
+        referenceGeometryTime = double.NaN;
+        userGeometryReady = false;
     }
 
     [BackgroundDependencyLoader]
@@ -115,7 +125,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             timelineEndTime = Math.Max(timelineEndTime, notes[^1].EndTime);
         if (referenceFrames.Length > 0)
             timelineEndTime = Math.Max(timelineEndTime, referenceFrames[^1].Time);
-        timelineEndTime += UtaPitchGuide.LOOK_AHEAD;
+        timelineEndTime += UtaPitchTimelineGeometry.LOOK_AHEAD;
         display.BindTo(config.GetBindable<UtaPitchCurveDisplay>(UtaRulesetSetting.PitchCurveDisplay));
         debugDiagnostics.BindTo(config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics));
         debugDiagnostics.BindValueChanged(_ => resetDiagnostics(), true);
@@ -291,7 +301,9 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 
     private void resetDiagnostics(long now)
     {
-        diagnosticIntervalStart = now;
+        // Keep the optional diagnostic reporters out of phase. When debug logging is
+        // enabled they otherwise all write on the same update every five seconds.
+        diagnosticIntervalStart = now + Stopwatch.Frequency * 3 / 4;
         diagnosticUpdateTicks = 0;
         diagnosticMaximumUpdateTicks = 0;
         diagnosticUpdates = 0;
@@ -308,8 +320,8 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         int used = 0;
         if (visible)
         {
-            double visibleStart = currentTime - UtaPitchGuide.LOOK_BEHIND;
-            double visibleEnd = currentTime + UtaPitchGuide.LOOK_AHEAD;
+            double visibleStart = currentTime - UtaPitchTimelineGeometry.LOOK_BEHIND;
+            double visibleEnd = currentTime + UtaPitchTimelineGeometry.LOOK_AHEAD;
 
             if (referenceFrames.Length > 0)
             {
@@ -328,7 +340,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                     }
 
                     if (setSegment(getSegment(referenceSegments, referenceLayer, used), previous.Time, frame.Time,
-                                   0, previous.Midi, frame.Midi, reference_colour, 0.30f))
+                                   0, previous.Midi, frame.Midi, style.Reference, 0.30f, style.ReferenceCurveWeight))
                         used++;
                     previous = frame;
                 }
@@ -344,7 +356,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                         continue;
 
                     if (setSegment(getSegment(referenceSegments, referenceLayer, used), note.StartTime, note.EndTime,
-                                   0, midi, midi, reference_colour, 0.30f))
+                                   0, midi, midi, style.Reference, 0.30f, style.ReferenceCurveWeight))
                         used++;
                 }
             }
@@ -372,7 +384,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                                + currentWeight * AgeAlpha(i, sampleCount)) / 2;
                 if (setSegment(getSegment(userSegments, userLayer, used),
                                previous.DisplayTime, current.DisplayTime,
-                               0, from, to, colour, alpha))
+                               0, from, to, colour, alpha, style.LiveCurveWeight))
                     used++;
             }
         }
@@ -381,7 +393,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     }
 
     private bool setSegment(CurveSegment segment, double fromTime, double toTime, double currentTime,
-                            float fromMidi, float toMidi, Color4 colour, float alpha)
+                            float fromMidi, float toMidi, Color4 colour, float alpha, float height)
     {
         float shiftedCentre = centreMidi.Value + keyShiftSemitones.Value;
         Vector2 start = new(TimeToX(fromTime, currentTime, DrawWidth), MidiToY(fromMidi, shiftedCentre, DrawHeight));
@@ -394,7 +406,8 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 
         Vector2 delta = end - start;
         segment.Position = start;
-        segment.Width = Math.Max(line_width, delta.Length);
+        segment.Width = Math.Max(height, delta.Length);
+        segment.Height = height;
         segment.Rotation = MathF.Atan2(delta.Y, delta.X) * 180 / MathF.PI;
         segment.Colour = colour;
         segment.Alpha = alpha;
@@ -402,7 +415,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     }
 
     internal static float MidiToY(float midi, float centre, float height)
-        => (centre + UtaPitchGuide.VIEW_SPAN / 2 - midi) / UtaPitchGuide.VIEW_SPAN * height;
+        => (centre + UtaPitchTimelineGeometry.VIEW_SPAN / 2 - midi) / UtaPitchTimelineGeometry.VIEW_SPAN * height;
 
     private void addSample(CurveSample sample)
     {
@@ -424,16 +437,16 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     private CurveSample sampleAt(int logicalIndex)
         => samples[(sampleStart + logicalIndex) % buffer_size];
 
-    private static (Color4 Colour, float Weight) userStyle(CurveSample sample)
+    private (Color4 Colour, float Weight) userStyle(CurveSample sample)
     {
         if (sample.ReferenceMidi == null)
-            return (user_base_colour, 0.55f);
+            return (style.LiveNeutral, 0.55f);
 
         float similarity = Math.Clamp(sample.Similarity, 0, 1);
         Color4 quality = similarity >= 0.7f
-            ? blend(similarity_ok, similarity_good, (similarity - 0.7f) / 0.3f)
-            : blend(similarity_bad, similarity_ok, similarity / 0.7f);
-        return (blend(user_base_colour, quality, similarity), 0.35f + similarity * 0.65f);
+            ? blend(style.LiveNear, style.LiveAccurate, (similarity - 0.7f) / 0.3f)
+            : blend(style.LiveOff, style.LiveNear, similarity / 0.7f);
+        return (blend(style.LiveNeutral, quality, similarity), 0.35f + similarity * 0.65f);
     }
 
     internal static float AgeAlpha(int index, int seriesLength)
@@ -443,12 +456,12 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     }
 
     internal static float TimeToX(double sampleTime, double currentTime, float width)
-        => (float)((sampleTime - currentTime + UtaPitchGuide.LOOK_BEHIND)
-                   / (UtaPitchGuide.LOOK_BEHIND + UtaPitchGuide.LOOK_AHEAD)) * width;
+        => (float)((sampleTime - currentTime + UtaPitchTimelineGeometry.LOOK_BEHIND)
+                   / (UtaPitchTimelineGeometry.LOOK_BEHIND + UtaPitchTimelineGeometry.LOOK_AHEAD)) * width;
 
     internal static float TimeOffsetToX(double geometryTime, double currentTime, float width)
         => (float)((geometryTime - currentTime)
-                   / (UtaPitchGuide.LOOK_BEHIND + UtaPitchGuide.LOOK_AHEAD)) * width;
+                   / (UtaPitchTimelineGeometry.LOOK_BEHIND + UtaPitchTimelineGeometry.LOOK_AHEAD)) * width;
 
     private static Color4 blend(Color4 from, Color4 to, float amount) => new(
         from.R + (to.R - from.R) * amount,

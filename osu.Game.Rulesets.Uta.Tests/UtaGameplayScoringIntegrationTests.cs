@@ -172,10 +172,10 @@ public class UtaGameplayScoringIntegrationTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(processor.TotalScore.Value, Is.EqualTo(1_000_000));
+            Assert.That(processor.TotalScore.Value, Is.EqualTo(UtaScoreProcessor.DISPLAY_MAX_SCORE));
             Assert.That(processor.PitchAccuracy.Value, Is.EqualTo(1).Within(0.0001));
             Assert.That(processor.AccurateStreak.Value, Is.EqualTo(1));
-            Assert.That(info.TotalScore, Is.EqualTo(1_000_000));
+            Assert.That(info.TotalScore, Is.EqualTo(UtaScoreProcessor.DISPLAY_MAX_SCORE));
             Assert.That(info.Accuracy, Is.EqualTo(1).Within(0.0001));
         });
     }
@@ -205,7 +205,8 @@ public class UtaGameplayScoringIntegrationTests
         processor.ApplyBeatmap(beatmap);
         processor.ApplyResult(result);
 
-        Assert.That(processor.TotalScore.Value, Is.EqualTo(performance.TotalScore));
+        long expectedDisplayScore = UtaScoreProcessor.ToDisplayScore(performance.TotalScore);
+        Assert.That(processor.TotalScore.Value, Is.EqualTo(expectedDisplayScore));
     }
 
     [Test]

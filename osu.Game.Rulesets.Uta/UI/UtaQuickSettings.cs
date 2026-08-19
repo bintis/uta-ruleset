@@ -115,6 +115,7 @@ public sealed partial class UtaQuickSettingsOverlay : OsuFocusedOverlayContainer
                 {
                     new UtaBackgroundSettings(),
                     new UtaPlaybackSettings(),
+                    new UtaDeviceDiagnostics(),
                     new UtaDisplaySettings(),
                     new AudioSettings(),
                 },
@@ -163,6 +164,10 @@ public sealed partial class UtaDisplaySettings : PlayerSettingsGroup
     private readonly LyricsTypefaceDropdown lyricsTypeface;
     private readonly PitchCurveDisplayDropdown pitchCurveDisplay;
     private readonly PlayerCheckbox showPitchGuideTrail;
+    private readonly SettingsDropdown<UtaPitchHudSize> pitchHudSize;
+    private readonly PlayerSliderBar<float> pitchHudOpacity;
+    private readonly PlayerCheckbox lyricsShowUpcoming;
+    private readonly PlayerCheckbox lyricsShowReading;
 
     public UtaDisplaySettings()
         : base("Uta display")
@@ -193,6 +198,25 @@ public sealed partial class UtaDisplaySettings : PlayerSettingsGroup
             {
                 LabelText = "Singing guide trail",
             },
+            pitchHudSize = new SettingsDropdown<UtaPitchHudSize>
+            {
+                LabelText = "Pitch HUD size",
+                Items = System.Enum.GetValues<UtaPitchHudSize>(),
+            },
+            pitchHudOpacity = new PlayerSliderBar<float>
+            {
+                LabelText = "Pitch HUD opacity",
+                DisplayAsPercentage = true,
+                KeyboardStep = 0.05f,
+            },
+            lyricsShowUpcoming = new PlayerCheckbox
+            {
+                LabelText = "Upcoming lyrics",
+            },
+            lyricsShowReading = new PlayerCheckbox
+            {
+                LabelText = "Lyric readings",
+            },
         };
     }
 
@@ -204,6 +228,10 @@ public sealed partial class UtaDisplaySettings : PlayerSettingsGroup
         lyricsTypeface.Current = config.GetBindable<UtaLyricsTypeface>(UtaRulesetSetting.LyricsTypeface);
         pitchCurveDisplay.Current = config.GetBindable<UtaPitchCurveDisplay>(UtaRulesetSetting.PitchCurveDisplay);
         showPitchGuideTrail.Current = config.GetBindable<bool>(UtaRulesetSetting.ShowPitchGuideTrail);
+        pitchHudSize.Current = config.GetBindable<UtaPitchHudSize>(UtaRulesetSetting.PitchHudSize);
+        pitchHudOpacity.Current = config.GetBindable<float>(UtaRulesetSetting.PitchHudOpacity);
+        lyricsShowUpcoming.Current = config.GetBindable<bool>(UtaRulesetSetting.LyricsShowUpcoming);
+        lyricsShowReading.Current = config.GetBindable<bool>(UtaRulesetSetting.LyricsShowReading);
     }
 
     private sealed partial class LyricsTypefaceDropdown : SettingsDropdown<UtaLyricsTypeface>
@@ -277,6 +305,7 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
     private readonly AudioOutputDropdown vocalsOutput;
     private readonly AudioOutputDropdown microphoneMonitorOutput;
     private readonly PlayerSliderBar<double> backgroundMusicVolume;
+    private readonly PlayerCheckbox originalVocalsEnabled;
     private readonly PlayerSliderBar<float> originalVocalsVolume;
     private readonly PlayerSliderBar<float> microphoneMonitorVolume;
     private readonly PlayerSliderBar<float> accompanimentLatency;
@@ -295,8 +324,13 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
             // explicitly set to) no matter what the player thought they'd configured.
             microphoneMonitorOutput = createOutput("Microphone monitor output"),
             backgroundMusicVolume = createSlider<double>("BGM", "Volume of the instrumental track."),
-            originalVocalsVolume = createSlider<float>("Original vocals", "Volume of the vocal track enabled by the VOX mod."),
-            microphoneMonitorVolume = createSlider<float>("Microphone monitor", "Hear your microphone through the active output. Headphones are recommended."),
+            originalVocalsEnabled = new PlayerCheckbox
+            {
+                LabelText = "Play original vocals",
+                TooltipText = "Keep the packaged vocal track on across song changes. The VOX mod also turns this on.",
+            },
+            originalVocalsVolume = createSlider<float>("Original vocals", "Level of the original vocal track. Does not turn the track on by itself."),
+            microphoneMonitorVolume = createSlider<float>("Ear monitor", "Hear your microphone through the active output. Same control as EAR MONITOR on the volume overlay."),
             accompanimentLatency = createSlider<float>("Accompaniment latency", "Positive values delay the routed accompaniment and vocals.", false, 1),
             lyricsLatency = createSlider<float>("Lyrics latency", "Positive values display lyrics later.", false, 1),
         };
@@ -311,6 +345,7 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
         microphoneMonitorOutput.Items = UtaDeviceItems.Build(audioSettings.MicrophoneOutputDevice.Value, availableOutputs);
 
         backgroundMusicVolume.Current = audioSettings.BackgroundMusicVolume;
+        originalVocalsEnabled.Current = audioSettings.OriginalVocalsEnabled;
         originalVocalsVolume.Current = audioSettings.OriginalVocalsVolume;
         microphoneMonitorVolume.Current = audioSettings.MicrophoneMonitorVolume;
         accompanimentLatency.Current = audioSettings.AccompanimentLatency;

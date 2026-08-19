@@ -90,7 +90,9 @@ internal sealed class UtaMicrophoneHandler : InputHandler
     private int diagnosticQueuedWindows;
     private int diagnosticProcessedWindows;
     private int diagnosticDroppedWindows;
+    private int diagnosticInputPeakMilli;
     private volatile bool debugDiagnosticsEnabled;
+    private string captureDeviceName = string.Empty;
 
     public UtaMicrophoneHandler(int deviceIndex, UtaAudioRouter audioRouter)
     {
@@ -126,11 +128,40 @@ internal sealed class UtaMicrophoneHandler : InputHandler
 
     private void start()
     {
-        if (!Bass.RecordInit(deviceIndex))
+        try
+        {
+            startRecording();
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Uta microphone unavailable: {ex.Message}", level: LogLevel.Error);
+            try
+            {
+                Bass.RecordFree();
+            }
+            catch (Exception)
+            {
+            }
+        }
+    }
+
+    private void startRecording()
+    {
+        if (!Bass.RecordInit(deviceIndex) && Bass.LastError != Errors.Already)
         {
             Logger.Log($"Uta microphone unavailable: {Bass.LastError}", level: LogLevel.Error);
             return;
         }
+
+        int actual = deviceIndex >= 0 ? deviceIndex : Bass.CurrentRecordingDevice;
+        if (actual < 0 || !Bass.RecordGetDeviceInfo(actual, out DeviceInfo captureInfo))
+        {
+            Logger.Log($"Uta microphone device info unavailable: {Bass.LastError} index={deviceIndex} actual={actual}", level: LogLevel.Error);
+            Bass.RecordFree();
+            return;
+        }
+
+        captureDeviceName = captureInfo.Name ?? string.Empty;
 
         RecordInfo info = Bass.RecordingInfo;
         frequency = info.Frequency > 0 ? info.Frequency : 48000;
@@ -164,8 +195,10 @@ internal sealed class UtaMicrophoneHandler : InputHandler
 
         if (debugDiagnosticsEnabled)
         {
-            Logger.Log($"Uta debug microphone: started deviceIndex={deviceIndex} frequency={frequency}Hz channels={channels} "
-                       + $"monitorStream={(monitorStream != 0 ? "attached" : "none")} captureSink={(PcmCaptureSink != null ? "attached" : "none")}");
+            ChannelInfo recordInfo = Bass.ChannelGetInfo(recordingStream);
+            Logger.Log($"Uta debug microphone: started deviceIndex={deviceIndex} name='{captureDeviceName}' frequency={frequency}Hz channels={channels} "
+                       + $"record-flags={recordInfo.Flags} monitorStream={(monitorStream != 0 ? "attached" : "none")} monitor-volume={monitorVolume:P0} "
+                       + $"captureSink={(PcmCaptureSink != null ? "attached" : "none")}");
         }
     }
 
@@ -181,6 +214,19 @@ internal sealed class UtaMicrophoneHandler : InputHandler
         {
             for (int i = 0; i < interleavedCount; i++)
                 interleaved[i] = Math.Clamp(interleaved[i] * gain, -1, 1);
+        }
+
+        if (debugDiagnosticsEnabled)
+        {
+            float peak = 0;
+            for (int i = 0; i < interleavedCount; i++)
+            {
+                float absolute = Math.Abs(interleaved[i]);
+                if (absolute > peak)
+                    peak = absolute;
+            }
+
+            updateMaximum(ref diagnosticInputPeakMilli, (int)(peak * 1000));
         }
 
         // Recording is tapped after input gain and before monitor routing. The sink is
@@ -622,27 +668,39 @@ internal sealed class UtaMicrophoneHandler : InputHandler
         int dropped = Interlocked.Exchange(ref diagnosticDroppedWindows, 0);
         long totalTicks = Interlocked.Exchange(ref diagnosticAnalysisTicks, 0);
         long maximumTicks = Interlocked.Exchange(ref diagnosticMaximumAnalysisTicks, 0);
+        int inputPeakMilli = Interlocked.Exchange(ref diagnosticInputPeakMilli, 0);
         double averageMs = processed == 0 ? 0 : totalTicks * 1000.0 / Stopwatch.Frequency / processed;
         double maximumMs = maximumTicks * 1000.0 / Stopwatch.Frequency;
         Logger.Log(
             $"Uta debug microphone: queued={queued} processed={processed} dropped={dropped} " +
             $"analysis-avg={averageMs:0.00}ms analysis-max={maximumMs:0.00}ms " +
+            $"input-peak={inputPeakMilli / 1000f:0.000} monitor-volume={monitorVolume:P0} " +
             $"frequency={frequency}Hz channels={channels} interval={pitchSamplingInterval:0}ms active={recordingActive}");
     }
 
     private void resetDiagnosticCounters()
     {
-        diagnosticIntervalStart = Stopwatch.GetTimestamp();
+        diagnosticIntervalStart = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 3;
         Interlocked.Exchange(ref diagnosticAnalysisTicks, 0);
         Interlocked.Exchange(ref diagnosticMaximumAnalysisTicks, 0);
         Interlocked.Exchange(ref diagnosticQueuedWindows, 0);
         Interlocked.Exchange(ref diagnosticProcessedWindows, 0);
         Interlocked.Exchange(ref diagnosticDroppedWindows, 0);
+        Interlocked.Exchange(ref diagnosticInputPeakMilli, 0);
     }
 
     private static void updateMaximum(ref long target, long value)
     {
         long current;
+        while (value > (current = Volatile.Read(ref target))
+               && Interlocked.CompareExchange(ref target, value, current) != current)
+        {
+        }
+    }
+
+    private static void updateMaximum(ref int target, int value)
+    {
+        int current;
         while (value > (current = Volatile.Read(ref target))
                && Interlocked.CompareExchange(ref target, value, current) != current)
         {
@@ -663,6 +721,7 @@ internal sealed class UtaMicrophoneHandler : InputHandler
 
         if (monitorStream != 0)
         {
+            audioRouter.UnprotectSource(monitorStream);
             BassMix.MixerRemoveChannel(monitorStream);
             Bass.StreamFree(monitorStream);
             monitorStream = 0;

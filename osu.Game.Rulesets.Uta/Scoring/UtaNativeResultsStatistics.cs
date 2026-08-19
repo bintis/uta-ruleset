@@ -69,11 +69,11 @@ internal sealed partial class UtaNativeResultsPanel : CompositeDrawable
                 new OsuSpriteText
                 {
                     Font = osu.Game.Graphics.OsuFont.GetFont(size: 24, weight: osu.Game.Graphics.FontWeight.Bold),
-                    Text = $"{score.TotalScore / (double)UtaScoringOptions.MAX_SCORE * 100:0.00} / 100",
+                    Text = $"{score.TotalScore:0} / {UtaScoreProcessor.DISPLAY_MAX_SCORE}",
                 },
                 new OsuSpriteText
                 {
-                    Text = $"Native result: {score.Rank} · {score.Accuracy:P2} · {score.TotalScore:N0} raw",
+                    Text = $"Native result: {score.Rank} · {score.Accuracy:P2}",
                 },
                 status = new OsuSpriteText { Text = "Loading Uta performance archive…" },
             },

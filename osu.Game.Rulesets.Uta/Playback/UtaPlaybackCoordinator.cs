@@ -16,6 +16,7 @@ using osu.Game.Overlays;
 using osu.Game.Overlays.Notifications;
 using osu.Game.Rulesets.Uta.Gameplay;
 using osu.Game.Rulesets.Uta.Library;
+using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Rulesets.Uta.Queue;
 using osu.Game.Rulesets.Uta.Remote;
@@ -48,11 +49,13 @@ public sealed partial class UtaPlaybackCoordinator : Component
     private static readonly TimeSpan waiting_timeout = TimeSpan.FromSeconds(4);
 
     private readonly UtaRulesetRuntime runtime = UtaRulesetRuntime.Instance;
-    private IPerformFromScreenRunner performer = null!;
     private BeatmapManager beatmapManager = null!;
     private osu.Framework.Platform.GameHost gameHost = null!;
     private Bindable<WorkingBeatmap> selectedBeatmap = null!;
     private IBindable<IReadOnlyList<Mod>> selectedMods = null!;
+
+    [Resolved(canBeNull: true)]
+    private IPerformFromScreenRunner? performer { get; set; }
 
     [Resolved(canBeNull: true)]
     private INotificationOverlay? notifications { get; set; }
@@ -78,13 +81,11 @@ public sealed partial class UtaPlaybackCoordinator : Component
 
     [BackgroundDependencyLoader]
     private void load(
-        IPerformFromScreenRunner performer,
         BeatmapManager beatmapManager,
         osu.Framework.Platform.GameHost gameHost,
         Bindable<WorkingBeatmap> selectedBeatmap,
         IBindable<IReadOnlyList<Mod>> selectedMods)
     {
-        this.performer = performer;
         this.beatmapManager = beatmapManager;
         this.gameHost = gameHost;
         this.selectedBeatmap = selectedBeatmap;
@@ -386,20 +387,73 @@ public sealed partial class UtaPlaybackCoordinator : Component
         if (selectedMods is not Bindable<IReadOnlyList<Mod>> writableMods)
             return QueueMutationResult.Reject("The global mod selection is unavailable.");
 
+        if (!TryApplyRemoteMod(selectedMods.Value, acronym, enabled, out List<Mod> next, out string error))
+            return QueueMutationResult.Reject(error);
+
+        if (string.Equals(acronym, "VOX", StringComparison.OrdinalIgnoreCase))
+            runtime.RememberOriginalVocals(enabled);
+
+        gameHost.UpdateThread.Scheduler.Add(() => writableMods.Value = next);
+        return new QueueMutationResult(true);
+    }
+
+    /// <summary>
+    /// Controller <c>setMod</c> / <c>originalVocals</c> composition. Tests and
+    /// queue start share this so VOX is in the next play without the overlay.
+    /// </summary>
+    internal static bool TryApplyRemoteMod(
+        IReadOnlyList<Mod> current,
+        string? acronym,
+        bool enabled,
+        out List<Mod> next,
+        out string error)
+    {
+        next = new List<Mod>();
         Func<Mod>? factory = remoteModFactories.FirstOrDefault(candidate => candidate().Acronym == acronym);
         if (factory == null)
-            return QueueMutationResult.Reject("Unknown or unsupported Uta mod.");
+        {
+            error = "Unknown or unsupported Uta mod.";
+            return false;
+        }
 
         Mod requested = factory();
-        List<Mod> next = selectedMods.Value.Where(mod => mod.GetType() != requested.GetType()).ToList();
+        next = current.Where(mod => mod.GetType() != requested.GetType()).ToList();
         if (enabled)
             next.Add(requested);
 
         if (!ModUtils.CheckValidForGameplay(next, out _))
-            return QueueMutationResult.Reject("That mod combination is not valid for gameplay.");
+        {
+            error = "That mod combination is not valid for gameplay.";
+            return false;
+        }
 
-        gameHost.UpdateThread.Scheduler.Add(() => writableMods.Value = next);
-        return new QueueMutationResult(true);
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Enable or disable VOX, then compose the mods a queued chart will start
+    /// with. Empty reservation mods keep the VOX we just set.
+    /// </summary>
+    internal static bool TryComposeAutomaticVoxPlayback(
+        IReadOnlyList<Mod> current,
+        bool originalVocalsEnabled,
+        UtaQueuePlaybackOptions reservation,
+        out List<Mod> next,
+        out bool shouldPlayOriginalVocals,
+        out string error)
+    {
+        next = new List<Mod>();
+        shouldPlayOriginalVocals = false;
+        if (!TryApplyRemoteMod(current, "VOX", originalVocalsEnabled, out List<Mod> withVox, out error))
+            return false;
+
+        if (!TryComposeReservationMods(reservation, withVox, out next, out error))
+            return false;
+
+        bool fromMods = next.Any(mod => mod is UtaModOriginalVocals);
+        shouldPlayOriginalVocals = UtaAudioMath.OriginalVocalsShouldPlay(fromMods, originalVocalsEnabled);
+        return true;
     }
 
     internal static bool TryComposeReservationMods(
@@ -557,21 +611,12 @@ public sealed partial class UtaPlaybackCoordinator : Component
             ensureTrackLoaded(targetBeatmap);
             runtime.RememberPlayedBeatmap(targetBeatmap);
 
-            // Always restart the existing Player, including when it is sitting under
-            // results. PerformFromScreen(SongSelect) resumes SongSelect, which calls
-            // PrepareTrackForPreview on a WorkingBeatmap with no track and freezes.
             if (startGameplay && sessions.Current?.Session is UtaGameplaySessionBridge liveSession)
             {
-                if (liveSession.TryRestartWith(targetBeatmap))
-                {
-                    settleReservation(song.BeatmapId);
-                    setTransition(UtaPlaybackTransitionState.WaitingForGameplay);
-                    osu.Framework.Logging.Logger.Log($"Uta queue restart accepted for '{song.Title}'");
-                    return;
-                }
+                if (!liveSession.LeaveForQueuedChart(targetBeatmap))
+                    throw new InvalidOperationException($"Could not leave the current chart for '{song.Title}'.");
 
-                throw new InvalidOperationException(
-                    $"Could not restart the player into '{song.Title}'.");
+                osu.Framework.Logging.Logger.Log($"Uta queue left gameplay for '{song.Title}'");
             }
 
             runtime.EnsureAllPreviewTracks();
@@ -585,6 +630,9 @@ public sealed partial class UtaPlaybackCoordinator : Component
 
             if (inGameplay && !currentTrackLoaded)
                 throw new InvalidOperationException($"Refusing to leave gameplay; the current beatmap has no track.");
+
+            if (performer == null)
+                throw new InvalidOperationException("Queue navigation needs a full osu game.");
 
             setTransition(startGameplay
                 ? UtaPlaybackTransitionState.WaitingForGameplay
