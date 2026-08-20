@@ -379,22 +379,12 @@ internal sealed partial class UtaAudioController : Component
         if (halted)
             return;
 
-        if (paused.NewValue)
-        {
-            // Clock-stop is the last update-thread moment before Player.Exit
-            // schedules async dispose. Free routed BGM here or MixerNonStop
-            // keeps the previous chart playing into the next one.
-            dropRoutedPlayback();
-            disposeVocals();
-            // PlayerLoader.OnSuspending: stop the track before removing volume
-            // adjustment to avoid a spike. SongSelect.ensurePlayingSelected will
-            // resume MusicController unless we Stop CurrentTrack first and set
-            // UserPauseRequested (AUDIO leftover doc §21).
-            if (mainTrack.IsRunning)
-                mainTrack.Stop();
-            UtaRulesetRuntime.Instance.SilenceMusicController();
-        }
-        else
+        // A gameplay pause is also used by the phone remote. It is not a screen
+        // exit: disposing routed streams and silencing MusicController here made the
+        // first remote pause tear down audio and the following toggle wait forever.
+        // Drawable disposal/screen-exit hooks own leftover cleanup; Update() naturally
+        // stops slave playback while this gameplay clock is paused.
+        if (!paused.NewValue)
         {
             rebuildBackground();
             rebuildVocals();

@@ -112,8 +112,10 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         Overlays.Add(pitchViewport);
         Overlays.Add(new UtaVolumeOverlayExtension());
         Overlays.Add(gameplayServices);
-        if (immersiveQueueEnabled)
-            Overlays.Add(new UtaImmersiveRemotePrompt(gameplayServices.RemoteServerController, gameplayServices.Playback));
+        // PlayerLoader can construct this drawable with an empty leased mod list and
+        // attach the authoritative SongSelect selection a frame later. The prompt itself
+        // waits for the playback coordinator to confirm IQ, so keep it available here.
+        Overlays.Add(new UtaImmersiveRemotePrompt(gameplayServices.RemoteServerController, gameplayServices.Playback));
     }
 
     internal static IReadOnlyList<Mod> ReconcileConstructorMods(

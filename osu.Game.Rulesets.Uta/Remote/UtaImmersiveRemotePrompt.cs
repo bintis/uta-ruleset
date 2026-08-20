@@ -26,6 +26,7 @@ internal sealed partial class UtaImmersiveRemotePrompt : CompositeDrawable
     private readonly UtaPlaybackCoordinator playback;
     private readonly UtaRemoteQrDisplay qr;
     private readonly OsuSpriteText status;
+    private bool startRequested;
 
     public UtaImmersiveRemotePrompt(UtaRemoteServerController controller, UtaPlaybackCoordinator playback)
     {
@@ -69,13 +70,22 @@ internal sealed partial class UtaImmersiveRemotePrompt : CompositeDrawable
     {
         base.LoadComplete();
         controller.Changed += onControllerChanged;
-        Schedule(() =>
-        {
-            if (playback.IsImmersiveQueueEnabled)
-                _ = startAndShowAsync();
-            else
-                Logger.Log("Uta IQ remote pairing prompt disabled: IQ is not selected.");
-        });
+        Schedule(requestStartWhenImmersive);
+    }
+
+    protected override void Update()
+    {
+        base.Update();
+        requestStartWhenImmersive();
+    }
+
+    private void requestStartWhenImmersive()
+    {
+        if (startRequested || !playback.IsImmersiveQueueEnabled)
+            return;
+
+        startRequested = true;
+        _ = startAndShowAsync();
     }
 
     private async Task startAndShowAsync()
