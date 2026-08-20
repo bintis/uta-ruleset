@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
+using osu.Framework.Configuration;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
@@ -24,6 +25,7 @@ using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
+using osu.Game.Rulesets.Uta.Localisation;
 using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Screens.Play.PlayerSettings;
 using osuTK;
@@ -168,6 +170,8 @@ public sealed partial class UtaDisplaySettings : PlayerSettingsGroup
     private readonly PlayerSliderBar<float> pitchHudOpacity;
     private readonly PlayerCheckbox lyricsShowUpcoming;
     private readonly PlayerCheckbox lyricsShowReading;
+    private readonly Bindable<string> locale = new();
+    private UtaUiLanguage language;
 
     public UtaDisplaySettings()
         : base("Uta display")
@@ -221,8 +225,14 @@ public sealed partial class UtaDisplaySettings : PlayerSettingsGroup
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaRulesetConfigManager config)
+    private void load(UtaRulesetConfigManager config, FrameworkConfigManager frameworkConfig)
     {
+        locale.BindTo(frameworkConfig.GetBindable<string>(FrameworkSetting.Locale));
+        locale.BindValueChanged(value =>
+        {
+            language = UtaLanguageResolver.FromLocale(value.NewValue);
+            refreshLabels();
+        }, true);
         lyricsPosition.Current = config.GetBindable<UtaLyricsPosition>(UtaRulesetSetting.LyricsPosition);
         lyricsSize.Current = config.GetBindable<UtaLyricsSize>(UtaRulesetSetting.LyricsSize);
         lyricsTypeface.Current = config.GetBindable<UtaLyricsTypeface>(UtaRulesetSetting.LyricsTypeface);
@@ -232,6 +242,26 @@ public sealed partial class UtaDisplaySettings : PlayerSettingsGroup
         pitchHudOpacity.Current = config.GetBindable<float>(UtaRulesetSetting.PitchHudOpacity);
         lyricsShowUpcoming.Current = config.GetBindable<bool>(UtaRulesetSetting.LyricsShowUpcoming);
         lyricsShowReading.Current = config.GetBindable<bool>(UtaRulesetSetting.LyricsShowReading);
+        refreshLabels();
+    }
+
+    private void refreshLabels()
+    {
+        lyricsPosition.LabelText = UtaStrings.Get("quick.lyrics_position", language);
+        lyricsSize.LabelText = UtaStrings.Get("quick.lyrics_size", language);
+        lyricsTypeface.LabelText = UtaStrings.Get("quick.lyrics_font", language);
+        pitchCurveDisplay.LabelText = UtaStrings.Get("quick.pitch_curves", language);
+        showPitchGuideTrail.LabelText = UtaStrings.Get("quick.guide_trail", language);
+        pitchHudSize.LabelText = UtaStrings.Get("quick.pitch_hud_size", language);
+        pitchHudOpacity.LabelText = UtaStrings.Get("quick.pitch_hud_opacity", language);
+        lyricsShowUpcoming.LabelText = UtaStrings.Get("quick.upcoming_lyrics", language);
+        lyricsShowReading.LabelText = UtaStrings.Get("quick.lyric_readings", language);
+    }
+
+    protected override void Dispose(bool isDisposing)
+    {
+        locale.UnbindAll();
+        base.Dispose(isDisposing);
     }
 
     private sealed partial class LyricsTypefaceDropdown : SettingsDropdown<UtaLyricsTypeface>

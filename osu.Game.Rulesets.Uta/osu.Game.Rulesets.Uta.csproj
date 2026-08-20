@@ -3,7 +3,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyTitle>osu.Game.Rulesets.Uta</AssemblyTitle>
     <RootNamespace>osu.Game.Rulesets.Uta</RootNamespace>
-    <Version>0.8.8</Version>
+    <Version>0.8.9</Version>
     <OutputType>Library</OutputType>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>

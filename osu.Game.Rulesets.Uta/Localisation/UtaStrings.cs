@@ -132,6 +132,16 @@ internal static class UtaStrings
         ["archive.complete"] = ("complete", "完成", "完了"),
         ["archive.native_score_available"] = ("The native lazer score remains available.", "lazer 原生成绩仍然可用。", "lazer のネイティブスコアは引き続き利用できます。"),
         ["archive.no_replay"] = ("This archive has no pitch replay.", "该档案没有音高回放。", "このアーカイブにはピッチリプレイがありません。"),
+
+        ["quick.lyrics_position"] = ("Lyrics position", "歌词位置", "歌詞の位置"),
+        ["quick.lyrics_size"] = ("Lyrics size", "歌词大小", "歌詞サイズ"),
+        ["quick.lyrics_font"] = ("Lyrics font", "歌词字体", "歌詞フォント"),
+        ["quick.pitch_curves"] = ("Pitch curves", "音高曲线", "ピッチ曲線"),
+        ["quick.guide_trail"] = ("Singing guide trail", "演唱引导轨迹", "歌唱ガイド軌跡"),
+        ["quick.pitch_hud_size"] = ("Pitch HUD size", "音高 HUD 大小", "ピッチ HUD サイズ"),
+        ["quick.pitch_hud_opacity"] = ("Pitch HUD opacity", "音高 HUD 不透明度", "ピッチ HUD の不透明度"),
+        ["quick.upcoming_lyrics"] = ("Upcoming lyrics", "后续歌词", "次の歌詞"),
+        ["quick.lyric_readings"] = ("Lyric readings", "歌词读音", "歌詞の読み"),
     };
 
     public static string Get(string key, UtaUiLanguage language)
