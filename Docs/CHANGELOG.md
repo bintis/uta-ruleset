@@ -3,6 +3,25 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.5 - 2026-08-20
+
+### Fixed
+
+- Added one-second hot-plug recovery for the configured microphone, monitor,
+  routed BGM and routed vocals. A disconnected named route falls back to the
+  lazer default without overwriting the saved selection; its configured route
+  is restored automatically after reconnect.
+
+### Changed
+
+- Documented the single gameplay-clock architecture, including seek, rate,
+  latency and scoring-epoch ownership.
+
+### Validation
+
+- Deterministic named-device availability/fallback regression coverage passes
+  with the full 165-test local Nix suite, format verification and overlay audit.
+
 ## 0.8.4 - 2026-08-20
 
 ### Fixed
@@ -58,6 +77,8 @@ Completed work from 0.1.0 onward. Open items stay in the
 - The package reader now accepts only the current `uta.song 0.3.x` contract
   with `vocal-chart/1`; legacy manifest/chart models and loading paths were
   removed.
+
+### Validation
 
 - The transparent-fallback skin contains every documented base asset and keeps
   all gameplay-critical semantic fallbacks visible.

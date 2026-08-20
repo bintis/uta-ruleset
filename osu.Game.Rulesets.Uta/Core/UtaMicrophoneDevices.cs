@@ -20,6 +20,13 @@ internal static class UtaMicrophoneDevices
         }
     }
 
+    public static bool IsAvailable(string? name)
+        => IsAvailable(name, Enumerate().Select(device => device.Name));
+
+    internal static bool IsAvailable(string? name, IEnumerable<string> available)
+        => string.IsNullOrWhiteSpace(name)
+           || available.Any(device => device == name);
+
     public static int Resolve(string? name)
     {
         if (!string.IsNullOrWhiteSpace(name))

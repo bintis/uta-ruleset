@@ -112,7 +112,7 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
         if (autoEnabled)
             return;
 
-        microphone = new UtaMicrophoneHandler(UtaMicrophoneDevices.Resolve(audioSettings.MicrophoneDevice.Value), audioRouter);
+        microphone = new UtaMicrophoneHandler(audioSettings.MicrophoneDevice.Value, audioRouter);
         microphone.InputGain.BindTo(audioSettings.MicrophoneInputGain);
         microphone.MonitorVolume.BindTo(audioSettings.MicrophoneMonitorVolume);
         audioSettings.MicrophoneDevice.ValueChanged += updateEffectiveMonitorOutput;
@@ -155,6 +155,7 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
     protected override void Update()
     {
         base.Update();
+        microphone?.RecoverDevices();
         if (autoEnabled)
             updateAuto(Time.Current);
     }

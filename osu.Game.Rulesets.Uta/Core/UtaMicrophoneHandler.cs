@@ -61,7 +61,8 @@ internal sealed class UtaMicrophoneHandler : InputHandler
     private const float monitor_max_clock_correction = 0.005f;
     private readonly float[] samples = new float[window_size];
     private float[] interleavedBuffer = Array.Empty<float>();
-    private readonly int deviceIndex;
+    private readonly string requestedDeviceName;
+    private int deviceIndex;
     private readonly UtaAudioRouter audioRouter;
     private int recordingStream;
     private int monitorStream;
@@ -79,6 +80,9 @@ internal sealed class UtaMicrophoneHandler : InputHandler
     private float[] workerWindow = new float[window_size];
     private bool hasPendingWindow;
     private long pendingArrivalTimestamp;
+    private long nextDeviceRecoveryTimestamp;
+    private bool captureUsingFallback;
+    private bool monitorUsingFallback;
     private bool detectionWorkerScheduled;
     private volatile bool recordingActive;
     private readonly SemaphoreSlim calibrationGate = new(1, 1);
@@ -94,9 +98,10 @@ internal sealed class UtaMicrophoneHandler : InputHandler
     private volatile bool debugDiagnosticsEnabled;
     private string captureDeviceName = string.Empty;
 
-    public UtaMicrophoneHandler(int deviceIndex, UtaAudioRouter audioRouter)
+    public UtaMicrophoneHandler(string? requestedDeviceName, UtaAudioRouter audioRouter)
     {
-        this.deviceIndex = deviceIndex;
+        this.requestedDeviceName = requestedDeviceName ?? string.Empty;
+        deviceIndex = UtaMicrophoneDevices.Resolve(requestedDeviceName);
         this.audioRouter = audioRouter;
     }
 
@@ -147,6 +152,7 @@ internal sealed class UtaMicrophoneHandler : InputHandler
 
     private void startRecording()
     {
+        deviceIndex = UtaMicrophoneDevices.Resolve(captureUsingFallback ? null : requestedDeviceName);
         if (!Bass.RecordInit(deviceIndex) && Bass.LastError != Errors.Already)
         {
             Logger.Log($"Uta microphone unavailable: {Bass.LastError}", level: LogLevel.Error);
@@ -736,12 +742,60 @@ internal sealed class UtaMicrophoneHandler : InputHandler
         PitchDetected?.Invoke(new UtaPitchFrame(null, 0, 0, Stopwatch.GetTimestamp(), 0));
     }
 
+    /// <summary>
+    /// BASS does not notify rulesets when PipeWire/Pulse devices disappear. Poll at a low
+    /// rate on the update thread and move capture/monitoring to the system default. The
+    /// saved route is deliberately not overwritten, so reconnecting the device restores it.
+    /// </summary>
+    internal void RecoverDevices()
+    {
+        long now = Stopwatch.GetTimestamp();
+        if (now < nextDeviceRecoveryTimestamp)
+            return;
+
+        nextDeviceRecoveryTimestamp = now + Stopwatch.Frequency;
+        recoverCaptureDevice();
+        recoverMonitorOutput();
+    }
+
+    private void recoverCaptureDevice()
+    {
+        if (!Enabled.Value)
+            return;
+
+        bool requestedAvailable = UtaMicrophoneDevices.IsAvailable(requestedDeviceName);
+        if (recordingActive && requestedAvailable == !captureUsingFallback)
+            return;
+
+        Logger.Log($"Uta microphone device {(requestedAvailable ? "reconnected" : "disconnected")}: "
+                   + $"requested='{requestedDeviceName}' fallback={captureUsingFallback}. Reinitialising capture.");
+        stop();
+        captureUsingFallback = !requestedAvailable;
+        start();
+    }
+
+    private void recoverMonitorOutput()
+    {
+        if (monitorStream == 0)
+            return;
+
+        bool requestedAvailable = UtaAudioDevices.IsAvailableOutput(OutputDevice.Value);
+        if (requestedAvailable == !monitorUsingFallback)
+            return;
+
+        monitorUsingFallback = !requestedAvailable;
+        audioRouter.Route(monitorStream, monitorUsingFallback ? null : OutputDevice.Value, false);
+        Logger.Log($"Uta monitor output {(requestedAvailable ? "reconnected" : "disconnected")}: "
+                   + $"requested='{OutputDevice.Value}' fallback={monitorUsingFallback}.");
+    }
+
     private void attachMonitorToOutput()
     {
         if (monitorStream == 0)
             return;
 
-        audioRouter.Route(monitorStream, OutputDevice.Value, false);
+        monitorUsingFallback = !UtaAudioDevices.IsAvailableOutput(OutputDevice.Value);
+        audioRouter.Route(monitorStream, monitorUsingFallback ? null : OutputDevice.Value, false);
     }
 
     protected override void Dispose(bool isDisposing)

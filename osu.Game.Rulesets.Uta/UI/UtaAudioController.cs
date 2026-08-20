@@ -59,6 +59,9 @@ internal sealed partial class UtaAudioController : Component
     private UtaRoutedAudioStream? vocals;
     private bool accompanimentLatencyResyncPending;
     private long accompanimentLatencyChangedAt;
+    private long nextRouteRecoveryTimestamp;
+    private bool backgroundUsingFallback;
+    private bool vocalsUsingFallback;
     private bool adjustmentsApplied;
     private bool halted;
     private static readonly List<UtaAudioController> live_controllers = new();
@@ -220,10 +223,18 @@ internal sealed partial class UtaAudioController : Component
         rebuildVocals();
 
         backgroundMusicVolume.BindValueChanged(_ => applyBackgroundVolume(), true);
-        backgroundMusicOutput.BindValueChanged(_ => rebuildBackground());
+        backgroundMusicOutput.BindValueChanged(_ =>
+        {
+            backgroundUsingFallback = !UtaAudioDevices.IsAvailableOutput(backgroundMusicOutput.Value);
+            rebuildBackground();
+        });
         vocalsVolume.BindValueChanged(_ => applyVocalsVolume(), true);
         originalVocalsEnabled.BindValueChanged(_ => rebuildVocals(), true);
-        vocalsOutput.BindValueChanged(_ => rebuildVocals());
+        vocalsOutput.BindValueChanged(_ =>
+        {
+            vocalsUsingFallback = !UtaAudioDevices.IsAvailableOutput(vocalsOutput.Value);
+            rebuildVocals();
+        });
         accompanimentLatency.BindValueChanged(_ =>
         {
             accompanimentLatencyChangedAt = Stopwatch.GetTimestamp();
@@ -413,6 +424,8 @@ internal sealed partial class UtaAudioController : Component
             rebuildBackground();
         }
 
+        recoverDisconnectedOutputs();
+
         double expected = sourceTime();
         bool shouldRun = slavesShouldRun();
         followClock(backgroundMusic, expected, shouldRun);
@@ -421,6 +434,39 @@ internal sealed partial class UtaAudioController : Component
 
         if (debugDiagnostics.Value)
             logDiagnostics(expected, shouldRun);
+    }
+
+    /// <summary>
+    /// Keep custom BGM/vocal routes alive across device removal without changing the user's
+    /// persisted choice. A reconnect moves the existing stream back to that choice; a removal
+    /// moves it to lazer's default output. BASS exposes neither a hot-plug event nor a stable
+    /// device handle, so this intentionally polls once per second on the gameplay thread.
+    /// </summary>
+    private void recoverDisconnectedOutputs()
+    {
+        long now = Stopwatch.GetTimestamp();
+        if (now < nextRouteRecoveryTimestamp)
+            return;
+
+        nextRouteRecoveryTimestamp = now + Stopwatch.Frequency;
+        backgroundUsingFallback = recoverOutput(backgroundMusic, backgroundMusicOutput.Value, "BGM", backgroundUsingFallback);
+        vocalsUsingFallback = recoverOutput(vocals, vocalsOutput.Value, "vocals", vocalsUsingFallback);
+    }
+
+    private bool recoverOutput(UtaRoutedAudioStream? stream, string requestedOutput, string routeName, bool usingFallback)
+    {
+        if (stream == null)
+            return false;
+
+        bool requestedAvailable = UtaAudioDevices.IsAvailableOutput(requestedOutput);
+        if (requestedAvailable == !usingFallback)
+            return usingFallback;
+
+        bool fallback = !requestedAvailable;
+        stream.SetOutput(fallback ? null : requestedOutput);
+        Logger.Log($"Uta {routeName} output {(requestedAvailable ? "reconnected" : "disconnected")}: "
+                   + $"requested='{requestedOutput}' fallback={fallback}.");
+        return fallback;
     }
 
     private static void followClock(UtaRoutedAudioStream? source, double expected, bool shouldRun)

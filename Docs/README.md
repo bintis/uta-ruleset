@@ -7,6 +7,7 @@ Only maintained, current documents are kept in this directory.
 - [`../README.md`](../README.md) — project overview, installation, scope and current roadmap.
 - [`CHANGELOG.md`](CHANGELOG.md) — completed work and release validation history.
 - [`TESTING.md`](TESTING.md) — build, automated tests, real-game diagnostics and delivery gates.
+- [`CLOCK-ARCHITECTURE.md`](CLOCK-ARCHITECTURE.md) — authoritative gameplay-time, seek, rate and latency ownership.
 - [`SKINNING.md`](SKINNING.md) — current uta! skin asset contract and fallback behaviour.
 
 ## Scoring and performance contracts

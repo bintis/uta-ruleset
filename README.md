@@ -119,8 +119,8 @@ work is listed here.
 
 - [x] Verify the complete scoring matrix for Transpose, OCT, NC/DC, latency and loops.
 - [x] Soak-test long recordings, repeated retries, device changes and storage-write failure.
-- [ ] Add device hot-plug recovery for microphone, monitor, BGM and vocal routes.
-- [ ] Consolidate playback, seek, rate and latency ownership into one clock architecture.
+- [x] Add device hot-plug recovery for microphone, monitor, BGM and vocal routes (with fallback to the lazer default output/input and automatic reconnect restoration).
+- [x] Consolidate playback, seek, rate and latency ownership into the documented [single clock architecture](Docs/CLOCK-ARCHITECTURE.md).
 - [x] Profile audio, microphone, scoring, recording and remote-control hot paths with bounded-buffer regression workloads.
 - [x] Verify long sessions and repeated mode changes do not leak streams, listeners or buffers in deterministic runtime workloads.
 

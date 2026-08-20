@@ -288,7 +288,7 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
         {
             diagnosticRouter = new UtaAudioRouter();
             diagnosticRouter.Initialise(audioManager);
-            diagnosticMicrophone = new UtaMicrophoneHandler(UtaMicrophoneDevices.Resolve(microphoneDevice.Value), diagnosticRouter);
+            diagnosticMicrophone = new UtaMicrophoneHandler(microphoneDevice.Value, diagnosticRouter);
             diagnosticMicrophone.InputGain.BindTo(config.GetBindable<float>(UtaRulesetSetting.MicrophoneInputGain));
             diagnosticMicrophone.PitchSamplingInterval.BindTo(config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval));
             diagnosticMicrophone.MonitorVolume.Value = 0;

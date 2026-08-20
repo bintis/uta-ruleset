@@ -36,6 +36,17 @@ internal static class UtaAudioDevices
     }
 
     /// <summary>
+    /// Returns whether a persisted route can currently be used. The empty/default route is
+    /// always available because it follows lazer's own active output device.
+    /// </summary>
+    public static bool IsAvailableOutput(string? name)
+        => IsAvailableOutput(name, Enumerate().Select(device => device.Name));
+
+    internal static bool IsAvailableOutput(string? name, IEnumerable<string> available)
+        => IsPlaceholderOutput(name)
+           || available.Any(device => string.Equals(device, name, StringComparison.Ordinal));
+
+    /// <summary>
     /// Prefer an already-initialised BASS output. A device named Default that
     /// osu already opened is valid; an uninitialised named-device index is not
     /// (second-device Init on Pulse is Parameter / Init).

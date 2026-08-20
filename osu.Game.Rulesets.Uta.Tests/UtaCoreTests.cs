@@ -93,6 +93,13 @@ public class UtaCoreTests
             Assert.That(UtaAudioDevices.IsPlaceholderOutput("Default Audio Device"), Is.True);
             Assert.That(UtaAudioDevices.IsPlaceholderOutput("Configured USB playback"), Is.False);
             Assert.That(UtaAudioDevices.IsPlaceholderOutput("AKG C44-USB Microphone: USB Audio"), Is.False);
+            Assert.That(UtaAudioDevices.IsAvailableOutput("Configured USB playback", new[] { "Configured USB playback" }), Is.True);
+            Assert.That(UtaAudioDevices.IsAvailableOutput("Configured USB playback", Array.Empty<string>()), Is.False);
+            Assert.That(UtaAudioDevices.IsAvailableOutput(string.Empty, Array.Empty<string>()), Is.True,
+                "The default output remains recoverable even if no named BASS device is currently listed.");
+            Assert.That(UtaMicrophoneDevices.IsAvailable("AKG", new[] { "AKG" }), Is.True);
+            Assert.That(UtaMicrophoneDevices.IsAvailable("AKG", Array.Empty<string>()), Is.False);
+            Assert.That(UtaMicrophoneDevices.IsAvailable(string.Empty, Array.Empty<string>()), Is.True);
         });
     }
 
