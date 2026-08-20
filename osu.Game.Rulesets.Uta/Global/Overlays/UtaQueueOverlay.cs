@@ -4,7 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using osu.Framework.Allocation;
 using osu.Framework.Bindables;
+using osu.Framework.Configuration;
 using osu.Framework.Extensions;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
@@ -20,6 +22,7 @@ using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Volume;
 using osu.Game.Rulesets.Uta.Library;
+using osu.Game.Rulesets.Uta.Localisation;
 using osu.Game.Rulesets.Uta.Playback;
 using osu.Game.Rulesets.Uta.Queue;
 using osuTK;
@@ -38,7 +41,14 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
     private readonly OsuScrollContainer searchScroll;
     private readonly BasicSearchTextBox search;
     private readonly OsuSpriteText status;
+    private readonly OsuSpriteText title;
+    private readonly RoundedButton playNextButton;
+    private readonly RoundedButton endSongButton;
     private readonly RoundedButton addSongsButton;
+    private readonly RoundedButton clearQueueButton;
+    private readonly RoundedButton closeButton;
+    private readonly Bindable<string> locale = new();
+    private UtaUiLanguage language;
     private VolumeOverlay? volumeOverlay;
     private bool browsingSongs;
 
@@ -72,7 +82,7 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
                     Padding = new MarginPadding(24),
                     Children = new Drawable[]
                     {
-                        new OsuSpriteText { Text = "uta! global queue", Font = OsuFont.Default.With(size: 24, weight: FontWeight.Bold) },
+                        title = new OsuSpriteText { Font = OsuFont.Default.With(size: 24, weight: FontWeight.Bold) },
                         status = textLine(),
                         new FillFlowContainer<Drawable>
                         {
@@ -81,18 +91,18 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
                             Spacing = new Vector2(6, 0),
                             Children = new Drawable[]
                             {
-                                actionButton("Play next", 90, playNext),
-                                actionButton("End song", 90, () => playback.RequestEndCurrent()),
-                                addSongsButton = actionButton("Add songs", 90, toggleSongBrowser),
-                                actionButton("Clear queue", 100, () => queue.Clear()),
-                                actionButton("Close", 70, Hide),
+                                playNextButton = actionButton(string.Empty, 90, playNext),
+                                endSongButton = actionButton(string.Empty, 90, () => playback.RequestEndCurrent()),
+                                addSongsButton = actionButton(string.Empty, 90, toggleSongBrowser),
+                                clearQueueButton = actionButton(string.Empty, 100, () => queue.Clear()),
+                                closeButton = actionButton(string.Empty, 70, Hide),
                             },
                         },
                         search = new BasicSearchTextBox
                         {
                             RelativeSizeAxes = Axes.X,
                             Height = 36,
-                            PlaceholderText = "Search Uta songs to add...",
+                            PlaceholderText = string.Empty,
                             ReleaseFocusOnCommit = false,
                             Alpha = 0,
                         },
@@ -122,6 +132,17 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
         };
     }
 
+    [BackgroundDependencyLoader]
+    private void load(FrameworkConfigManager frameworkConfig)
+    {
+        locale.BindTo(frameworkConfig.GetBindable<string>(FrameworkSetting.Locale));
+        locale.BindValueChanged(value =>
+        {
+            language = UtaLanguageResolver.FromLocale(value.NewValue);
+            refreshLabels();
+        }, true);
+    }
+
     protected override void LoadComplete()
     {
         base.LoadComplete();
@@ -148,7 +169,7 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
         if (result.Succeeded)
             Hide();
         else if (result.Error == "The queue is empty.")
-            status.Text = "The Uta queue is empty.";
+            status.Text = UtaStrings.Get("queue.empty", language);
     }
 
     private void onQueueChanged() => Schedule(refresh);
@@ -158,7 +179,7 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
     private void setBrowsingSongs(bool browsing)
     {
         browsingSongs = browsing;
-        addSongsButton.Text = browsing ? "Queue" : "Add songs";
+        addSongsButton.Text = UtaStrings.Get(browsing ? "queue.queue" : "queue.add_songs", language);
 
         if (browsing)
         {
@@ -208,7 +229,7 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
                             Font = OsuFont.Default.With(size: 14),
                         },
                     },
-                    actionButton("Add", 54, () => addSong(song)).With(button =>
+                    actionButton(UtaStrings.Get("queue.add", language), 54, () => addSong(song)).With(button =>
                     {
                         button.Anchor = Anchor.CentreRight;
                         button.Origin = Anchor.CentreRight;
@@ -231,7 +252,7 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
     private void refresh()
     {
         UtaSongQueueEntry[] snapshot = queue.GetSnapshot().ToArray();
-        status.Text = $"{snapshot.Length} song(s) · revision {queue.Revision.Value} · {playback.TransitionState.Value}";
+        status.Text = string.Format(UtaStrings.Get("queue.status", language), snapshot.Length, queue.Revision.Value, playback.TransitionState.Value);
         entries.Clear();
         for (int i = 0; i < snapshot.Length; i++)
         {
@@ -272,12 +293,12 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
                         Spacing = new Vector2(4, 0),
                         Children = new Drawable[]
                         {
-                            actionButton("Play", 50, () => playback.RequestPlayNow(entry.EntryId)),
-                            actionButton("Top", 42, () => queue.MoveToTop(entry.EntryId)),
-                            actionButton("Up", 38, () => queue.Move(entry.EntryId, Math.Max(0, queue.GetSnapshot().ToList().FindIndex(item => item.EntryId == entry.EntryId) - 1))),
-                            actionButton("Down", 48, () => queue.Move(entry.EntryId, queue.GetSnapshot().ToList().FindIndex(item => item.EntryId == entry.EntryId) + 1)),
-                            actionButton("Bottom", 58, () => queue.MoveToBottom(entry.EntryId)),
-                            actionButton("Remove", 62, () => queue.Remove(entry.EntryId)),
+                            actionButton(UtaStrings.Get("queue.play", language), 50, () => playback.RequestPlayNow(entry.EntryId)),
+                            actionButton(UtaStrings.Get("queue.top", language), 42, () => queue.MoveToTop(entry.EntryId)),
+                            actionButton(UtaStrings.Get("queue.up", language), 38, () => queue.Move(entry.EntryId, Math.Max(0, queue.GetSnapshot().ToList().FindIndex(item => item.EntryId == entry.EntryId) - 1))),
+                            actionButton(UtaStrings.Get("queue.down", language), 48, () => queue.Move(entry.EntryId, queue.GetSnapshot().ToList().FindIndex(item => item.EntryId == entry.EntryId) + 1)),
+                            actionButton(UtaStrings.Get("queue.bottom", language), 58, () => queue.MoveToBottom(entry.EntryId)),
+                            actionButton(UtaStrings.Get("queue.remove", language), 62, () => queue.Remove(entry.EntryId)),
                         },
                     },
                 },
@@ -303,6 +324,18 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
         Action = action,
     };
 
+    private void refreshLabels()
+    {
+        title.Text = UtaStrings.Get("queue.title", language);
+        playNextButton.Text = UtaStrings.Get("queue.play_next", language);
+        endSongButton.Text = UtaStrings.Get("queue.end_song", language);
+        clearQueueButton.Text = UtaStrings.Get("queue.clear", language);
+        closeButton.Text = UtaStrings.Get("common.close", language);
+        search.PlaceholderText = UtaStrings.Get("queue.search", language);
+        setBrowsingSongs(browsingSongs);
+        refresh();
+    }
+
     protected override bool OnScroll(ScrollEvent e) => true;
 
     protected override void PopIn()
@@ -316,6 +349,7 @@ internal sealed partial class UtaQueueOverlay : OsuFocusedOverlayContainer
     protected override void Dispose(bool isDisposing)
     {
         queue.Changed -= onQueueChanged;
+        locale.UnbindAll();
         base.Dispose(isDisposing);
     }
 

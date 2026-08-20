@@ -2,7 +2,9 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using osu.Framework.Allocation;
 using osu.Framework.Bindables;
+using osu.Framework.Configuration;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
@@ -12,6 +14,7 @@ using osu.Game.Graphics.Sprites;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.Uta.Gameplay;
+using osu.Game.Rulesets.Uta.Localisation;
 using osu.Game.Rulesets.Uta.Remote;
 using osuTK;
 using osuTK.Graphics;
@@ -27,7 +30,12 @@ internal sealed partial class UtaRemoteControlOverlay : OsuFocusedOverlayContain
     private readonly OsuSpriteText clients;
     private readonly OsuSpriteText pairing;
     private readonly UtaRemoteQrDisplay qr;
+    private readonly OsuSpriteText title;
     private readonly SettingsButton startStop;
+    private readonly SettingsButton disconnectAll;
+    private readonly SettingsButton close;
+    private readonly Bindable<string> locale = new();
+    private UtaUiLanguage language;
     private UtaRemoteServer? pairingServer;
     private DateTimeOffset pairingExpiresAt;
 
@@ -62,18 +70,29 @@ internal sealed partial class UtaRemoteControlOverlay : OsuFocusedOverlayContain
                     Padding = new MarginPadding(22),
                     Children = new Drawable[]
                     {
-                        new OsuSpriteText { Text = "uta! mobile remote", Font = OsuFont.Default.With(size: 23, weight: FontWeight.Bold) },
+                        title = new OsuSpriteText { Font = OsuFont.Default.With(size: 23, weight: FontWeight.Bold) },
                         status = line(),
                         clients = line(),
                         pairing = line(),
                         qr = new UtaRemoteQrDisplay { Anchor = Anchor.TopCentre, Origin = Anchor.TopCentre },
-                        startStop = new SettingsButton { Text = "Start server", Action = toggleServer },
-                        new SettingsButton { Text = "Disconnect all clients", Action = controller.DisconnectAllClients },
-                        new SettingsButton { Text = "Close", Action = Hide },
+                        startStop = new SettingsButton { Action = toggleServer },
+                        disconnectAll = new SettingsButton { Action = controller.DisconnectAllClients },
+                        close = new SettingsButton { Action = Hide },
                     },
                 },
             },
         };
+    }
+
+    [BackgroundDependencyLoader]
+    private void load(FrameworkConfigManager frameworkConfig)
+    {
+        locale.BindTo(frameworkConfig.GetBindable<string>(FrameworkSetting.Locale));
+        locale.BindValueChanged(value =>
+        {
+            language = UtaLanguageResolver.FromLocale(value.NewValue);
+            refreshLabels();
+        }, true);
     }
 
     protected override void LoadComplete()
@@ -126,7 +145,7 @@ internal sealed partial class UtaRemoteControlOverlay : OsuFocusedOverlayContain
             string url = server.GetPairingUrl(ticket);
             pairingServer = server;
             pairingExpiresAt = ticket.ExpiresAt;
-            pairing.Text = $"Controller pairing expires {ticket.ExpiresAt.ToLocalTime():HH:mm:ss}\n{url}";
+            pairing.Text = $"{string.Format(UtaStrings.Get("remote.pairing_expires", language), ticket.ExpiresAt.ToLocalTime().ToString("HH:mm:ss"))}\n{url}";
             qr.SetContent(url);
         }
         catch (Exception exception)
@@ -142,11 +161,14 @@ internal sealed partial class UtaRemoteControlOverlay : OsuFocusedOverlayContain
     private void refresh()
     {
         UtaRemoteServer? server = controller.Server;
-        string countdown = controller.IdleShutdownRemaining.Value is { } remaining ? $" · stops in {Math.Ceiling(remaining.TotalSeconds)}s" : string.Empty;
+        string countdown = controller.IdleShutdownRemaining.Value is { } remaining
+            ? $" · {string.Format(UtaStrings.Get("remote.stops_in", language), Math.Ceiling(remaining.TotalSeconds))}"
+            : string.Empty;
         status.Text = $"{controller.State.Value}{countdown}" + (controller.LastError.Value == null ? string.Empty : $" · {controller.LastError.Value}");
-        clients.Text = $"Authenticated controllers {controller.AuthenticatedClientCount.Value} · gameplay {(sessions.Current == null ? "none" : "active")}";
+        clients.Text = string.Format(UtaStrings.Get("remote.clients", language), controller.AuthenticatedClientCount.Value,
+            UtaStrings.Get(sessions.Current == null ? "remote.gameplay_none" : "remote.gameplay_active", language));
         bool running = server?.IsRunning == true;
-        startStop.Text = running ? "Stop server" : "Start server";
+        startStop.Text = UtaStrings.Get(running ? "remote.stop" : "remote.start", language);
         if (!running)
         {
             pairingServer = null;
@@ -156,6 +178,14 @@ internal sealed partial class UtaRemoteControlOverlay : OsuFocusedOverlayContain
         }
     }
 
+    private void refreshLabels()
+    {
+        title.Text = UtaStrings.Get("remote.title", language);
+        disconnectAll.Text = UtaStrings.Get("remote.disconnect_all", language);
+        close.Text = UtaStrings.Get("common.close", language);
+        refresh();
+    }
+
     protected override void PopIn() => this.FadeIn(180, Easing.OutQuint);
     protected override void PopOut() => this.FadeOut(180, Easing.OutQuint);
 
@@ -163,6 +193,7 @@ internal sealed partial class UtaRemoteControlOverlay : OsuFocusedOverlayContain
     {
         controller.Changed -= onChanged;
         sessions.Changed -= onChanged;
+        locale.UnbindAll();
         base.Dispose(isDisposing);
     }
 

@@ -20,6 +20,7 @@ using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
+using osu.Game.Rulesets.Uta.Localisation;
 using osu.Game.Rulesets.Uta.UI;
 using osu.Game.Rulesets.Uta.Pitch;
 using osuTK.Graphics;
@@ -34,6 +35,11 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
     private AudioManager audioManager = null!;
     private GameHost host = null!;
     private SettingsButton latencyCalibrationButton = null!;
+    private SettingsButton resetDisplayButton = null!;
+    private SettingsButton resetPlaybackButton = null!;
+    private SettingsButton resetMicrophoneButton = null!;
+    private readonly Bindable<string> locale = new();
+    private UtaUiLanguage language;
     private DiagnosticRow inputLevelDiagnostic = null!;
     private DiagnosticRow detectedPitchDiagnostic = null!;
     private DiagnosticRow routeDiagnostic = null!;
@@ -52,12 +58,18 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
     }
 
     [BackgroundDependencyLoader]
-    private void load(AudioManager audioManager, GameHost host)
+    private void load(AudioManager audioManager, GameHost host, osu.Framework.Configuration.FrameworkConfigManager frameworkConfig)
     {
         config = (UtaRulesetConfigManager)Config;
         this.audioManager = audioManager;
         this.host = host;
         microphoneDevice = config.GetBindable<string>(UtaRulesetSetting.MicrophoneDevice);
+        locale.BindTo(frameworkConfig.GetBindable<string>(osu.Framework.Configuration.FrameworkSetting.Locale));
+        locale.BindValueChanged(value =>
+        {
+            language = UtaLanguageResolver.FromLocale(value.NewValue);
+            refreshLocalisedLabels();
+        }, true);
 
         if (config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics).Value)
         {
@@ -68,6 +80,10 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
         Children = new Drawable[]
         {
             primarySettings = page(
+                resetDisplayButton = new SettingsButton
+                {
+                    Action = resetDisplaySettings,
+                },
                 new SettingsItemV2(new FormEnumDropdown<UtaLyricsPosition>
                 {
                     Caption = "Lyrics position",
@@ -191,7 +207,11 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     Current = config.GetBindable<bool>(UtaRulesetSetting.OriginalVocalsEnabled),
                 }),
                 slider("Original vocals", "Level of the original vocal track. Does not turn the track on by itself.",
-                    config.GetBindable<float>(UtaRulesetSetting.OriginalVocalsVolume), value => $"{value:P0}", 0.05f)),
+                    config.GetBindable<float>(UtaRulesetSetting.OriginalVocalsVolume), value => $"{value:P0}", 0.05f),
+                resetPlaybackButton = new SettingsButton
+                {
+                    Action = resetPlaybackSettings,
+                }),
             microphoneSettings = page(
                 new SettingsButton
                 {
@@ -214,10 +234,71 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                 },
                 inputLevelDiagnostic = diagnostic("Input level: run auto-measure to sample"),
                 detectedPitchDiagnostic = diagnostic("Detected pitch: run auto-measure to sample"),
-                routeDiagnostic = diagnostic("Route: unavailable")),
+                routeDiagnostic = diagnostic("Route: unavailable"),
+                resetMicrophoneButton = new SettingsButton
+                {
+                    Action = resetMicrophoneSettings,
+                }),
         };
 
         microphoneSettings.Hide();
+        refreshLocalisedLabels();
+    }
+
+    private void refreshLocalisedLabels()
+    {
+        if (resetDisplayButton == null)
+            return;
+
+        resetDisplayButton.Text = UtaStrings.Get("settings.reset_display", language);
+        resetPlaybackButton.Text = UtaStrings.Get("settings.reset_playback", language);
+        resetMicrophoneButton.Text = UtaStrings.Get("settings.reset_microphone", language);
+    }
+
+    private void resetDisplaySettings()
+    {
+        config.GetBindable<UtaLyricsPosition>(UtaRulesetSetting.LyricsPosition).Value = UtaLyricsPosition.Bottom;
+        config.GetBindable<UtaLyricsSize>(UtaRulesetSetting.LyricsSize).Value = UtaLyricsSize.Normal;
+        config.GetBindable<UtaLyricsTypeface>(UtaRulesetSetting.LyricsTypeface).Value = UtaLyricsTypeface.Torus;
+        config.GetBindable<bool>(UtaRulesetSetting.LyricsShowUpcoming).Value = true;
+        config.GetBindable<bool>(UtaRulesetSetting.LyricsShowReading).Value = true;
+        config.GetBindable<float>(UtaRulesetSetting.LyricsPanelOpacity).Value = 0.72f;
+        config.GetBindable<UtaLyricsProgressStyle>(UtaRulesetSetting.LyricsProgressStyle).Value = UtaLyricsProgressStyle.Underline;
+        config.GetBindable<UtaPitchHudSize>(UtaRulesetSetting.PitchHudSize).Value = UtaPitchHudSize.Normal;
+        config.GetBindable<float>(UtaRulesetSetting.PitchHudOpacity).Value = 1;
+        config.GetBindable<UtaPitchHudLayout>(UtaRulesetSetting.PitchHudLayout).Value = UtaPitchHudLayout.Auto;
+        config.GetBindable<float>(UtaRulesetSetting.HudSafeAreaPadding).Value = 0;
+        config.GetBindable<UtaPitchCurveDisplay>(UtaRulesetSetting.PitchCurveDisplay).Value = UtaPitchCurveDisplay.Both;
+        config.GetBindable<bool>(UtaRulesetSetting.ShowPitchGuideTrail).Value = false;
+        config.GetBindable<bool>(UtaRulesetSetting.ReducedMotion).Value = false;
+        config.GetBindable<bool>(UtaRulesetSetting.VideoVisible).Value = true;
+        config.GetBindable<float>(UtaRulesetSetting.VideoDim).Value = 0.35f;
+        config.GetBindable<float>(UtaRulesetSetting.VideoBlur).Value = 0;
+        config.GetBindable<float>(UtaRulesetSetting.VideoOffset).Value = 0;
+        config.GetBindable<float>(UtaRulesetSetting.ParticleIntensity).Value = 0.65f;
+        config.GetBindable<UtaScoreHudPosition>(UtaRulesetSetting.ScoreHudPosition).Value = UtaScoreHudPosition.TopRight;
+    }
+
+    private void resetPlaybackSettings()
+    {
+        config.GetBindable<double>(UtaRulesetSetting.BackgroundMusicVolume).Value = 1;
+        config.GetBindable<float>(UtaRulesetSetting.OriginalVocalsVolume).Value = 0.55f;
+        config.GetBindable<bool>(UtaRulesetSetting.OriginalVocalsEnabled).Value = false;
+        config.GetBindable<string>(UtaRulesetSetting.BackgroundMusicOutputDevice).Value = string.Empty;
+        config.GetBindable<string>(UtaRulesetSetting.OriginalVocalsOutputDevice).Value = string.Empty;
+        config.GetBindable<float>(UtaRulesetSetting.AccompanimentLatency).Value = 0;
+        config.GetBindable<float>(UtaRulesetSetting.LyricsLatency).Value = 0;
+    }
+
+    private void resetMicrophoneSettings()
+    {
+        config.GetBindable<string>(UtaRulesetSetting.MicrophoneDevice).Value = string.Empty;
+        config.GetBindable<string>(UtaRulesetSetting.MicrophoneOutputDevice).Value = string.Empty;
+        config.GetBindable<float>(UtaRulesetSetting.MicrophoneInputGain).Value = 1.5f;
+        config.GetBindable<float>(UtaRulesetSetting.MicrophoneMonitorVolume).Value = 0.35f;
+        config.GetBindable<float>(UtaRulesetSetting.MicrophoneLatency).Value = 0;
+        config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval).Value = 10;
+        config.GetBindable<float>(UtaRulesetSetting.PhraseLoopLeadIn).Value = 750;
     }
 
     private void showMicrophoneSettings()
@@ -358,6 +439,7 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
         calibrationCancellation.Cancel();
         stopMicrophoneDiagnostics();
         calibrationCancellation.Dispose();
+        locale.UnbindAll();
         base.Dispose(isDisposing);
     }
 
@@ -379,7 +461,10 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
             // Items must be assigned before Current - see buildDeviceItems().
             Items = UtaDeviceItems.Build(current.Value, UtaAudioDevices.Enumerate().Select(device => device.Name)),
             Current = current,
-        });
+        })
+        {
+            ShowRevertToDefaultButton = true,
+        };
 
     private static SettingsItemV2 slider<T>(LocalisableString caption, LocalisableString hint, osu.Framework.Bindables.Bindable<T> current,
                                              System.Func<T, LocalisableString> format, float keyboardStep)
@@ -391,7 +476,10 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
             Current = current,
             LabelFormat = format,
             KeyboardStep = keyboardStep,
-        });
+        })
+        {
+            ShowRevertToDefaultButton = true,
+        };
 
     private sealed partial class MicrophoneDropdown : FormDropdown<string>
     {

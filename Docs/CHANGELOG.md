@@ -3,6 +3,21 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.7 - 2026-08-20
+
+### Added
+
+- Added live English, Simplified Chinese and Japanese desktop text for import
+  diagnostics, the desktop phone-remote overlay, queue and settings reset actions.
+- Added display, playback/latency and microphone reset actions to the desktop
+  settings page. Every reset restores the documented ruleset defaults.
+
+### Validation
+
+- 166 automated tests pass against the local Nix osu! references, including
+  desktop-localisation table coverage; format, overlay audit and whitespace
+  checks pass.
+
 ## 0.8.6 - 2026-08-20
 
 ### Added

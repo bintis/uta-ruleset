@@ -19,6 +19,7 @@ using osu.Game.Rulesets.Uta;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Formats;
+using osu.Game.Rulesets.Uta.Localisation;
 using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Rulesets.Uta.Pitch;
 using osu.Game.Rulesets.Uta.UI;
@@ -31,6 +32,24 @@ namespace osu.Game.Rulesets.Uta.Tests;
 [TestFixture]
 public class UtaCoreTests
 {
+    [Test]
+    public void DesktopLocalisationProvidesEnglishChineseAndJapanese()
+    {
+        string[] keys =
+        {
+            "import.title", "import.refresh", "import.clear", "import.none",
+            "remote.title", "remote.start", "remote.stop", "remote.disconnect_all",
+            "settings.reset_display", "settings.reset_playback", "settings.reset_microphone",
+        };
+
+        foreach (string key in keys)
+        {
+            Assert.That(UtaStrings.Get(key, UtaUiLanguage.English), Is.Not.EqualTo(key));
+            Assert.That(UtaStrings.Get(key, UtaUiLanguage.ChineseSimplified), Is.Not.EqualTo(key));
+            Assert.That(UtaStrings.Get(key, UtaUiLanguage.Japanese), Is.Not.EqualTo(key));
+        }
+    }
+
     [Test]
     public void SharedAudioStatePropagatesVolumeChanges()
     {

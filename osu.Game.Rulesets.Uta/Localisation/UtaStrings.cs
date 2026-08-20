@@ -82,6 +82,43 @@ internal static class UtaStrings
         ["practice.next_phrase"] = ("Next phrase", "下一乐句", "次のフレーズ"),
         ["practice.loop_status_looping"] = ("Looping current phrase ({0} detected)", "正在循环当前乐句（检测到 {0} 句）", "現在のフレーズをループ中（{0} 個検出）"),
         ["practice.loop_status_points"] = ("Loop A {0}  B {1}", "循环点 A {0}  B {1}", "ループ A {0}  B {1}"),
+
+        ["import.title"] = ("Recent .utz import diagnostics", "最近的 .utz 导入诊断", "最近の .utz インポート診断"),
+        ["import.refresh"] = ("Refresh import diagnostics", "刷新导入诊断", "インポート診断を更新"),
+        ["import.clear"] = ("Clear import diagnostics", "清除导入诊断", "インポート診断を消去"),
+        ["import.none"] = ("No failed .utz imports have been recorded in this process.", "本次运行尚未记录失败的 .utz 导入。", "この実行では失敗した .utz インポートは記録されていません。"),
+
+        ["remote.title"] = ("uta! mobile remote", "uta! 手机遥控", "uta! モバイルリモコン"),
+        ["remote.start"] = ("Start server", "启动服务", "サーバーを開始"),
+        ["remote.stop"] = ("Stop server", "停止服务", "サーバーを停止"),
+        ["remote.disconnect_all"] = ("Disconnect all clients", "断开所有客户端", "すべてのクライアントを切断"),
+        ["common.close"] = ("Close", "关闭", "閉じる"),
+        ["remote.pairing_expires"] = ("Controller pairing expires {0}", "控制器配对将在 {0} 失效", "コントローラーのペアリングは {0} に期限切れになります"),
+        ["remote.stops_in"] = ("stops in {0}s", "将在 {0} 秒后停止", "{0} 秒後に停止"),
+        ["remote.clients"] = ("Authenticated controllers {0} · gameplay {1}", "已认证控制器 {0} · 游戏 {1}", "認証済みコントローラー {0} · ゲームプレイ {1}"),
+        ["remote.gameplay_none"] = ("none", "无", "なし"),
+        ["remote.gameplay_active"] = ("active", "进行中", "進行中"),
+
+        ["settings.reset_display"] = ("Reset display settings", "重置显示设置", "表示設定をリセット"),
+        ["settings.reset_playback"] = ("Reset audio and latency settings", "重置音频与延迟设置", "音声とレイテンシ設定をリセット"),
+        ["settings.reset_microphone"] = ("Reset microphone settings", "重置麦克风设置", "マイク設定をリセット"),
+
+        ["queue.title"] = ("uta! global queue", "uta! 全局队列", "uta! グローバルキュー"),
+        ["queue.play_next"] = ("Play next", "播放下一首", "次を再生"),
+        ["queue.end_song"] = ("End song", "结束歌曲", "曲を終了"),
+        ["queue.add_songs"] = ("Add songs", "添加歌曲", "曲を追加"),
+        ["queue.queue"] = ("Queue", "队列", "キュー"),
+        ["queue.clear"] = ("Clear queue", "清空队列", "キューを消去"),
+        ["queue.search"] = ("Search Uta songs to add...", "搜索要添加的 Uta 歌曲…", "追加する Uta 曲を検索…"),
+        ["queue.add"] = ("Add", "添加", "追加"),
+        ["queue.play"] = ("Play", "播放", "再生"),
+        ["queue.top"] = ("Top", "置顶", "先頭"),
+        ["queue.up"] = ("Up", "上移", "上へ"),
+        ["queue.down"] = ("Down", "下移", "下へ"),
+        ["queue.bottom"] = ("Bottom", "置底", "末尾"),
+        ["queue.remove"] = ("Remove", "移除", "削除"),
+        ["queue.empty"] = ("The Uta queue is empty.", "Uta 队列为空。", "Uta キューは空です。"),
+        ["queue.status"] = ("{0} song(s) · revision {1} · {2}", "{0} 首歌曲 · 修订 {1} · {2}", "{0} 曲 · リビジョン {1} · {2}"),
     };
 
     public static string Get(string key, UtaUiLanguage language)
