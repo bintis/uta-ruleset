@@ -5,6 +5,7 @@ Only maintained, current documents are kept in this directory.
 ## User and release documentation
 
 - [`../README.md`](../README.md) — project overview, installation, scope and current roadmap.
+- [`USER-GUIDE.md`](USER-GUIDE.md) — installation, upgrade, routing, recording privacy and phone pairing.
 - [`CHANGELOG.md`](CHANGELOG.md) — completed work and release validation history.
 - [`TESTING.md`](TESTING.md) — build, automated tests, real-game diagnostics and delivery gates.
 - [`CLOCK-ARCHITECTURE.md`](CLOCK-ARCHITECTURE.md) — authoritative gameplay-time, seek, rate and latency ownership.

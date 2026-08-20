@@ -74,7 +74,8 @@ the runtime without a defined release target.
 ## Build and test
 
 The consolidated build, automated-test, real-game debug and delivery procedure is
-in [Docs/TESTING.md](Docs/TESTING.md).
+in [Docs/TESTING.md](Docs/TESTING.md). Installation, upgrades, troubleshooting,
+recording privacy and phone pairing are covered in [Docs/USER-GUIDE.md](Docs/USER-GUIDE.md).
 
 GitHub Releases publish an installable `uta-ruleset-v*.zip` with
 `osu.Game.Rulesets.Uta.dll`, `libbassflac.so` and `BASSFLAC.txt`. Copy those
@@ -134,10 +135,10 @@ work is listed here.
 
 ### Release readiness
 
-- [ ] Add migrations for renamed or type-changed pre-1.0 settings.
+- [x] Add migrations for renamed or type-changed pre-1.0 settings (including removal of the malformed legacy remote-port values written by affected builds).
 - [x] Expand deterministic import, clock, scoring, recording and MOD-combination tests.
 - [x] Run and document the supported desktop-platform build matrix.
-- [ ] Complete install, upgrade, troubleshooting, recording-privacy and pairing documentation.
+- [x] Complete install, upgrade, troubleshooting, recording-privacy and pairing documentation in the [user guide](Docs/USER-GUIDE.md).
 - [ ] Freeze the `.utz`, score, configuration and recording compatibility contracts for 1.0.
 - [ ] Publish verified versioned assets only after crash, data-loss, network and desync gates pass.
 
