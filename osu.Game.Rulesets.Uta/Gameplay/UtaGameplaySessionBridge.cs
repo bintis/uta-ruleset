@@ -48,6 +48,7 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
     private osu.Framework.Platform.GameHost gameHost = null!;
     private UtaScoreProcessor? score;
     private bool debugDiagnostics;
+    private bool remoteSkipInProgress;
     private long revision;
     private long lastSnapshotCaptureTimestamp;
     private UtaRemoteSnapshot latestSnapshot;
@@ -365,6 +366,8 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
     {
         if (player == null || score == null)
             return UtaRemoteCommandResult.Reject("no_active_gameplay");
+        if (remoteSkipInProgress)
+            return UtaRemoteCommandResult.Reject("transition_busy");
 
         if (!player.IsCurrentScreen())
         {
@@ -378,20 +381,32 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
         osu.Framework.Logging.Logger.Log(
             $"Uta remote skip executing: judged={score.JudgedHits} seekTarget={seekTarget:0}ms trackLength={trackLength:0}ms chartEnd={chartEnd:0}ms paused={gameplayClock.IsPaused.Value}");
 
+        remoteSkipInProgress = true;
         scoringController.RequestForceCompletion();
         score.CompleteRemainingAsMisses();
 
         if (seekTarget > gameplayClock.CurrentTime + 10)
             seek(seekTarget, Math.Max(chartEnd, trackLength));
 
-        try
+        // Player needs one update after the clock seek for its completion state to
+        // observe the finalised score. Calling its private transition immediately
+        // rewound back to the audio clock, so End song looked accepted but never left.
+        gameHost.UpdateThread.Scheduler.AddDelayed(() =>
         {
-            progress_to_results?.Invoke(player, new object[] { false });
-        }
-        catch (Exception exception)
-        {
-            osu.Framework.Logging.Logger.Log($"Uta remote skip results invoke failed: {exception.GetBaseException().Message}");
-        }
+            try
+            {
+                if (player.IsCurrentScreen())
+                    progress_to_results?.Invoke(player, new object[] { false });
+            }
+            catch (Exception exception)
+            {
+                osu.Framework.Logging.Logger.Log($"Uta remote skip results invoke failed: {exception.GetBaseException().Message}");
+            }
+            finally
+            {
+                remoteSkipInProgress = false;
+            }
+        }, 100);
 
         osu.Framework.Logging.Logger.Log("Uta remote skip accepted.");
         return UtaRemoteCommandResult.Ok();
