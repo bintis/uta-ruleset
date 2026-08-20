@@ -56,6 +56,7 @@ public sealed class UtaRulesetConfigManager : RulesetConfigManager<UtaRulesetSet
         SetDefault(UtaRulesetSetting.LyricsProgressStyle, UtaLyricsProgressStyle.Underline);
         SetDefault(UtaRulesetSetting.HudSafeAreaPadding, 0f, 0f, 64f, 1f);
         SetDefault(UtaRulesetSetting.OriginalVocalsEnabled, false);
+        SetDefault(UtaRulesetSetting.StageEffectStyle, UtaStageEffectStyle.Fireflies);
     }
 
 }
@@ -111,6 +112,14 @@ public enum UtaRulesetSetting
     LyricsProgressStyle = 38,
     HudSafeAreaPadding = 39,
     OriginalVocalsEnabled = 40,
+    StageEffectStyle = 41,
+}
+
+public enum UtaStageEffectStyle
+{
+    Fireflies,
+    Starlight,
+    Confetti,
 }
 
 public enum UtaScoreHudPosition

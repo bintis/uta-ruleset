@@ -26,6 +26,7 @@ internal sealed partial class UtaGameplayHudLayer : CompositeDrawable
 {
     private readonly UtaPitchHudHost? pitchHost;
     private readonly UtaLyricsHudHost? lyricsHost;
+    private readonly UtaStageEffectsLayer? stageEffects;
     private readonly UtaSingingParticleLayer? singingParticles;
     private readonly UtaScoringFeedbackLayer? scoringFeedback;
     private readonly UtaScoringHud? scoreHud;
@@ -49,8 +50,9 @@ internal sealed partial class UtaGameplayHudLayer : CompositeDrawable
 
     internal bool HasSingingParticles => singingParticles != null;
     internal bool HasScoringFeedback => scoringFeedback != null;
+    internal bool HasStageEffects => stageEffects != null;
 
-    public UtaGameplayHudLayer(bool showPitch, bool showLyrics, bool showScore, bool showPractice, bool showRecording)
+    public UtaGameplayHudLayer(bool showPitch, bool showLyrics, bool showScore, bool showPractice, bool showRecording, bool showStageEffects = false)
     {
         this.showPitch = showPitch;
         this.showLyrics = showLyrics;
@@ -59,6 +61,9 @@ internal sealed partial class UtaGameplayHudLayer : CompositeDrawable
         this.showRecording = showRecording;
         RelativeSizeAxes = Axes.Both;
 
+        // Add this first so it remains a backdrop for the pitch, lyrics and score HUD.
+        if (showStageEffects)
+            AddInternal(stageEffects = new UtaStageEffectsLayer());
         if (showPitch)
             AddInternal(pitchHost = new UtaPitchHudHost());
         if (showLyrics)

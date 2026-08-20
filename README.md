@@ -39,6 +39,8 @@ See [CHANGELOG.md](Docs/CHANGELOG.md) for completed work from 0.1.0 onward.
   together while preserving synchronisation.
 - Optional Lyrics, Pitch Guide, Original Vocals and Octave Folding MODs using
   osu!lazer's native MOD interface.
+- Optional Stage Effects (`FX`) MOD with bounded Fireflies, Starlight and
+  Confetti backdrops; choose its style and intensity in the in-game `O` HUD.
 - Scoring is active by default; `Relax` (`RX`) opts back out into unscored
   practice. `Recording` (`REC`) is enabled per play rather than by a
   persistent settings checkbox, and `Practice` (`PR`) gates a standalone

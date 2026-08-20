@@ -44,10 +44,10 @@ public sealed partial class UtaQuickSettingsContainer : CompositeDrawable, IKeyB
     // this container, not siblings, hence surfacing the instance instead.
     public UtaQuickSettingsOverlay Overlay => overlay;
 
-    public UtaQuickSettingsContainer()
+    public UtaQuickSettingsContainer(bool stageEffectsEnabled)
     {
         RelativeSizeAxes = Axes.Both;
-        InternalChild = overlay = new UtaQuickSettingsOverlay();
+        InternalChild = overlay = new UtaQuickSettingsOverlay(stageEffectsEnabled);
     }
 
     [BackgroundDependencyLoader]
@@ -96,7 +96,7 @@ public sealed partial class UtaQuickSettingsOverlay : OsuFocusedOverlayContainer
 
     private readonly FillFlowContainer<Drawable> groups;
 
-    public UtaQuickSettingsOverlay()
+    public UtaQuickSettingsOverlay(bool stageEffectsEnabled)
     {
         Anchor = Anchor.TopRight;
         Origin = Anchor.TopRight;
@@ -113,16 +113,25 @@ public sealed partial class UtaQuickSettingsOverlay : OsuFocusedOverlayContainer
                 Direction = FillDirection.Vertical,
                 Spacing = new Vector2(0, 20),
                 Padding = new MarginPadding(padding),
-                Children = new Drawable[]
-                {
-                    new UtaBackgroundSettings(),
-                    new UtaPlaybackSettings(),
-                    new UtaDeviceDiagnostics(),
-                    new UtaDisplaySettings(),
-                    new AudioSettings(),
-                },
+                Children = createGroups(stageEffectsEnabled),
             },
         };
+    }
+
+    private static Drawable[] createGroups(bool stageEffectsEnabled)
+    {
+        var result = new List<Drawable>
+        {
+            new UtaBackgroundSettings(),
+            new UtaPlaybackSettings(),
+            new UtaDeviceDiagnostics(),
+            new UtaDisplaySettings(),
+        };
+        // FX is opt-in: its controls are not shown for ordinary plays.
+        if (stageEffectsEnabled)
+            result.Add(new UtaStageEffectsSettings());
+        result.Add(new AudioSettings());
+        return result.ToArray();
     }
 
     protected override void LoadComplete()
@@ -288,6 +297,75 @@ public sealed partial class UtaDisplaySettings : PlayerSettingsGroup
                     UtaPitchCurveDisplay.Both => "Song + my voice",
                     _ => item.ToString(),
                 };
+        }
+    }
+}
+
+public sealed partial class UtaStageEffectsSettings : PlayerSettingsGroup
+{
+    private readonly SettingsDropdown<UtaStageEffectStyle> style;
+    private readonly PlayerSliderBar<float> intensity;
+    private readonly Bindable<string> locale = new();
+    private UtaUiLanguage language;
+
+    public UtaStageEffectsSettings()
+        : base("Stage effects")
+    {
+        Children = new Drawable[]
+        {
+            style = new StageEffectStyleDropdown
+            {
+                LabelText = "Effect style",
+                Items = System.Enum.GetValues<UtaStageEffectStyle>(),
+                TooltipText = "A client-only particle backdrop. Reduced motion disables it.",
+            },
+            intensity = new PlayerSliderBar<float>
+            {
+                LabelText = "Effect intensity",
+                DisplayAsPercentage = true,
+                KeyboardStep = 0.05f,
+            },
+        };
+    }
+
+    [BackgroundDependencyLoader]
+    private void load(UtaRulesetConfigManager config, FrameworkConfigManager frameworkConfig)
+    {
+        locale.BindTo(frameworkConfig.GetBindable<string>(FrameworkSetting.Locale));
+        locale.BindValueChanged(value =>
+        {
+            language = UtaLanguageResolver.FromLocale(value.NewValue);
+            refreshLabels();
+        }, true);
+        style.Current = config.GetBindable<UtaStageEffectStyle>(UtaRulesetSetting.StageEffectStyle);
+        intensity.Current = config.GetBindable<float>(UtaRulesetSetting.ParticleIntensity);
+    }
+
+    private void refreshLabels()
+    {
+        style.LabelText = UtaStrings.Get("quick.effect_style", language);
+        intensity.LabelText = UtaStrings.Get("quick.effect_intensity", language);
+    }
+
+    protected override void Dispose(bool isDisposing)
+    {
+        locale.UnbindAll();
+        base.Dispose(isDisposing);
+    }
+
+    private sealed partial class StageEffectStyleDropdown : SettingsDropdown<UtaStageEffectStyle>
+    {
+        protected override OsuDropdown<UtaStageEffectStyle> CreateDropdown() => new StageEffectStyleDropdownControl();
+
+        private sealed partial class StageEffectStyleDropdownControl : DropdownControl
+        {
+            protected override LocalisableString GenerateItemText(UtaStageEffectStyle item) => item switch
+            {
+                UtaStageEffectStyle.Fireflies => "Fireflies",
+                UtaStageEffectStyle.Starlight => "Starlight",
+                UtaStageEffectStyle.Confetti => "Confetti",
+                _ => item.ToString(),
+            };
         }
     }
 }

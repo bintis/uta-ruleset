@@ -177,6 +177,8 @@ internal static class UtaStrings
         ["quick.pitch_hud_opacity"] = ("Pitch HUD opacity", "音高 HUD 不透明度", "ピッチ HUD の不透明度"),
         ["quick.upcoming_lyrics"] = ("Upcoming lyrics", "后续歌词", "次の歌詞"),
         ["quick.lyric_readings"] = ("Lyric readings", "歌词读音", "歌詞の読み"),
+        ["quick.effect_style"] = ("Effect style", "特效样式", "エフェクトスタイル"),
+        ["quick.effect_intensity"] = ("Effect intensity", "特效强度", "エフェクト強度"),
         ["quick.bgm_output"] = ("BGM output", "伴奏输出", "BGM 出力"),
         ["quick.vocals_output"] = ("Vocals output", "人声输出", "ボーカル出力"),
         ["quick.monitor_output"] = ("Microphone monitor output", "麦克风监听输出", "マイクモニター出力"),

@@ -3,6 +3,23 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.18 - 2026-08-20
+
+### Stage effects
+
+- Add the opt-in **Stage Effects** (`FX`) FUN MOD. It mounts a bounded,
+  client-only particle backdrop behind the gameplay HUD without altering charts,
+  scoring or recordings.
+- When FX is selected, the in-game `O` settings panel exposes Fireflies,
+  Starlight and Confetti styles plus effect intensity. The section is omitted
+  from ordinary plays, and the existing Reduced Motion option disables all
+  backdrop movement.
+
+### Validation
+
+- 168 automated tests pass against the local Nix osu! references; format,
+  overlay audit and whitespace checks pass.
+
 ## 0.8.17 - 2026-08-20
 
 ### Mobile remote

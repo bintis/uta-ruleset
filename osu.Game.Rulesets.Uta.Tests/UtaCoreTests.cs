@@ -180,6 +180,7 @@ public class UtaCoreTests
                 Is.EqualTo(UtaPitchCurveDisplay.Both));
             Assert.That(config.GetBindable<bool>(UtaRulesetSetting.ShowPitchGuideTrail).Value, Is.False);
             Assert.That(config.GetBindable<bool>(UtaRulesetSetting.OriginalVocalsEnabled).Value, Is.False);
+            Assert.That(config.GetBindable<UtaStageEffectStyle>(UtaRulesetSetting.StageEffectStyle).Value, Is.EqualTo(UtaStageEffectStyle.Fireflies));
             Assert.That(config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval).Value, Is.EqualTo(10));
         });
     }
@@ -210,7 +211,8 @@ public class UtaCoreTests
             Assert.That(difficultyReductionMods, Has.Exactly(1).TypeOf<UtaModRelax>()
                                                        .And.Exactly(1).TypeOf<UtaModOriginalVocals>()
                                                        .And.Exactly(1).TypeOf<UtaModOctaveFold>().And.Exactly(1).TypeOf<UtaModDaycore>());
-            Assert.That(funMods, Has.Exactly(1).TypeOf<UtaModAutoplay>().And.Exactly(1).TypeOf<UtaModRecording>());
+            Assert.That(funMods, Has.Exactly(1).TypeOf<UtaModAutoplay>().And.Exactly(1).TypeOf<UtaModRecording>()
+                                      .And.Exactly(1).TypeOf<UtaModStageEffects>());
             Assert.That(difficultyIncreaseMods
                 .Concat(difficultyReductionMods)
                 .Concat(funMods)

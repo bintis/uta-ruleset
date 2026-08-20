@@ -93,6 +93,7 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         Overlays.Add(recordingRuntime);
         gameplayServices = new UtaGlobalExtension();
         bool immersiveQueueEnabled = selectedMods.Any(mod => mod is UtaModImmersiveQueue);
+        bool stageEffectsEnabled = selectedMods.Any(mod => mod is UtaModStageEffects);
         gameplaySessionBridge = new UtaGameplaySessionBridge(
             (UtaBeatmap)beatmap,
             immersiveQueueEnabled);
@@ -102,8 +103,9 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
             true,
             scoringEnabled,
             practiceEnabled,
-            recordingEnabled));
-        quickSettings = new UtaQuickSettingsContainer();
+            recordingEnabled,
+            stageEffectsEnabled));
+        quickSettings = new UtaQuickSettingsContainer(stageEffectsEnabled);
         Overlays.Add(quickSettings);
         Overlays.Add(new UtaAudioController());
         Overlays.Add(new UtaPerformanceDiagnostics());

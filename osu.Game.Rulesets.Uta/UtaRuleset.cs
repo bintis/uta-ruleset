@@ -168,6 +168,7 @@ public sealed partial class UtaRuleset : Ruleset
                 new UtaModRecording(),
                 new UtaModPractice(),
                 new UtaModImmersiveQueue(),
+                new UtaModStageEffects(),
             },
             _ => Array.Empty<Mod>(),
         };

@@ -352,10 +352,11 @@ public sealed class UtaReleaseRegressionTests
     public void TestHistoricalConfigKeysRemainStable()
     {
         int[] values = Enum.GetValues<UtaRulesetSetting>().Select(setting => (int)setting).ToArray();
-        Assert.That(values, Is.EqualTo(Enumerable.Range(0, 41)), "Persisted 0.8 keys 0-31 must remain stable and HUD keys must only append.");
+        Assert.That(values, Is.EqualTo(Enumerable.Range(0, 42)), "Persisted 0.8 keys 0-31 must remain stable and HUD keys must only append.");
         Assert.That((int)UtaRulesetSetting.PitchHudSize, Is.EqualTo(32));
         Assert.That((int)UtaRulesetSetting.HudSafeAreaPadding, Is.EqualTo(39));
         Assert.That((int)UtaRulesetSetting.OriginalVocalsEnabled, Is.EqualTo(40));
+        Assert.That((int)UtaRulesetSetting.StageEffectStyle, Is.EqualTo(41));
     }
 
     [TestCase(1280, UtaHudDensity.Wide, 180, 56)]
@@ -456,12 +457,15 @@ public sealed class UtaReleaseRegressionTests
     [Test]
     public void TestScoringFeedbackAndParticlesAreMountedInGameplayHud()
     {
-        using var layer = new UtaGameplayHudLayer(showPitch: true, showLyrics: true, showScore: true, showPractice: false, showRecording: false);
+        using var ordinaryLayer = new UtaGameplayHudLayer(showPitch: true, showLyrics: true, showScore: true, showPractice: false, showRecording: false);
+        using var effectsLayer = new UtaGameplayHudLayer(showPitch: true, showLyrics: true, showScore: true, showPractice: false, showRecording: false, showStageEffects: true);
 
         Assert.Multiple(() =>
         {
-            Assert.That(layer.HasSingingParticles, Is.True);
-            Assert.That(layer.HasScoringFeedback, Is.True);
+            Assert.That(ordinaryLayer.HasSingingParticles, Is.True);
+            Assert.That(ordinaryLayer.HasScoringFeedback, Is.True);
+            Assert.That(ordinaryLayer.HasStageEffects, Is.False, "The FX backdrop must stay opt-in.");
+            Assert.That(effectsLayer.HasStageEffects, Is.True);
         });
     }
 
