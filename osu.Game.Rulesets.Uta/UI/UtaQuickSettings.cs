@@ -340,6 +340,8 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
     private readonly PlayerSliderBar<float> microphoneMonitorVolume;
     private readonly PlayerSliderBar<float> accompanimentLatency;
     private readonly PlayerSliderBar<float> lyricsLatency;
+    private readonly Bindable<string> locale = new();
+    private UtaUiLanguage language;
 
     public UtaPlaybackSettings()
         : base("Uta playback")
@@ -367,8 +369,14 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
     }
 
     [BackgroundDependencyLoader]
-    private void load(UtaAudioSettingsState audioSettings)
+    private void load(UtaAudioSettingsState audioSettings, FrameworkConfigManager frameworkConfig)
     {
+        locale.BindTo(frameworkConfig.GetBindable<string>(FrameworkSetting.Locale));
+        locale.BindValueChanged(value =>
+        {
+            language = UtaLanguageResolver.FromLocale(value.NewValue);
+            refreshLabels();
+        }, true);
         string[] availableOutputs = UtaAudioDevices.Enumerate().Select(device => device.Name).ToArray();
         backgroundMusicOutput.Items = UtaDeviceItems.Build(audioSettings.BackgroundMusicOutputDevice.Value, availableOutputs);
         vocalsOutput.Items = UtaDeviceItems.Build(audioSettings.OriginalVocalsOutputDevice.Value, availableOutputs);
@@ -395,6 +403,26 @@ public sealed partial class UtaPlaybackSettings : PlayerSettingsGroup
         // yet clear which of those writes it.
         audioSettings.MicrophoneOutputDevice.BindValueChanged(value =>
             Logger.Log($"Uta debug playback settings: mic-output changed '{value.OldValue}' -> '{value.NewValue}'"));
+        refreshLabels();
+    }
+
+    private void refreshLabels()
+    {
+        backgroundMusicOutput.LabelText = UtaStrings.Get("quick.bgm_output", language);
+        vocalsOutput.LabelText = UtaStrings.Get("quick.vocals_output", language);
+        microphoneMonitorOutput.LabelText = UtaStrings.Get("quick.monitor_output", language);
+        backgroundMusicVolume.LabelText = UtaStrings.Get("quick.bgm", language);
+        originalVocalsEnabled.LabelText = UtaStrings.Get("quick.play_original_vocals", language);
+        originalVocalsVolume.LabelText = UtaStrings.Get("quick.original_vocals", language);
+        microphoneMonitorVolume.LabelText = UtaStrings.Get("quick.ear_monitor", language);
+        accompanimentLatency.LabelText = UtaStrings.Get("quick.accompaniment_latency", language);
+        lyricsLatency.LabelText = UtaStrings.Get("quick.lyrics_latency", language);
+    }
+
+    protected override void Dispose(bool isDisposing)
+    {
+        locale.UnbindAll();
+        base.Dispose(isDisposing);
     }
 
     private static PlayerSliderBar<T> createSlider<T>(string label, string tooltip, bool percentage = true, float keyboardStep = 0.05f)

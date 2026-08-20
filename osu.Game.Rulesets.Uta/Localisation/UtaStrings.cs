@@ -142,6 +142,15 @@ internal static class UtaStrings
         ["quick.pitch_hud_opacity"] = ("Pitch HUD opacity", "音高 HUD 不透明度", "ピッチ HUD の不透明度"),
         ["quick.upcoming_lyrics"] = ("Upcoming lyrics", "后续歌词", "次の歌詞"),
         ["quick.lyric_readings"] = ("Lyric readings", "歌词读音", "歌詞の読み"),
+        ["quick.bgm_output"] = ("BGM output", "伴奏输出", "BGM 出力"),
+        ["quick.vocals_output"] = ("Vocals output", "人声输出", "ボーカル出力"),
+        ["quick.monitor_output"] = ("Microphone monitor output", "麦克风监听输出", "マイクモニター出力"),
+        ["quick.bgm"] = ("BGM", "伴奏", "BGM"),
+        ["quick.original_vocals"] = ("Original vocals", "原唱", "オリジナルボーカル"),
+        ["quick.play_original_vocals"] = ("Play original vocals", "播放原唱", "オリジナルボーカルを再生"),
+        ["quick.ear_monitor"] = ("Ear monitor", "耳返监听", "イヤーモニター"),
+        ["quick.accompaniment_latency"] = ("Accompaniment latency", "伴奏延迟", "伴奏レイテンシ"),
+        ["quick.lyrics_latency"] = ("Lyrics latency", "歌词延迟", "歌詞レイテンシ"),
     };
 
     public static string Get(string key, UtaUiLanguage language)

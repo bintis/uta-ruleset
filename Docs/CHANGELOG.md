@@ -3,6 +3,18 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.10 - 2026-08-20
+
+### Added
+
+- Added live English, Simplified Chinese and Japanese labels to in-game audio
+  route, vocal, monitoring and latency quick-settings controls.
+
+### Validation
+
+- 166 automated tests pass against the local Nix osu! references; format and
+  whitespace checks pass.
+
 ## 0.8.9 - 2026-08-20
 
 ### Added
