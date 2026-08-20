@@ -247,7 +247,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             userLayer.X = TimeOffsetToX(0, current, DrawWidth);
             if (sampleAdded || sizeChanged || !userGeometryReady)
             {
-                drawUser(true);
+                drawUser(true, current);
                 userGeometryReady = true;
                 if (debugDiagnostics.Value)
                     diagnosticUserRebuilds++;
@@ -258,7 +258,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             userLayer.X = 0;
             userGeometryReady = false;
             if (userWasVisible)
-                drawUser(false);
+                drawUser(false, current);
         }
 
         referenceWasVisible = showSong;
@@ -381,15 +381,22 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         hideUnused(referenceSegments, used);
     }
 
-    private void drawUser(bool visible)
+    private void drawUser(bool visible, double playbackTime)
     {
         int used = 0;
         if (visible)
         {
-            for (int i = 1; i < sampleCount; i++)
+            // The fixed four-second buffer deliberately retains history, but only the
+            // LOOK_BEHIND portion can be on screen. Rebuilding primitives for every
+            // expired (off-screen) sample at 50 Hz was needless update-thread work and
+            // made the live curve feel delayed on high-refresh hosts.
+            int first = Math.Max(1, lowerBoundSampleDisplayTime(playbackTime - UtaPitchTimelineGeometry.LOOK_BEHIND) - 1);
+            for (int i = first; i < sampleCount; i++)
             {
                 CurveSample previous = sampleAt(i - 1);
                 CurveSample current = sampleAt(i);
+                if (previous.DisplayTime > playbackTime + 100)
+                    break;
                 if (previous.UserMidi is not { } from || current.UserMidi is not { } to)
                     continue;
 
@@ -452,6 +459,22 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 
     private CurveSample sampleAt(int logicalIndex)
         => samples[(sampleStart + logicalIndex) % buffer_size];
+
+    private int lowerBoundSampleDisplayTime(double time)
+    {
+        int low = 0;
+        int high = sampleCount;
+        while (low < high)
+        {
+            int middle = low + (high - low) / 2;
+            if (sampleAt(middle).DisplayTime < time)
+                low = middle + 1;
+            else
+                high = middle;
+        }
+
+        return low;
+    }
 
     private (Color4 Colour, float Weight) userStyle(CurveSample sample)
     {

@@ -3,6 +3,19 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.13 - 2026-08-20
+
+### Performance
+
+- Rebuild live pitch primitives only for the visible history window. The rolling
+  buffer remains four seconds for continuity, but its off-screen samples are no
+  longer transformed and restyled on every 20 ms microphone update.
+
+### Validation
+
+- 167 automated tests pass against the local Nix osu! references; format and
+  whitespace checks pass.
+
 ## 0.8.12 - 2026-08-20
 
 ### Changed
