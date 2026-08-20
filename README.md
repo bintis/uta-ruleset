@@ -129,7 +129,7 @@ work is listed here.
 
 - [ ] Bind video visibility, dim, blur and offset to the supported lazer video drawable.
 - [ ] Perform real-runtime verification that native video-event synchronisation survives pause, seek, loop and rate changes (the converter regression verifies that the native video event is emitted).
-- [ ] Finish keyboard, controller, touch, narrow-window, colour-blind and reduced-motion passes.
+- [x] Finish keyboard, controller, touch, narrow-window, colour-blind and reduced-motion passes; see [ACCESSIBILITY.md](Docs/ACCESSIBILITY.md).
 - [ ] Complete English, Japanese and Chinese localisation of desktop strings.
 - [ ] Add consistent search terms, tooltips, reset actions and disabled-state explanations.
 

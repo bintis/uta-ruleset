@@ -97,6 +97,17 @@ public sealed partial class UtaRuleset : Ruleset
             new KeyBinding(InputKey.N, UtaAction.ToggleQueueOverlay),
             new KeyBinding(InputKey.F8, UtaAction.OpenQueueOverlay),
             new KeyBinding(InputKey.K, UtaAction.ToggleRemoteOverlay),
+
+            // Controller defaults mirror the practice shortcuts. They remain ordinary
+            // lazer bindings, so players can remap or remove them in the input settings.
+            new KeyBinding(InputKey.Joystick1, UtaAction.OpenSettings),
+            new KeyBinding(InputKey.Joystick2, UtaAction.SetLoopPointA),
+            new KeyBinding(InputKey.Joystick3, UtaAction.SetLoopPointB),
+            new KeyBinding(InputKey.Joystick4, UtaAction.ClearLoopPoints),
+            new KeyBinding(InputKey.Joystick5, UtaAction.PreviousPhrase),
+            new KeyBinding(InputKey.Joystick6, UtaAction.NextPhrase),
+            new KeyBinding(InputKey.Joystick7, UtaAction.RetryPhrase),
+            new KeyBinding(InputKey.Joystick8, UtaAction.ToggleCurrentPhraseLoop),
         };
 
     public override IEnumerable<HitResult> GetValidHitResults()

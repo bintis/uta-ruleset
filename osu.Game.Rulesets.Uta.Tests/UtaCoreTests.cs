@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using NUnit.Framework;
+using osu.Framework.Input.Bindings;
 using osu.Game.Beatmaps;
 using osu.Game.IO;
 using osu.Game.Rulesets;
@@ -149,12 +150,18 @@ public class UtaCoreTests
         Mod[] difficultyIncreaseMods = ruleset.GetModsFor(ModType.DifficultyIncrease).ToArray();
         Mod[] difficultyReductionMods = ruleset.GetModsFor(ModType.DifficultyReduction).ToArray();
         Mod[] funMods = ruleset.GetModsFor(ModType.Fun).ToArray();
+        KeyBinding[] bindings = ruleset.GetDefaultKeyBindings().ToArray();
 
         Assert.Multiple(() =>
         {
             Assert.That(ruleset.ShortName, Is.EqualTo("uta"));
             Assert.That(ruleset.Description, Is.EqualTo("uta!"));
             Assert.That(inputManager.UseParentInput, Is.True);
+            Assert.That(bindings.Any(binding => binding.KeyCombination.Keys.Contains(InputKey.Joystick1) && binding.Action.Equals(UtaAction.OpenSettings)), Is.True);
+            Assert.That(bindings.Any(binding => binding.KeyCombination.Keys.Contains(InputKey.Joystick2) && binding.Action.Equals(UtaAction.SetLoopPointA)), Is.True);
+            Assert.That(bindings.Any(binding => binding.KeyCombination.Keys.Contains(InputKey.Joystick3) && binding.Action.Equals(UtaAction.SetLoopPointB)), Is.True);
+            Assert.That(bindings.Any(binding => binding.KeyCombination.Keys.Contains(InputKey.Joystick5) && binding.Action.Equals(UtaAction.PreviousPhrase)), Is.True);
+            Assert.That(bindings.Any(binding => binding.KeyCombination.Keys.Contains(InputKey.Joystick6) && binding.Action.Equals(UtaAction.NextPhrase)), Is.True);
             Assert.That(difficultyIncreaseMods, Has.Exactly(1).TypeOf<UtaModNightcore>());
             Assert.That(difficultyReductionMods, Has.Exactly(1).TypeOf<UtaModRelax>()
                                                        .And.Exactly(1).TypeOf<UtaModOriginalVocals>()

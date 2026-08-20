@@ -3,6 +3,19 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.6 - 2026-08-20
+
+### Added
+
+- Added remappable default joystick bindings for quick settings and Practice
+  loop/phrase controls, alongside the existing keyboard and touch controls.
+- Documented responsive, colour-safe and reduced-motion accessibility behaviour.
+
+### Validation
+
+- The complete local Nix test suite passes (165 tests), including default
+  joystick binding and layout/accessibility regressions.
+
 ## 0.8.5 - 2026-08-20
 
 ### Fixed

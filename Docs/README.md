@@ -9,6 +9,7 @@ Only maintained, current documents are kept in this directory.
 - [`CHANGELOG.md`](CHANGELOG.md) — completed work and release validation history.
 - [`TESTING.md`](TESTING.md) — build, automated tests, real-game diagnostics and delivery gates.
 - [`CLOCK-ARCHITECTURE.md`](CLOCK-ARCHITECTURE.md) — authoritative gameplay-time, seek, rate and latency ownership.
+- [`ACCESSIBILITY.md`](ACCESSIBILITY.md) — keyboard/controller, touch, responsive and reduced-motion behaviour.
 - [`SKINNING.md`](SKINNING.md) — current uta! skin asset contract and fallback behaviour.
 
 ## Scoring and performance contracts
