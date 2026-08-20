@@ -121,6 +121,20 @@ public sealed class UtaQueueReservationTests
     }
 
     [Test]
+    public void TestRemoteQueueSupportsNightcoreAndDaycore()
+    {
+        var nightcore = new UtaQueuePlaybackOptions(1, 0, new[] { "NC" });
+        var daycore = new UtaQueuePlaybackOptions(1, 0, new[] { "DC" });
+
+        Assert.That(nightcore.TryValidate(out string nightcoreError), Is.True, nightcoreError);
+        Assert.That(daycore.TryValidate(out string daycoreError), Is.True, daycoreError);
+        Assert.That(UtaPlaybackCoordinator.TryComposeReservationMods(nightcore, Array.Empty<Mod>(), out var ncMods, out nightcoreError), Is.True, nightcoreError);
+        Assert.That(UtaPlaybackCoordinator.TryComposeReservationMods(daycore, Array.Empty<Mod>(), out var dcMods, out daycoreError), Is.True, daycoreError);
+        Assert.That(ncMods, Has.Exactly(1).TypeOf<UtaModNightcore>());
+        Assert.That(dcMods, Has.Exactly(1).TypeOf<UtaModDaycore>());
+    }
+
+    [Test]
     public void TestEmptyReservationModsKeepAutoplayAndImmersiveQueue()
     {
         var current = new Mod[] { new UtaModAutoplay(), new UtaModImmersiveQueue(), new UtaModNightcore() };

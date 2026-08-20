@@ -25,7 +25,7 @@ public sealed record UtaQueuePlaybackOptions(
 
     public static readonly HashSet<string> RemoteModAcronyms = new(StringComparer.Ordinal)
     {
-        "IQ", "NF", "RX", "VOX", "OCT", "NPG", "NL", "AT", "REC", "PR",
+        "IQ", "NF", "RX", "VOX", "OCT", "NC", "DC", "AT", "REC", "PR",
     };
 
     public IReadOnlyList<string> ModList => Mods ?? Array.Empty<string>();

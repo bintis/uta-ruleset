@@ -547,6 +547,8 @@ public sealed partial class UtaPlaybackCoordinator : Component
         () => new UtaModRelax(),
         () => new UtaModOriginalVocals(),
         () => new UtaModOctaveFold(),
+        () => new UtaModNightcore(),
+        () => new UtaModDaycore(),
         () => new UtaModAutoplay(),
         () => new UtaModRecording(),
         () => new UtaModPractice(),
