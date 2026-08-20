@@ -3,6 +3,33 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.19 - 2026-08-20
+
+### Mobile remote redesign
+
+- Rework the self-contained Rust WASM mobile remote around the approved final
+  mobile information architecture: stable top navigation, a safe-area-aware
+  persistent Now Playing dock, full-screen Song Setup and a Control-focused
+  operator surface.
+- Move pause/resume to the dock and group Control transport at the bottom;
+  **End song** now requires a 700 ms press-and-hold to prevent accidental
+  result transitions.
+- Move volume and latency sliders behind **Info → Audio & output**. Add
+  **Info → Appearance** with persisted Dark/Light canvas themes; Light remaps
+  every shared surface token instead of leaving dark panels behind.
+- Keep contextual Practice loop/phrase controls in Control, retain compact
+  two-column readable MOD setup buttons, and show human-readable queue
+  options rather than opaque MOD acronyms.
+- Keep the existing binary protocol, reconnection/session handling and
+  single-file WASM packaging intact. Update the single-file verifier for the
+  new persisted-theme host bridge.
+
+### Validation
+
+- 168 automated tests pass against the local Nix osu! references; the WASM
+  remote builds and verifies as one executable HTML file, and overlay/whitespace
+  audits pass.
+
 ## 0.8.18 - 2026-08-20
 
 ### Stage effects

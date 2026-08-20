@@ -10,8 +10,10 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src ws: wss:; img-src data:">
 <title>uta! remote</title>
 <style>
-:root{--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);--sal:env(safe-area-inset-left);--sar:env(safe-area-inset-right)}
+:root{--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);--sal:env(safe-area-inset-left);--sar:env(safe-area-inset-right);color-scheme:dark}
+:root[data-theme="light"]{color-scheme:light}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#16161c;touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+:root[data-theme="light"] html,:root[data-theme="light"] body{background:#f8f6fa}
 canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #search{position:fixed;z-index:2;border:0;border-radius:6px;background:rgba(0,0,0,.42);color:#fff;caret-color:#e846a0;box-shadow:inset 0 -2px 0 #e846a0;font:16px/1.3 Torus,Inter,"Segoe UI","PingFang SC","Hiragino Sans","Noto Sans CJK SC",sans-serif;padding:10px 12px;opacity:0;pointer-events:none;-webkit-user-select:text;user-select:text}
 #search.on{opacity:1;pointer-events:auto}
@@ -31,6 +33,9 @@ const search=document.getElementById('search');
 const ctx=canvas.getContext('2d');
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let wasm=null,memory=null,socket=null,retryTimer=null,intentional=false,wake=null;
+let lightTheme=localStorage.getItem('uta.theme')==='light';
+document.documentElement.dataset.theme=lightTheme?'light':'dark';
+function applyTheme(light){lightTheme=!!light;document.documentElement.dataset.theme=lightTheme?'light':'dark';localStorage.setItem('uta.theme',lightTheme?'light':'dark')}
 const fragment=new URLSearchParams(location.hash.slice(1));
 let ticket=fragment.get('ticket')||'';
 let remember=localStorage.getItem('uta.remember')!=='0';
@@ -60,7 +65,8 @@ const env={
   host_log(ptr,len){console.log('[uta]',read(ptr,len))},
   host_session(idPtr,idLen,secPtr,secLen){sessionId=read(idPtr,idLen);secret=read(secPtr,secLen);ticket='';history.replaceState(null,'',location.pathname);sessionStorage.setItem('uta.session',sessionId);sessionStorage.setItem('uta.secret',secret);if(remember){localStorage.setItem('uta.session',sessionId);localStorage.setItem('uta.secret',secret)}},
   host_seq(value){sessionStorage.setItem('uta.sequence',String(value))},
-  host_remember(enabled){remember=!!enabled;localStorage.setItem('uta.remember',remember?'1':'0');if(remember){if(sessionId)localStorage.setItem('uta.session',sessionId);if(secret)localStorage.setItem('uta.secret',secret)}else{localStorage.removeItem('uta.session');localStorage.removeItem('uta.secret')}}
+  host_remember(enabled){remember=!!enabled;localStorage.setItem('uta.remember',remember?'1':'0');if(remember){if(sessionId)localStorage.setItem('uta.session',sessionId);if(secret)localStorage.setItem('uta.secret',secret)}else{localStorage.removeItem('uta.session');localStorage.removeItem('uta.secret')}},
+  host_theme(light){applyTheme(!!light)}
 };
 
 function wsUrl(){const scheme=location.protocol==='https:'?'wss:':'ws:';const q=new URLSearchParams();if(ticket)q.set('ticket',ticket);else{q.set('session',sessionId);q.set('secret',secret)}return scheme+'//'+location.host+'/ws?'+q}
@@ -77,6 +83,7 @@ function ptr(kind,e){const r=canvas.getBoundingClientRect();const t=e.changedTou
   const [lp,ll]=write(lang);
   wasm.start(lp,ll,reduced?1:0,Number(sessionStorage.getItem('uta.sequence')||localStorage.getItem('uta.sequence')||0)|0,remember?1:0);
   wasm.dealloc(lp,ll||1);
+  wasm.set_theme(lightTheme?1:0);
   if(fragment.get('demo')==='1')wasm.demo();
   layout();
   connect();

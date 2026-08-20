@@ -5,14 +5,26 @@ mod proto;
 
 use app::App;
 use i18n::Lang;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+
+static LIGHT_THEME: AtomicBool = AtomicBool::new(false);
 
 #[link(wasm_import_module = "env")]
 extern "C" {
     fn host_fill_rect(x: f32, y: f32, w: f32, h: f32, color: u32, radius: f32);
     fn host_stroke_rect(x: f32, y: f32, w: f32, h: f32, color: u32, radius: f32, width: f32);
     fn host_fill_triangle(x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32, color: u32);
-    fn host_fill_text(x: f32, y: f32, size: f32, color: u32, align: i32, flags: i32, ptr: *const u8, len: usize);
+    fn host_fill_text(
+        x: f32,
+        y: f32,
+        size: f32,
+        color: u32,
+        align: i32,
+        flags: i32,
+        ptr: *const u8,
+        len: usize,
+    );
     fn host_measure_text(size: f32, flags: i32, ptr: *const u8, len: usize) -> f32;
     fn host_clip(x: f32, y: f32, w: f32, h: f32);
     fn host_unclip();
@@ -22,6 +34,7 @@ extern "C" {
     fn host_session(id_ptr: *const u8, id_len: usize, secret_ptr: *const u8, secret_len: usize);
     fn host_seq(value: i32);
     fn host_remember(enabled: i32);
+    fn host_theme(light: i32);
 }
 
 static APP: Mutex<Option<App>> = Mutex::new(None);
@@ -45,7 +58,13 @@ pub extern "C" fn dealloc(ptr: *mut u8, size: usize) {
 }
 
 #[no_mangle]
-pub extern "C" fn start(lang_ptr: *const u8, lang_len: usize, reduced: i32, sequence: i32, remember: i32) {
+pub extern "C" fn start(
+    lang_ptr: *const u8,
+    lang_len: usize,
+    reduced: i32,
+    sequence: i32,
+    remember: i32,
+) {
     let lang = Lang::parse(&read(lang_ptr, lang_len));
     log("ui.start binary+16MiB heap");
     if let Ok(mut slot) = APP.lock() {
@@ -89,6 +108,13 @@ pub extern "C" fn set_closed() {
 }
 
 #[no_mangle]
+pub extern "C" fn set_theme(light: i32) {
+    let light = light != 0;
+    LIGHT_THEME.store(light, Ordering::Relaxed);
+    with(|app| app.set_theme(light));
+}
+
+#[no_mangle]
 pub extern "C" fn demo() {
     with(|app| app.load_demo());
 }
@@ -114,11 +140,11 @@ fn read(ptr: *const u8, len: usize) -> String {
 }
 
 pub(crate) fn fill_rect(x: f32, y: f32, w: f32, h: f32, color: u32, radius: f32) {
-    unsafe { host_fill_rect(x, y, w, h, color, radius) }
+    unsafe { host_fill_rect(x, y, w, h, paint(color), radius) }
 }
 
 pub(crate) fn stroke_rect(x: f32, y: f32, w: f32, h: f32, color: u32, radius: f32, width: f32) {
-    unsafe { host_stroke_rect(x, y, w, h, color, radius, width) }
+    unsafe { host_stroke_rect(x, y, w, h, paint(color), radius, width) }
 }
 
 pub(crate) fn fill_triangle(x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32, color: u32) {
@@ -126,7 +152,40 @@ pub(crate) fn fill_triangle(x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32
 }
 
 pub(crate) fn fill_text(x: f32, y: f32, size: f32, color: u32, align: i32, flags: i32, text: &str) {
-    unsafe { host_fill_text(x, y, size, color, align, flags, text.as_ptr(), text.len()) }
+    unsafe {
+        host_fill_text(
+            x,
+            y,
+            size,
+            paint(color),
+            align,
+            flags,
+            text.as_ptr(),
+            text.len(),
+        )
+    }
+}
+
+fn paint(color: u32) -> u32 {
+    if !LIGHT_THEME.load(Ordering::Relaxed) {
+        return color;
+    }
+    // Preserve semantic accent/status colours; remap only the dark surface palette used by
+    // the canvas client so Light never leaves dark-only panels behind.
+    match color {
+        0xFF16161C => 0xFFF8F6FA,
+        0xF216161C => 0xF2FFFFFF,
+        0xFF2A2433 | 0xFF221E28 => 0xFFFFFFFF,
+        0xFF33303C => 0xFFF0EDF4,
+        0xFF4A4456 => 0xFFD7D1DD,
+        0xFFFFFFFF => 0xFF292431,
+        0xFFB0A8B8 => 0xFF746C7B,
+        0xCC0A0A0E => 0x88908A98,
+        0xF21A1A22 => 0xF2FFFFFF,
+        0xFF2A2A32 => 0xFFE5E0EA,
+        0x6A000000 => 0x12000000,
+        _ => color,
+    }
 }
 
 pub(crate) fn measure(size: f32, flags: i32, text: &str) -> f32 {
@@ -159,6 +218,11 @@ pub(crate) fn store_seq(value: i32) {
 
 pub(crate) fn set_remembered(enabled: bool) {
     unsafe { host_remember(i32::from(enabled)) }
+}
+
+pub(crate) fn persist_theme(light: bool) {
+    LIGHT_THEME.store(light, Ordering::Relaxed);
+    unsafe { host_theme(i32::from(light)) }
 }
 
 pub(crate) fn search_rect(x: f32, y: f32, w: f32, h: f32, visible: bool) {
