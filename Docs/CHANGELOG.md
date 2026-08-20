@@ -3,6 +3,23 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.15 - 2026-08-20
+
+### Performance
+
+- Schedule native note-result polling at the scoring commit boundary and retry
+  a missing asynchronous result at the microphone cadence, rather than locking
+  the scoring session from every render update. This removes the observed
+  thousands of pre-commit/post-end polling attempts without delaying judgement.
+- Confirmed existing HUD behaviour: layout is invalidation-driven and lyric
+  countdown text updates only when its integer value changes; no per-frame HUD
+  text formatting was retained on the gameplay path.
+
+### Validation
+
+- 167 automated tests pass against the local Nix osu! references; format,
+  overlay audit and whitespace checks pass.
+
 ## 0.8.14 - 2026-08-20
 
 ### Performance

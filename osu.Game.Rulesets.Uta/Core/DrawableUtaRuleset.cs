@@ -369,7 +369,10 @@ internal sealed partial class DrawableUtaHitObject : DrawableHitObject<UtaHitObj
             ApplyMinResult();
     }
 
+    private const double result_retry_interval_milliseconds = 10;
+
     private UtaGameplayScoringController scoringController = null!;
+    private double nextResultPollOffset = double.NegativeInfinity;
 
     public DrawableUtaHitObject(UtaHitObject hitObject)
         : base(hitObject)
@@ -403,27 +406,26 @@ internal sealed partial class DrawableUtaHitObject : DrawableHitObject<UtaHitObj
             return;
         }
 
-        // Only the post-note-end calls matter for diagnosing whether this drawable ever gets a
-        // chance to query its result - the pre-start calls (timeOffset < 0, normal every frame
-        // while the note is upcoming) burned the whole log budget last round with nothing useful.
-        if (timeOffset >= 0)
-            scoringController.RecordPostEndCheck();
+        // CheckForResult runs on every render update. A streaming score cannot exist
+        // before its fixed commit delay, so query exactly at that boundary rather than
+        // repeatedly taking the scoring-session lock while a note is upcoming. A missing
+        // result afterwards is retried at 100 Hz, ahead of the 10 ms microphone cadence.
+        if (timeOffset < nextResultPollOffset)
+            return;
 
-        if (timeOffset * 1000 < UtaScoringOptions.DEFAULT_COMMIT_DELAY_MICROSECONDS)
+        double commitDelayMilliseconds = UtaScoringOptions.DEFAULT_COMMIT_DELAY_MICROSECONDS / 1000.0;
+        if (timeOffset < commitDelayMilliseconds)
         {
-            if (timeOffset >= 0 && scoringController.TryClaimDiagnosticCheckLogSlot())
-            {
-                Logger.Log($"Uta debug scoring check: scoringIndex={note.ScoringIndex} timeOffset={timeOffset:0.###}ms "
-                           + $"(below {UtaScoringOptions.DEFAULT_COMMIT_DELAY_MICROSECONDS / 1000.0}ms commit delay) judged={Result?.HasResult}");
-            }
-
+            nextResultPollOffset = commitDelayMilliseconds;
             return;
         }
 
+        scoringController.RecordPostEndCheck();
         scoringController.RecordCommitDelayPassed();
 
         if (!scoringController.TryGetCompletedNote(note.ScoringIndex, out UtaNoteScore? score) || score == null)
         {
+            nextResultPollOffset = timeOffset + result_retry_interval_milliseconds;
             if (scoringController.TryClaimDiagnosticCheckLogSlot())
             {
                 Logger.Log($"Uta debug scoring check: scoringIndex={note.ScoringIndex} timeOffset={timeOffset:0.###}ms "

@@ -4,4 +4,4 @@ version = 4
 
 [[package]]
 name = "uta-remote-wasm"
-version = "0.8.14"
+version = "0.8.15"
