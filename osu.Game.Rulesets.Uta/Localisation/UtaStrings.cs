@@ -119,6 +119,19 @@ internal static class UtaStrings
         ["queue.remove"] = ("Remove", "移除", "削除"),
         ["queue.empty"] = ("The Uta queue is empty.", "Uta 队列为空。", "Uta キューは空です。"),
         ["queue.status"] = ("{0} song(s) · revision {1} · {2}", "{0} 首歌曲 · 修订 {1} · {2}", "{0} 曲 · リビジョン {1} · {2}"),
+
+        ["archive.title"] = ("Uta performance archive", "Uta 演唱档案", "Uta パフォーマンスアーカイブ"),
+        ["archive.play_replay"] = ("Play pitch replay", "播放音高回放", "ピッチリプレイを再生"),
+        ["archive.open_recording"] = ("Open recording", "打开录音", "録音を開く"),
+        ["archive.open"] = ("Open archive", "打开档案", "アーカイブを開く"),
+        ["archive.searching"] = ("Searching performance archive...", "正在搜索演唱档案…", "パフォーマンスアーカイブを検索中…"),
+        ["archive.replay_not_loaded"] = ("Pitch replay not loaded.", "未加载音高回放。", "ピッチリプレイは未読み込みです。"),
+        ["archive.replay_again"] = ("Replay again", "再次回放", "もう一度再生"),
+        ["archive.resume_replay"] = ("Resume pitch replay", "继续音高回放", "ピッチリプレイを再開"),
+        ["archive.pause_replay"] = ("Pause pitch replay", "暂停音高回放", "ピッチリプレイを一時停止"),
+        ["archive.complete"] = ("complete", "完成", "完了"),
+        ["archive.native_score_available"] = ("The native lazer score remains available.", "lazer 原生成绩仍然可用。", "lazer のネイティブスコアは引き続き利用できます。"),
+        ["archive.no_replay"] = ("This archive has no pitch replay.", "该档案没有音高回放。", "このアーカイブにはピッチリプレイがありません。"),
     };
 
     public static string Get(string key, UtaUiLanguage language)

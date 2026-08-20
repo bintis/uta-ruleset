@@ -7,6 +7,8 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using osu.Framework.Allocation;
+using osu.Framework.Bindables;
+using osu.Framework.Configuration;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
@@ -14,6 +16,7 @@ using osu.Framework.Platform;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterface;
+using osu.Game.Rulesets.Uta.Localisation;
 using osu.Game.Rulesets.Uta.Performance;
 using osu.Game.Rulesets.Uta.Scoring;
 using osu.Game.Scoring;
@@ -30,6 +33,7 @@ namespace osu.Game.Rulesets.Uta.UI;
 public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
 {
     private readonly ScoreInfo score;
+    private readonly OsuSpriteText titleText;
     private readonly OsuSpriteText statusText;
     private readonly OsuSpriteText summaryText;
     private readonly OsuSpriteText detailText;
@@ -37,6 +41,8 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
     private readonly TextButton replayButton;
     private readonly TextButton recordingButton;
     private readonly TextButton folderButton;
+    private readonly Bindable<string> locale = new();
+    private UtaUiLanguage language;
 
     private GameHost host = null!;
     private UtaPerformanceArchiveEntry? archiveEntry;
@@ -69,9 +75,8 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
                 Direction = FillDirection.Vertical,
                 Children = new Drawable[]
                 {
-                    new OsuSpriteText
+                    titleText = new OsuSpriteText
                     {
-                        Text = "Uta performance archive",
                         Font = OsuFont.Default.With(size: 20, weight: FontWeight.Bold),
                     },
                     statusText = body(13, 0.72f),
@@ -86,17 +91,17 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
                         Spacing = new Vector2(8, 0),
                         Children = new Drawable[]
                         {
-                            replayButton = new TextButton { Width = 165, Text = "Play pitch replay" },
-                            recordingButton = new TextButton { Width = 145, Text = "Open recording" },
-                            folderButton = new TextButton { Width = 135, Text = "Open archive" },
+                            replayButton = new TextButton { Width = 165 },
+                            recordingButton = new TextButton { Width = 145 },
+                            folderButton = new TextButton { Width = 135 },
                         },
                     },
                 },
             },
         };
 
-        statusText.Text = "Searching performance archive...";
-        replayStatusText.Text = "Pitch replay not loaded.";
+        statusText.Text = string.Empty;
+        replayStatusText.Text = string.Empty;
         replayButton.Enabled.Value = false;
         recordingButton.Enabled.Value = false;
         folderButton.Enabled.Value = false;
@@ -106,7 +111,16 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
     }
 
     [BackgroundDependencyLoader]
-    private void load(GameHost host) => this.host = host;
+    private void load(GameHost host, FrameworkConfigManager frameworkConfig)
+    {
+        this.host = host;
+        locale.BindTo(frameworkConfig.GetBindable<string>(FrameworkSetting.Locale));
+        locale.BindValueChanged(value =>
+        {
+            language = UtaLanguageResolver.FromLocale(value.NewValue);
+            refreshLabels();
+        }, true);
+    }
 
     protected override void LoadComplete()
     {
@@ -129,7 +143,7 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
             if (replayIndex >= replayFrames.Count)
             {
                 replayPlaying = false;
-                replayButton.Text = "Replay again";
+                replayButton.Text = UtaStrings.Get("archive.replay_again", language);
                 replayStatusText.Text += " · complete";
                 break;
             }
@@ -161,7 +175,7 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
             Schedule(() =>
             {
                 statusText.Text = $"Performance archive unavailable: {ex.GetBaseException().Message}";
-                summaryText.Text = "The native lazer score remains available.";
+                summaryText.Text = UtaStrings.Get("archive.native_score_available", language);
             });
         }
     }
@@ -210,7 +224,7 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
         replayButton.Enabled.Value = replayFrames.Count > 0;
         replayStatusText.Text = replayFrames.Count > 0
             ? $"Pitch replay loaded: {replayFrames.Count:N0} frames."
-            : "This archive has no pitch replay.";
+            : UtaStrings.Get("archive.no_replay", language);
         recordingButton.Enabled.Value = manifest.Files.Recording != null;
         folderButton.Enabled.Value = true;
     }
@@ -223,7 +237,7 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
         if (replayPlaying)
         {
             replayPlaying = false;
-            replayButton.Text = "Resume pitch replay";
+            replayButton.Text = UtaStrings.Get("archive.resume_replay", language);
             return;
         }
 
@@ -231,7 +245,7 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
             replayIndex = 0;
         replayPlaying = true;
         replayDelayMicroseconds = 0;
-        replayButton.Text = "Pause pitch replay";
+        replayButton.Text = UtaStrings.Get("archive.pause_replay", language);
     }
 
     private void showReplayFrame(UtaPerformancePitchFrame frame)
@@ -261,6 +275,25 @@ public sealed partial class UtaHistoricalPerformancePanel : CompositeDrawable
         UtaPerformanceArchiveEntry? entry = archiveEntry;
         if (entry != null)
             host.OpenFileExternally(entry.DirectoryPath);
+    }
+
+    private void refreshLabels()
+    {
+        titleText.Text = UtaStrings.Get("archive.title", language);
+        recordingButton.Text = UtaStrings.Get("archive.open_recording", language);
+        folderButton.Text = UtaStrings.Get("archive.open", language);
+        if (!replayPlaying)
+            replayButton.Text = UtaStrings.Get(replayIndex >= replayFrames.Count && replayFrames.Count > 0 ? "archive.replay_again" : "archive.play_replay", language);
+        if (string.IsNullOrEmpty(statusText.Text.ToString()))
+            statusText.Text = UtaStrings.Get("archive.searching", language);
+        if (string.IsNullOrEmpty(replayStatusText.Text.ToString()))
+            replayStatusText.Text = UtaStrings.Get("archive.replay_not_loaded", language);
+    }
+
+    protected override void Dispose(bool isDisposing)
+    {
+        locale.UnbindAll();
+        base.Dispose(isDisposing);
     }
 
     private static OsuSpriteText body(float size, float alpha)

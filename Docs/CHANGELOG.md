@@ -3,6 +3,18 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.8 - 2026-08-20
+
+### Added
+
+- Added live English, Simplified Chinese and Japanese core labels and replay
+  controls to the historical performance/archive panel.
+
+### Validation
+
+- 166 automated tests pass against the local Nix osu! references; overlay audit
+  and whitespace checks pass.
+
 ## 0.8.7 - 2026-08-20
 
 ### Added
