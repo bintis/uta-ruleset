@@ -3,6 +3,22 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.11 - 2026-08-20
+
+### Fixed
+
+- Load optional pitch evidence through a lenient analysis-only manifest reader.
+  Older converted packages no longer lose their reference/history curve merely
+  because they do not have the current required `charts.vocal` manifest field.
+- Load the exact SongSelect working beatmap before PlayerLoader enters, avoiding
+  `Cannot access Track without first calling LoadTrack` after a gameplay lease
+  has returned it.
+
+### Validation
+
+- 166 automated tests pass against the local Nix osu! references; format,
+  overlay audit and whitespace checks pass.
+
 ## 0.8.10 - 2026-08-20
 
 ### Added

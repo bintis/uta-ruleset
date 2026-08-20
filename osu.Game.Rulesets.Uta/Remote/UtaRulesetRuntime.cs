@@ -228,6 +228,11 @@ internal sealed class UtaRulesetRuntime : IDisposable
     {
         if (previous is SongSelect songSelect && next is not SongSelect)
         {
+            // PlayerLoader reads SongSelect.Beatmap.Track during OnEntering. A previous
+            // gameplay lease can have returned that exact WorkingBeatmap after our exit
+            // cleanup, so restore the loader's own selection before it enters rather than
+            // attempting to repair a stale game-wide/carousel copy later.
+            EnsurePreviewTrack(songSelect.Beatmap.Value);
             rememberAuthoritativeModState(songSelect.Mods.Value);
             reconcilePushedScreenMods(next);
             songSelectSelectionActive = false;

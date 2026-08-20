@@ -579,11 +579,13 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                 return Array.Empty<ReferenceFrame>();
 
             using Stream manifestStream = working.GetStream(manifestPath);
-            UtzManifest? manifest = JsonSerializer.Deserialize<UtzManifest>(manifestStream, UtzPackage.JsonOptions);
-            if (manifest == null)
-                return Array.Empty<ReferenceFrame>();
-
-            return loadPitchEvidenceFrames(working, manifest);
+            // Imported 0.2 packages remain playable through lazer's converted beatmap even
+            // though they predate the current required `charts.vocal` manifest field. The
+            // optional analysis asset must not deserialize the full strict import manifest:
+            // doing so discarded valid pitch evidence and made the reference/history curve
+            // fall back to coarse notes (and visibly jump as the viewport moved).
+            PitchEvidenceManifest? manifest = JsonSerializer.Deserialize<PitchEvidenceManifest>(manifestStream, UtzPackage.JsonOptions);
+            return manifest?.Analysis == null ? Array.Empty<ReferenceFrame>() : loadPitchEvidenceFrames(working, manifest.Analysis);
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
         {
@@ -592,9 +594,9 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         }
     }
 
-    private static ReferenceFrame[] loadPitchEvidenceFrames(WorkingBeatmap working, UtzManifest manifest)
+    private static ReferenceFrame[] loadPitchEvidenceFrames(WorkingBeatmap working, UtzAnalysisAssets analysis)
     {
-        string? evidenceStoragePath = manifest.Analysis?.PitchEvidence?.Path is { } path ? working.BeatmapSetInfo.GetPathForFile(path) : null;
+        string? evidenceStoragePath = analysis.PitchEvidence?.Path is { } path ? working.BeatmapSetInfo.GetPathForFile(path) : null;
         if (evidenceStoragePath == null)
             return Array.Empty<ReferenceFrame>();
 
@@ -666,6 +668,12 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             Origin = Anchor.CentreLeft;
             Height = line_width;
         }
+    }
+
+    private sealed class PitchEvidenceManifest
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("analysis")]
+        public UtzAnalysisAssets? Analysis { get; init; }
     }
 
     private readonly record struct CurveSample(double Time, double DisplayTime, float? ReferenceMidi, float? UserMidi, float Similarity);
