@@ -34,7 +34,9 @@ namespace osu.Game.Rulesets.Uta.UI;
 /// </summary>
 internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 {
-    private const int buffer_size = 200;
+    // LOOK_BEHIND is 1750ms and samples are at most 50 Hz. Keep a small guard
+    // above the visible window; older history is discarded rather than retained.
+    private const int buffer_size = 100;
     private const double sample_interval = 20;
     private const double reference_rebuild_interval = 100;
     private const float line_width = 2.25f;
@@ -213,6 +215,11 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                 diagnosticSamplesAdded++;
         }
 
+        // Retain only the sample immediately before the left viewport edge (needed
+        // to join the first visible segment) and samples that may be rendered. This
+        // is deliberately done to the data buffer, not only to its primitives.
+        trimSamplesForViewport(current);
+
         bool showSong = mode is UtaPitchCurveDisplay.Song or UtaPitchCurveDisplay.Both;
         bool showVoice = mode is UtaPitchCurveDisplay.MyVoice or UtaPitchCurveDisplay.Both;
         bool sizeChanged = DrawWidth != geometryWidth || DrawHeight != geometryHeight;
@@ -386,10 +393,9 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         int used = 0;
         if (visible)
         {
-            // The fixed four-second buffer deliberately retains history, but only the
-            // LOOK_BEHIND portion can be on screen. Rebuilding primitives for every
-            // expired (off-screen) sample at 50 Hz was needless update-thread work and
-            // made the live curve feel delayed on high-refresh hosts.
+            // The buffer has already been trimmed to this viewport plus one boundary
+            // sample. Keep this bound here as a defensive guard for a frame that moves
+            // the clock after trimming.
             int first = Math.Max(1, lowerBoundSampleDisplayTime(playbackTime - UtaPitchTimelineGeometry.LOOK_BEHIND) - 1);
             for (int i = first; i < sampleCount; i++)
             {
@@ -449,8 +455,8 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             return;
         }
 
-        // Fixed-capacity rolling history. Replacing the oldest slot preserves the same
-        // logical order as List.RemoveAt(0) + Add without shifting 199 structs every sample.
+        // Fixed-capacity visible-history ring. Replacing the oldest slot preserves the
+        // same logical order as List.RemoveAt(0) + Add without shifting structs.
         samples[sampleStart] = sample;
         sampleStart++;
         if (sampleStart == buffer_size)
@@ -459,6 +465,22 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
 
     private CurveSample sampleAt(int logicalIndex)
         => samples[(sampleStart + logicalIndex) % buffer_size];
+
+    private void trimSamplesForViewport(double playbackTime)
+    {
+        double visibleStart = playbackTime - UtaPitchTimelineGeometry.LOOK_BEHIND;
+
+        // Keep exactly one predecessor for continuity at the left edge. Since samples
+        // are chronologically presented, everything before it is neither drawable nor
+        // required by any later curve calculation.
+        while (sampleCount > 1 && sampleAt(1).DisplayTime < visibleStart)
+        {
+            sampleStart++;
+            if (sampleStart == buffer_size)
+                sampleStart = 0;
+            sampleCount--;
+        }
+    }
 
     private int lowerBoundSampleDisplayTime(double time)
     {

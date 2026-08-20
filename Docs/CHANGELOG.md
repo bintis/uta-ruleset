@@ -3,6 +3,19 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.14 - 2026-08-20
+
+### Performance
+
+- Discard pitch-history samples as soon as they are left of the render viewport,
+  retaining only the one predecessor needed to join the first visible segment.
+  The live curve no longer retains an unrenderable four-second data history.
+
+### Validation
+
+- 167 automated tests pass against the local Nix osu! references; format,
+  overlay audit and whitespace checks pass.
+
 ## 0.8.13 - 2026-08-20
 
 ### Performance
