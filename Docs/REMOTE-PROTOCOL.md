@@ -28,7 +28,7 @@ Controller commands are: `play`, `pause`, `togglePlayback`, `seek`, `seekRelativ
 }
 ```
 
-Speed is 0.5–1.5. Transpose is −6…+6. Mods must be remote-factory acronyms (`IQ`, `NF`, `RX`, `VOX`, `OCT`, `NPG`, `NL`, `AT`, `REC`, `PR`). Starting a reserved entry applies its options before gameplay is constructed; live Control-page key/speed still change only the current song.
+Speed is 0.5–1.5. Transpose is −6…+6. Mods must be remote-factory acronyms (`IQ`, `NF`, `RX`, `VOX`, `OCT`, `NC`, `DC`, `AT`, `REC`, `PR`). Starting a reserved entry applies its options before gameplay is constructed; live Control-page key/speed still change only the current song.
 
 Spectators may send `ping`, `disconnect`, `librarySearch` and `queueAdd` (including options). Numeric ranges are validated in `UtaRemoteProtocol` and then constrained again by the desktop bindables.
 

@@ -57,6 +57,11 @@ private network. Pairing tickets expire after 90 seconds and can be used once.
 Use **Disconnect all clients** in the desktop overlay to revoke every connected
 phone; leaving gameplay also stops the listener and clears all credentials.
 
+The phone client offers Library, Control, Queue and Info pages. Queue song
+sheets expose all supported start MODs, including Nightcore (`NC`) and Daycore
+(`DC`). On the Info page, volume and latency controls require a deliberate
+horizontal drag, preventing accidental changes while scrolling.
+
 The remote uses local HTTP/WebSocket rather than TLS. Never expose its port
 through router forwarding, a public reverse proxy or untrusted Wi-Fi. Windows
 may require a URL ACL for a LAN listener; the desktop overlay reports that bind

@@ -3,6 +3,33 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.17 - 2026-08-20
+
+### Mobile remote
+
+- Start the IQ controller pairing service after the authoritative mod selection
+  arrives, so the automatic in-game QR prompt is no longer lost to PlayerLoader
+  leases.
+- Keep routed audio intact for ordinary remote pause/resume operations.
+- Make **End song** wait for the final seek state before entering results, and
+  permit mobile queue navigation from Results by returning Player to current
+  before exiting it.
+- Expose Nightcore (`NC`) and Daycore (`DC`) in mobile queue MOD selection;
+  remove obsolete unsupported remote acronyms.
+- Make start-MOD controls fixed two-column thumb targets and require a
+  deliberate horizontal drag before Info-page volume or latency sliders change.
+
+### Release notes
+
+- Update phone-pairing and remote-protocol documentation for the available
+  MODs and touch interaction safeguards.
+
+### Validation
+
+- 168 automated tests pass against the local Nix osu! references; the single
+  file WASM remote was rebuilt, format, overlay audit and whitespace checks
+  pass.
+
 ## 0.8.16 - 2026-08-20
 
 ### Localisation and settings
