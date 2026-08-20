@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use crate::bin::{
     encode_command, encode_trace, parse as parse_bin, KIND_ERROR, KIND_QUEUE, KIND_RESULT,
     KIND_RESUMED, KIND_STATE, KIND_WELCOME,
@@ -5,7 +7,7 @@ use crate::bin::{
 use crate::i18n::{t, Lang};
 use crate::proto::{parse_envelope, LibrarySong, QueueEntry, Snapshot};
 use crate::{
-    clip, fill_rect, fill_text, log, measure, persist_theme, search_rect, send, set_remembered,
+    clip, fill_rect, fill_text, log, measure, persist_style, persist_theme, search_rect, send, set_remembered,
     store_seq, store_session, stroke_rect, unclip,
 };
 
@@ -31,7 +33,8 @@ const PAGE_CONTROL: i32 = 1;
 const PAGE_QUEUE: i32 = 2;
 const PAGE_INFO: i32 = 3;
 const PAGE_COUNT: i32 = 4;
-const HEADER_H: f32 = 36.0;
+// Mirrors the 70 px sticky header in the approved Modern prototype.
+const HEADER_H: f32 = 70.0;
 const TAB_H: f32 = 0.0;
 const QUEUE_ROW: f32 = 86.0;
 const SONG_ROW: f32 = 70.0;
@@ -40,6 +43,8 @@ const SONG_ROW: f32 = 70.0;
 enum Action {
     PlayPause,
     Restart,
+    ReplayTen,
+    PracticeSpeed,
     Skip,
     NextSong,
     PrevPhrase,
@@ -85,6 +90,7 @@ enum Action {
     InfoAppearance,
     InfoBack,
     Theme(bool),
+    Style(i32),
 }
 
 #[derive(Clone, Copy)]
@@ -127,6 +133,7 @@ struct Hit {
 struct Toast {
     text: String,
     error: bool,
+    centre: bool,
     until: f64,
 }
 
@@ -159,6 +166,7 @@ pub struct App {
     connected: bool,
     role: String,
     snapshot: Snapshot,
+    lyric_history: VecDeque<String>,
     library: Vec<LibrarySong>,
     library_offset: usize,
     library_loading: bool,
@@ -200,8 +208,10 @@ pub struct App {
     search_open: bool,
     remember: bool,
     queue_menu: bool,
+    previous_completed: Option<QueueEntry>,
     info_view: InfoView,
     light_theme: bool,
+    render_style: i32,
     skip_hold_started: Option<f64>,
 }
 
@@ -219,6 +229,7 @@ impl App {
             connected: false,
             role: "controller".into(),
             snapshot: Snapshot::default(),
+            lyric_history: VecDeque::new(),
             library: Vec::new(),
             library_offset: 0,
             library_loading: false,
@@ -260,8 +271,10 @@ impl App {
             search_open: false,
             remember,
             queue_menu: false,
+            previous_completed: None,
             info_view: InfoView::Overview,
             light_theme: false,
+            render_style: 0,
             skip_hold_started: None,
         }
     }
@@ -284,6 +297,10 @@ impl App {
 
     pub fn set_theme(&mut self, light: bool) {
         self.light_theme = light;
+    }
+
+    pub fn set_style(&mut self, style: i32) {
+        self.render_style = style.clamp(0, 2);
     }
 
     pub fn load_demo(&mut self) {
@@ -481,9 +498,28 @@ impl App {
     }
 
     fn apply_snapshot(&mut self, snapshot: Snapshot) {
+        let previous_title = self.snapshot.song_title.clone();
+        if let (Some(previous), Some(next)) = (previous_title.as_deref(), snapshot.song_title.as_deref()) {
+            if !previous.is_empty() && previous != next {
+                self.previous_completed = self.queue.iter().find(|entry| entry.title == previous).cloned().or_else(|| Some(QueueEntry {
+                    id: String::new(), title: previous.into(), artist: self.snapshot.song_artist.clone().unwrap_or_default(),
+                    difficulty_name: self.snapshot.song_difficulty.clone(), length_ms: self.snapshot.song_length,
+                    speed: self.snapshot.speed, transpose: self.snapshot.mixer.transpose, mods: self.snapshot.active_mods.clone(),
+                }));
+            }
+        }
         if snapshot.queue.is_empty() && !self.queue.is_empty() && snapshot.notice.is_some() {
         } else if !snapshot.queue.is_empty() && self.reorder_from.is_none() {
             self.queue = snapshot.queue.clone();
+        }
+        if !snapshot.current_lyrics.is_empty()
+            && snapshot.current_lyrics != self.snapshot.current_lyrics
+            && self.lyric_history.back() != Some(&snapshot.current_lyrics)
+        {
+            self.lyric_history.push_back(snapshot.current_lyrics.clone());
+            while self.lyric_history.len() > 4 {
+                self.lyric_history.pop_front();
+            }
         }
         self.snapshot = snapshot;
         if !self.snapshot.queue.is_empty() && self.reorder_from.is_none() {
@@ -642,21 +678,10 @@ impl App {
                             if dx.abs() < TAP_SLOP && dy.abs() < TAP_SLOP {
                                 if let Some(action) = self.press_action.take() {
                                     if matches!(action, Action::Skip) {
-                                        if self
-                                            .skip_hold_started
-                                            .is_some_and(|start| self.now - start >= 700.0)
-                                        {
-                                            self.request(
-                                                "skipCurrent",
-                                                None,
-                                                None,
-                                                None,
-                                                None,
-                                                "skip",
-                                            );
-                                        } else {
-                                            self.toast("Hold End song to confirm", false);
-                                        }
+                                        // End song is intentionally immediate: remote operators
+                                        // need a dependable one-tap escape route.
+                                        self.transport_toast(t(self.lang, "skip"));
+                                        self.request("skipCurrent", None, None, None, None, "skip");
                                     } else {
                                         self.fire(action);
                                     }
@@ -714,7 +739,7 @@ impl App {
     }
 
     fn queue_list_top(&self) -> f32 {
-        self.content_top() + 56.0
+        self.content_top() + if self.previous_completed.is_some() { 88.0 } else { 26.0 }
     }
 
     fn seek_from_x(&self, x: f32) -> f64 {
@@ -856,19 +881,35 @@ impl App {
         log(&format!("ui.fire {action:?}"));
         self.trace("ui.fire", &format!("{action:?}"));
         match action {
-            Action::PlayPause => self.cmd("togglePlayback", None, None, None),
+            Action::PlayPause => {
+                // Reflect the intended state immediately; the next authoritative snapshot
+                // corrects this if the server rejects the command.
+                self.snapshot.paused = !self.snapshot.paused;
+                self.cmd("togglePlayback", None, None, None);
+            }
             Action::Restart => {
                 self.cmd("seek", Some(0.0), None, None);
                 self.cmd("play", None, None, None);
             }
+            Action::ReplayTen => {
+                self.cmd("seek", Some((self.snapshot.song_time - 10_000.0).max(0.0)), None, None);
+                self.cmd("play", None, None, None);
+            }
+            Action::PracticeSpeed => {
+                let speed = if (self.snapshot.speed - 0.8).abs() < 0.01 { 1.0 } else { 0.8 };
+                self.cmd("speed", Some(speed), None, None);
+            }
             Action::Skip => self.confirm = Some(Confirm::Skip),
             Action::NextSong => {
-                if !self.can_navigate() {
-                    return;
+                if self.can_navigate() {
+                    self.transport_toast(t(self.lang, "nextSong"));
+                    self.request("skipToNext", None, None, None, None, "playNow");
                 }
-                self.request("skipToNext", None, None, None, None, "playNow");
             }
-            Action::PrevPhrase => self.cmd("previousPhrase", None, None, None),
+            Action::PrevPhrase => {
+                self.transport_toast(t(self.lang, "prev"));
+                self.cmd("previousPhrase", None, None, None);
+            }
             Action::Retry => self.cmd("retryPhrase", None, None, None),
             Action::NextPhrase => self.cmd("nextPhrase", None, None, None),
             Action::KeyDelta(delta) => {
@@ -1008,6 +1049,10 @@ impl App {
             Action::Theme(light) => {
                 self.light_theme = light;
                 persist_theme(light);
+            }
+            Action::Style(style) => {
+                self.render_style = style.clamp(0, 2);
+                persist_style(self.render_style);
             }
             Action::Disconnect => self.cmd("disconnect", None, None, None),
             Action::ConfirmYes => match self.confirm.take() {
@@ -1182,10 +1227,22 @@ impl App {
     }
 
     fn toast(&mut self, text: &str, error: bool) {
+        // Preserve the central transport feedback when its command result arrives.
+        let centre = self.toast.as_ref().is_some_and(|toast| toast.centre) && !error;
         self.toast = Some(Toast {
             text: text.into(),
             error,
+            centre,
             until: self.now + 2200.0,
+        });
+    }
+
+    fn transport_toast(&mut self, text: &str) {
+        self.toast = Some(Toast {
+            text: text.into(),
+            error: false,
+            centre: true,
+            until: self.now + 1200.0,
         });
     }
 
@@ -1271,32 +1328,14 @@ impl App {
         if let Some(toast) = &self.toast {
             let color = if toast.error { DANGER } else { PINK };
             let w = (measure(14.0, 1, &toast.text) + 36.0).min(self.width - 24.0);
-            fill_rect(
-                (self.width - w) * 0.5,
-                self.height - 76.0 - self.inset_b,
-                w,
-                38.0,
-                PANEL2,
-                6.0,
-            );
-            stroke_rect(
-                (self.width - w) * 0.5,
-                self.height - 76.0 - self.inset_b,
-                w,
-                38.0,
-                color,
-                6.0,
-                1.0,
-            );
-            fill_text(
-                self.width * 0.5,
-                self.height - 57.0 - self.inset_b,
-                14.0,
-                color,
-                1,
-                1,
-                &toast.text,
-            );
+            let toast_y = if toast.centre {
+                (self.content_top() + self.height - self.content_bottom()) * 0.5 - 19.0
+            } else {
+                self.height - 76.0 - self.inset_b
+            };
+            fill_rect((self.width - w) * 0.5, toast_y, w, 38.0, PANEL2, 6.0);
+            stroke_rect((self.width - w) * 0.5, toast_y, w, 38.0, color, 6.0, 1.0);
+            fill_text(self.width * 0.5, toast_y + 19.0, 14.0, color, 1, 1, &toast.text);
         }
         let show_search = self.search_open
             && self.target == PAGE_LIST
@@ -1318,7 +1357,7 @@ impl App {
             .as_deref()
             .unwrap_or_else(|| t(self.lang, "idle"));
         let artist = self.snapshot.song_artist.as_deref().unwrap_or("—");
-        let controls_w = 88.0;
+        let controls_w = 50.0;
         fill_text(
             pad,
             y + 21.0,
@@ -1346,22 +1385,12 @@ impl App {
         self.lazer_button(
             self.width - pad - controls_w,
             y + 12.0,
-            42.0,
+            50.0,
             38.0,
             pause,
             Action::PlayPause,
             live,
             false,
-        );
-        self.lazer_button(
-            self.width - pad - 40.0,
-            y + 12.0,
-            40.0,
-            38.0,
-            "››",
-            Action::NextSong,
-            live,
-            true,
         );
     }
 
@@ -1369,7 +1398,20 @@ impl App {
         let h = HEADER_H + self.inset_t;
         fill_rect(0.0, 0.0, self.width, h, HEADER, 0.0);
         fill_rect(0.0, h - 1.0, self.width, 1.0, LINE, 0.0);
-        let cy = 18.0 + self.inset_t;
+        let cy = 35.0 + self.inset_t;
+        if self.render_style == 1 {
+            // The osu!-inspired skin adds restrained rhythm rings.
+            fill_rect(-16.0, cy - 34.0, 68.0, 68.0, 0x1AE846A0, 34.0);
+            stroke_rect(-8.0, cy - 26.0, 52.0, 52.0, 0x33B95FFF, 26.0, 1.0);
+        } else if self.render_style == 2 {
+            // Aurora is an independent Canvas layout treatment: a cyan signal rail
+            // and compact scope marks rather than Modern's halo or osu!'s rings.
+            fill_rect(0.0, h - 3.0, self.width, 3.0, PINK, 0.0);
+            for index in 0..5 {
+                let bar_h = 7.0 + (index % 3) as f32 * 5.0;
+                fill_rect(self.width - 54.0 + index as f32 * 8.0, cy + 13.0 - bar_h, 4.0, bar_h, PINK, 2.0);
+            }
+        }
         fill_text(12.0, cy, 15.0, PINK, 0, 1, "uta!");
         let brand_w = measure(15.0, 1, "uta!");
         fill_rect(
@@ -1397,7 +1439,7 @@ impl App {
                 if active { 1 } else { 0 },
                 t(self.lang, labels[i as usize]),
             );
-            self.hit(x, 4.0 + self.inset_t, tw, 28.0, Action::Page(i));
+            self.hit(x, 10.0 + self.inset_t, tw, 50.0, Action::Page(i));
         }
 
         let page = self.current_page();
@@ -1413,9 +1455,9 @@ impl App {
             );
             self.hit(
                 self.width - 64.0,
-                4.0 + self.inset_t,
+                10.0 + self.inset_t,
                 56.0,
-                28.0,
+                50.0,
                 Action::ToggleSearch,
             );
         } else if page == PAGE_QUEUE && self.controller() {
@@ -1430,9 +1472,9 @@ impl App {
             );
             self.hit(
                 self.width - 44.0,
-                4.0 + self.inset_t,
+                10.0 + self.inset_t,
                 40.0,
-                28.0,
+                50.0,
                 Action::QueueMenu,
             );
         }
@@ -1593,19 +1635,22 @@ impl App {
         let pad = 14.0;
         let live = self.snapshot.has_gameplay();
         let inner = self.width - pad * 2.0;
+        // Canvas reconstruction of Modern's subdued pink/purple hero halo.
+        if self.render_style == 0 {
+            fill_rect(x + self.width - 128.0, y - 82.0, 190.0, 190.0, 0x0DE846A0, 95.0);
+            stroke_rect(x + self.width - 104.0, y - 58.0, 142.0, 142.0, 0x22E846A0, 71.0, 1.0);
+            stroke_rect(x + self.width - 80.0, y - 34.0, 94.0, 94.0, 0x18B95FFF, 47.0, 1.0);
+        } else if self.render_style == 2 {
+            for index in 0..4 {
+                let yy = y + 8.0 + index as f32 * 9.0;
+                fill_rect(x + self.width - 105.0 + index as f32 * 12.0, yy, 8.0, 3.0, PINK, 2.0);
+            }
+        }
         let artist = self.snapshot.song_artist.as_deref().unwrap_or("");
+        let title = self.snapshot.song_title.as_deref().unwrap_or_else(|| t(self.lang, "idle"));
+        fill_text(x + pad, y + 14.0, 16.0, TEXT, 0, 1, &ellipsize(16.0, 1, title, inner * 0.66));
         if !artist.is_empty() {
-            fill_text(
-                x + pad,
-                y + 14.0,
-                12.0,
-                MUTED,
-                0,
-                0,
-                &ellipsize(12.0, 0, artist, inner),
-            );
-        } else if !live {
-            fill_text(x + pad, y + 14.0, 12.0, MUTED, 0, 0, t(self.lang, "idle"));
+            fill_text(x + pad, y + 34.0, 12.0, MUTED, 0, 0, &ellipsize(12.0, 0, artist, inner));
         }
 
         let lyrics = if live {
@@ -1621,12 +1666,26 @@ impl App {
                 .filter(|s| !s.is_empty())
                 .unwrap_or("")
         };
-        fill_text(x + self.width * 0.5, y + 44.0, 18.0, TEXT, 1, 1, lyrics);
-        if let Some(next) = self.snapshot.next_lyrics.as_deref() {
-            fill_text(x + self.width * 0.5, y + 68.0, 12.0, MUTED, 1, 0, next);
+        // The lyric stage deliberately occupies roughly three times the old
+        // height, retaining recent lines locally so a singer can read context.
+        let lyric_y = y + 48.0;
+        let lyric_h = 222.0;
+        fill_rect(x + pad, lyric_y, inner, lyric_h, ROW, 14.0);
+        stroke_rect(x + pad, lyric_y, inner, lyric_h, LINE, 14.0, 1.0);
+        let history: Vec<String> = self.lyric_history.iter().rev().skip(1).take(3).cloned().collect();
+        // Keep all retained lines inside the stage: no centring offset may lift
+        // the oldest line above the rounded clip boundary.
+        let first_y = lyric_y + 34.0;
+        for (index, line) in history.iter().rev().enumerate() {
+            fill_text(x + self.width * 0.5, first_y + index as f32 * 19.0, 12.0, MUTED, 1, 0, &ellipsize(12.0, 0, line, inner - 28.0));
         }
+        fill_text(x + self.width * 0.5, lyric_y + 126.0, 24.0, TEXT, 1, 1, &ellipsize(24.0, 1, lyrics, inner - 24.0));
+        if let Some(next) = self.snapshot.next_lyrics.as_deref() {
+            fill_text(x + self.width * 0.5, lyric_y + 164.0, 15.0, PINK, 1, 0, &ellipsize(15.0, 0, next, inner - 30.0));
+        }
+        fill_text(x + self.width * 0.5, lyric_y + 198.0, 10.0, MUTED, 1, 0, "● ● ●");
 
-        let seek_y = y + 86.0;
+        let seek_y = y + 286.0;
         fill_text(
             x + pad,
             seek_y + 10.0,
@@ -1673,10 +1732,21 @@ impl App {
         }
 
         let col = (inner - 10.0) / 3.0;
+        let stat_y = seek_y + 28.0;
+        for (index, (label, value)) in [
+            (t(self.lang, "similarity"), format!("{}%", (self.snapshot.pitch_similarity * 100.0).round())),
+            (t(self.lang, "pitch"), self.snapshot.detected_pitch_midi.map(|m| format!("{m:.1}")).unwrap_or_else(|| "—".into())),
+            (t(self.lang, "phrase"), if self.snapshot.phrase_index >= 0 { format!("{} / {}", self.snapshot.phrase_index + 1, self.snapshot.phrase_count) } else { "—".into() }),
+        ].iter().enumerate() {
+            let sx = x + pad + index as f32 * (col + 5.0);
+            fill_rect(sx, stat_y, col, 30.0, ROW, 6.0);
+            fill_text(sx + col * 0.5, stat_y + 10.0, 9.0, MUTED, 1, 0, label);
+            fill_text(sx + col * 0.5, stat_y + 21.0, 11.0, TEXT, 1, 1, value);
+        }
         let key = format!("{:+}", self.snapshot.mixer.transpose);
         let speed = format!("{}%", (self.snapshot.speed * 100.0).round());
         let half = (inner - 8.0) * 0.5;
-        let step_y = seek_y + 28.0;
+        let step_y = stat_y + 38.0;
         self.compact_stepper(
             x + pad,
             step_y,
@@ -1701,6 +1771,10 @@ impl App {
         );
 
         let mut yy = step_y + 44.0;
+        let tool_w = (inner - 8.0) * 0.5;
+        self.lazer_button(x + pad, yy, tool_w, 34.0, "Vocals", Action::Vocals, live, self.snapshot.mixer.original_vocals_enabled);
+        self.lazer_button(x + pad + tool_w + 8.0, yy, tool_w, 34.0, "Octave", Action::Octave, live, self.snapshot.mixer.octave_fold);
+        yy += 42.0;
         if self.has_practice() {
             self.lazer_button(
                 x + pad,
@@ -1767,10 +1841,41 @@ impl App {
             self.lazer_button(
                 x + pad,
                 yy,
-                inner,
+                tool_w,
                 32.0,
                 t(self.lang, "loopPhrase"),
                 Action::LoopPhrase,
+                live,
+                false,
+            );
+            self.lazer_button(
+                x + pad + tool_w + 8.0,
+                yy,
+                tool_w,
+                32.0,
+                "Replay 10 sec",
+                Action::ReplayTen,
+                live,
+                false,
+            );
+            yy += 38.0;
+            self.lazer_button(
+                x + pad,
+                yy,
+                tool_w,
+                32.0,
+                if (self.snapshot.speed - 0.8).abs() < 0.01 { "Section speed 100%" } else { "Section speed 80%" },
+                Action::PracticeSpeed,
+                live,
+                false,
+            );
+            self.lazer_button(
+                x + pad + tool_w + 8.0,
+                yy,
+                tool_w,
+                32.0,
+                "Restart phrase",
+                Action::Retry,
                 live,
                 false,
             );
@@ -1790,10 +1895,11 @@ impl App {
         // Song-level transport deliberately stays at the bottom of Control. Pause/resume
         // remains in the persistent dock so it never competes with these destructive actions.
         let transport_y = y + h - 48.0;
+        let transport_w = (inner - 10.0) / 3.0;
         self.lazer_button(
             x + pad,
             transport_y,
-            col,
+            transport_w,
             40.0,
             t(self.lang, "prev"),
             Action::PrevPhrase,
@@ -1801,9 +1907,9 @@ impl App {
             false,
         );
         self.outline_button(
-            x + pad + col + 5.0,
+            x + pad + transport_w + 5.0,
             transport_y,
-            col,
+            transport_w,
             40.0,
             t(self.lang, "skip"),
             Action::Skip,
@@ -1811,9 +1917,9 @@ impl App {
             DANGER,
         );
         self.lazer_button(
-            x + pad + (col + 5.0) * 2.0,
+            x + pad + (transport_w + 5.0) * 2.0,
             transport_y,
-            col,
+            transport_w,
             40.0,
             t(self.lang, "nextSong"),
             Action::NextSong,
@@ -1824,8 +1930,18 @@ impl App {
 
     fn draw_queue(&mut self, x: f32, y: f32, h: f32) {
         let pad = 14.0;
-        let list_y = y + 6.0;
-        let list_h = h - 10.0;
+        let completed = self.previous_completed.clone();
+        let list_y = y + if completed.is_some() { 88.0 } else { 26.0 };
+        let list_h = h - (list_y - y) - 4.0;
+        if let Some(entry) = completed {
+            fill_text(x + pad, y + 13.0, 10.0, MUTED, 0, 1, "PREVIOUS · COMPLETED");
+            fill_rect(x + pad, y + 22.0, self.width - pad * 2.0, 56.0, PANEL, 8.0);
+            fill_text(x + pad + 12.0, y + 42.0, 13.0, MUTED, 0, 1, &ellipsize(13.0, 1, &entry.title, self.width - pad * 2.0 - 72.0));
+            fill_text(x + self.width - pad - 12.0, y + 42.0, 10.0, MUTED, 2, 1, "DONE");
+            fill_text(x + pad + 12.0, y + 62.0, 10.0, MUTED, 0, 0, &ellipsize(10.0, 0, &entry.artist, self.width - pad * 2.0 - 24.0));
+        } else {
+            fill_text(x + pad, y + 13.0, 10.0, MUTED, 0, 1, "NOW / NEXT");
+        }
         self.note_scroll_max(PAGE_QUEUE, self.queue.len() as f32 * QUEUE_ROW - list_h);
         clip(x, list_y, self.width, list_h);
         if self.queue.is_empty() {
@@ -2459,24 +2575,13 @@ impl App {
             true,
             self.light_theme,
         );
-        fill_text(
-            x + pad,
-            y + 192.0,
-            12.0,
-            MUTED,
-            0,
-            0,
-            "Modern osu!-inspired surfaces",
-        );
-        fill_text(
-            x + pad,
-            y + 214.0,
-            11.0,
-            MUTED,
-            0,
-            0,
-            "Your preference is remembered on this device.",
-        );
+        fill_text(x + pad, y + 192.0, 12.0, MUTED, 0, 0, "Canvas skin");
+        // All three choices remain in the Rust renderer. Aurora is deliberately
+        // separate from the reference skins: cyan/indigo, high-contrast and calm.
+        self.lazer_button(x + pad, y + 208.0, w, 48.0, "Modern", Action::Style(0), true, self.render_style == 0);
+        self.lazer_button(x + pad + w + 8.0, y + 208.0, w, 48.0, "osu! inspired", Action::Style(1), true, self.render_style == 1);
+        self.lazer_button(x + pad, y + 264.0, self.width - pad * 2.0, 48.0, "Aurora · cyan studio", Action::Style(2), true, self.render_style == 2);
+        fill_text(x + pad, y + 338.0, 11.0, MUTED, 0, 0, "Canvas skin and colour scheme are remembered on this device.");
         self.note_scroll_max(PAGE_INFO, 0.0);
         unclip();
     }

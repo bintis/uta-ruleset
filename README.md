@@ -118,29 +118,13 @@ Completed work is recorded in [CHANGELOG.md](Docs/CHANGELOG.md); test and
 acceptance procedures live in [TESTING.md](Docs/TESTING.md). Only current open
 work is listed here.
 
-### Runtime hardening
-
-- [x] Verify the complete scoring matrix for Transpose, OCT, NC/DC, latency and loops.
-- [x] Soak-test long recordings, repeated retries, device changes and storage-write failure.
-- [x] Add device hot-plug recovery for microphone, monitor, BGM and vocal routes (with fallback to the lazer default output/input and automatic reconnect restoration).
-- [x] Consolidate playback, seek, rate and latency ownership into the documented [single clock architecture](Docs/CLOCK-ARCHITECTURE.md).
-- [x] Profile audio, microphone, scoring, recording and remote-control hot paths with bounded-buffer regression workloads.
-- [x] Verify long sessions and repeated mode changes do not leak streams, listeners or buffers in deterministic runtime workloads.
-
 ### Interface and media
 
 - [ ] Bind video visibility, dim, blur and offset to the supported lazer video drawable.
 - [ ] Perform real-runtime verification that native video-event synchronisation survives pause, seek, loop and rate changes (the converter regression verifies that the native video event is emitted).
-- [x] Finish keyboard, controller, touch, narrow-window, colour-blind and reduced-motion passes; see [ACCESSIBILITY.md](Docs/ACCESSIBILITY.md).
-- [x] Complete English, Japanese and Chinese localisation of desktop strings, including runtime locale binding for ruleset panels.
-- [x] Add consistent searchable captions/descriptions, tooltips, reset actions and disabled-state explanations.
 
 ### Release readiness
 
-- [x] Add migrations for renamed or type-changed pre-1.0 settings (including removal of the malformed legacy remote-port values written by affected builds).
-- [x] Expand deterministic import, clock, scoring, recording and MOD-combination tests.
-- [x] Run and document the supported desktop-platform build matrix.
-- [x] Complete install, upgrade, troubleshooting, recording-privacy and pairing documentation in the [user guide](Docs/USER-GUIDE.md).
 - [ ] Freeze the `.utz`, score, configuration and recording compatibility contracts for 1.0.
 - [ ] Publish verified versioned assets only after crash, data-loss, network and desync gates pass.
 

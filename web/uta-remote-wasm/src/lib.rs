@@ -5,10 +5,12 @@ mod proto;
 
 use app::App;
 use i18n::Lang;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Mutex;
 
 static LIGHT_THEME: AtomicBool = AtomicBool::new(false);
+// 0 Modern, 1 osu!-inspired, 2 Aurora (all Canvas/Rust rendered).
+static RENDER_STYLE: AtomicI32 = AtomicI32::new(0);
 
 #[link(wasm_import_module = "env")]
 extern "C" {
@@ -35,6 +37,7 @@ extern "C" {
     fn host_seq(value: i32);
     fn host_remember(enabled: i32);
     fn host_theme(light: i32);
+    fn host_style(style: i32);
 }
 
 static APP: Mutex<Option<App>> = Mutex::new(None);
@@ -115,6 +118,13 @@ pub extern "C" fn set_theme(light: i32) {
 }
 
 #[no_mangle]
+pub extern "C" fn set_style(style: i32) {
+    let style = style.clamp(0, 2);
+    RENDER_STYLE.store(style, Ordering::Relaxed);
+    with(|app| app.set_style(style));
+}
+
+#[no_mangle]
 pub extern "C" fn demo() {
     with(|app| app.load_demo());
 }
@@ -167,23 +177,55 @@ pub(crate) fn fill_text(x: f32, y: f32, size: f32, color: u32, align: i32, flags
 }
 
 fn paint(color: u32) -> u32 {
-    if !LIGHT_THEME.load(Ordering::Relaxed) {
-        return color;
-    }
-    // Preserve semantic accent/status colours; remap only the dark surface palette used by
-    // the canvas client so Light never leaves dark-only panels behind.
-    match color {
-        0xFF16161C => 0xFFF8F6FA,
-        0xF216161C => 0xF2FFFFFF,
-        0xFF2A2433 | 0xFF221E28 => 0xFFFFFFFF,
-        0xFF33303C => 0xFFF0EDF4,
-        0xFF4A4456 => 0xFFD7D1DD,
-        0xFFFFFFFF => 0xFF292431,
-        0xFFB0A8B8 => 0xFF746C7B,
-        0xCC0A0A0E => 0x88908A98,
-        0xF21A1A22 => 0xF2FFFFFF,
-        0xFF2A2A32 => 0xFFE5E0EA,
-        0x6A000000 => 0x12000000,
+    let style = RENDER_STYLE.load(Ordering::Relaxed);
+    let osu = style == 1;
+    let aurora = style == 2;
+    let light = LIGHT_THEME.load(Ordering::Relaxed);
+    // The two retained prototype skins share semantics and layout but intentionally use
+    // distinct surface/accent families. This mapping applies to every canvas primitive.
+    match (osu, light, color) {
+        // Aurora: a separate cyan/indigo Canvas skin, not an HTML theme.
+        (false, false, 0xFF16161C) if aurora => 0xFF09121D,
+        (false, false, 0xF216161C) if aurora => 0xF20A1420,
+        (false, false, 0xFF2A2433 | 0xFF221E28) if aurora => 0xFF10283A,
+        (false, false, 0xFF33303C) if aurora => 0xFF15364D,
+        (false, false, 0xFF4A4456) if aurora => 0xFF2B6683,
+        (false, false, 0xFFE846A0) if aurora => 0xFF35D6E8,
+        // Modern dark: neutral system-controller surfaces.
+        (false, false, 0xFF16161C) => 0xFF0B0B0E,
+        (false, false, 0xF216161C) => 0xF20B0B0E,
+        (false, false, 0xFF2A2433 | 0xFF221E28) => 0xFF17171C,
+        (false, false, 0xFF33303C) => 0xFF202027,
+        (false, false, 0xFF4A4456) => 0xFF474750,
+        (false, false, 0xFFE846A0) => 0xFFFF4AAA,
+        // osu!-inspired dark: purple stage surfaces and brighter pink/violet energy.
+        (true, false, 0xFF16161C) => 0xFF17131E,
+        (true, false, 0xF216161C) => 0xF2120E17,
+        (true, false, 0xFF2A2433 | 0xFF221E28) => 0xFF251F2D,
+        (true, false, 0xFF33303C) => 0xFF332A3D,
+        (true, false, 0xFF4A4456) => 0xFF5B4B62,
+        (true, false, 0xFFE846A0) => 0xFFFF66AA,
+        // Modern light.
+        (false, true, 0xFF16161C) => 0xFFF5F4F7,
+        (false, true, 0xF216161C) => 0xF2F8F7FA,
+        (false, true, 0xFF2A2433 | 0xFF221E28) => 0xFFFFFFFF,
+        (false, true, 0xFF33303C) => 0xFFF2EFF5,
+        (false, true, 0xFF4A4456) => 0xFFD8D2DC,
+        (false, true, 0xFFE846A0) => 0xFFE83294,
+        // osu!-inspired light.
+        (true, true, 0xFF16161C) => 0xFFFFF7FB,
+        (true, true, 0xF216161C) => 0xF2FFF9FC,
+        (true, true, 0xFF2A2433 | 0xFF221E28) => 0xFFFFFFFF,
+        (true, true, 0xFF33303C) => 0xFFF8EDF4,
+        (true, true, 0xFF4A4456) => 0xFFE3D2E0,
+        (true, true, 0xFFE846A0) => 0xFFEF4F9C,
+        // Shared light contrast mapping.
+        (_, true, 0xFFFFFFFF) => 0xFF292431,
+        (_, true, 0xFFB0A8B8) => 0xFF746C7B,
+        (_, true, 0xCC0A0A0E) => 0x88908A98,
+        (_, true, 0xF21A1A22) => 0xF2FFFFFF,
+        (_, true, 0xFF2A2A32) => 0xFFE5E0EA,
+        (_, true, 0x6A000000) => 0x12000000,
         _ => color,
     }
 }
@@ -223,6 +265,12 @@ pub(crate) fn set_remembered(enabled: bool) {
 pub(crate) fn persist_theme(light: bool) {
     LIGHT_THEME.store(light, Ordering::Relaxed);
     unsafe { host_theme(i32::from(light)) }
+}
+
+pub(crate) fn persist_style(style: i32) {
+    let style = style.clamp(0, 2);
+    RENDER_STYLE.store(style, Ordering::Relaxed);
+    unsafe { host_style(style) }
 }
 
 pub(crate) fn search_rect(x: f32, y: f32, w: f32, h: f32, visible: bool) {

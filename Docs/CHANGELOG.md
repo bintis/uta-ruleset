@@ -3,6 +3,51 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.3 - 2026-08-20
+
+### Complete mobile remote rewrite
+
+- Consolidate the former 0.8.20–0.8.28 remote work into one release: the
+  self-contained Rust/WASM controller now provides persisted Canvas skins,
+  safe-area-aware navigation, queue and song setup, full Control and audio
+  tools, practice controls, live feedback, and responsive gestures.
+- Keep the binary WebSocket command/ACK protocol intact while ensuring remote
+  commands, including resume from paused gameplay, execute on the host update
+  scheduler. Transport feedback remains centred in the usable phone viewport.
+- Add the Aurora Canvas skin and refine the Modern and osu!-inspired variants,
+  including the expanded lyric stage, accessible hit targets and theme settings.
+
+### Completed roadmap work
+
+- Verify the full Transpose, OCT, NC/DC, latency and loop scoring matrix; soak
+  long recordings, retries, device changes and storage-write failures.
+- Add hot-plug recovery for microphone, monitor, BGM and vocal routes; document
+  the single authoritative clock architecture; and profile bounded-buffer audio,
+  scoring, recording and remote workloads for leak-free long sessions.
+- Complete accessibility, responsive-input and reduced-motion passes; finish
+  English, Japanese and Chinese desktop localisation; and add searchable labels,
+  tooltips, reset actions and disabled-state explanations.
+- Add pre-1.0 settings migrations, expand deterministic import/clock/scoring/
+  recording/MOD tests, document the desktop build matrix, and complete install,
+  upgrade, troubleshooting, recording-privacy and pairing guidance.
+
+### Validation
+
+- The self-contained WASM HTML verifier and desktop regression suite pass
+  against the local Nix osu! references.
+
+### Existing skin and package work
+
+- Complete active-skin rendering for pitch panels, target-note kinds, grids,
+  reference/live/trail curves, playhead, lyric decorations, judgement feedback,
+  HUD chrome and singing/scoring particles.
+- Add always-visible accessible fallbacks beneath skin textures, including fully
+  transparent assets, with regression coverage for particle/feedback HUD mounting
+  and the complete asset-name contract.
+- Restrict the package reader to `uta.song 0.3.x` with `vocal-chart/1`, removing
+  legacy manifest/chart models and loading paths. The transparent-fallback skin
+  retains every documented base asset and visible gameplay-critical fallback.
+
 ## 0.8.19 - 2026-08-20
 
 ### Mobile remote redesign
@@ -291,28 +336,6 @@ Completed work from 0.1.0 onward. Open items stay in the
   the 218715-byte embedded phone page and completed a binary (`U`) WebSocket
   welcome frame using the QR URL's fragment ticket. Final deployed DLL SHA-256:
   `89d6429126e5176daf014541c182b306f1d72582abe35bb82c0425354bef8dbd`.
-
-## 0.8.3 - 2026-08-20
-
-### Added
-
-- Completed active-skin rendering for pitch panels, all target-note kinds,
-  major/minor grids, reference/live/trail curves, playhead, lyric decorations,
-  judgement/fault feedback, HUD chrome and singing/scoring particles.
-- Added always-visible accessible fallbacks beneath skin textures, including
-  fully transparent assets, and regression coverage for particle/feedback HUD
-  mounting and the complete asset-name contract.
-
-### Changed
-
-- The package reader now accepts only the current `uta.song 0.3.x` contract
-  with `vocal-chart/1`; legacy manifest/chart models and loading paths were
-  removed.
-
-### Validation
-
-- The transparent-fallback skin contains every documented base asset and keeps
-  all gameplay-critical semantic fallbacks visible.
 
 ## 0.8.2 - 2026-08-20
 

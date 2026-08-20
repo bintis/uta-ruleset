@@ -53,7 +53,7 @@ def main() -> int:
             stubs = ",".join(f"{name}:()=>0" for name in (
                 "host_fill_rect", "host_stroke_rect", "host_fill_triangle", "host_fill_text", "host_measure_text",
                 "host_clip", "host_unclip", "host_send", "host_search",
-                "host_log", "host_session", "host_seq", "host_remember", "host_theme",
+                "host_log", "host_session", "host_seq", "host_remember", "host_theme", "host_style",
             ))
             needed = ",".join(f"'{name}'" for name in REQUIRED_EXPORTS)
             script = (

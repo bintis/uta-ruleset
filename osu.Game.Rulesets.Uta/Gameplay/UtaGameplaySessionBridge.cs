@@ -239,7 +239,11 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
 
         var completion = new TaskCompletionSource<UtaRemoteCommandResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         CancellationTokenRegistration registration = cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
-        Schedule(() =>
+        // A remote pause stops the gameplay clock. Drawable.Schedule is serviced by that
+        // clock, so queuing the following resume there leaves its completion (and WebSocket
+        // ACK) permanently stranded. The host update scheduler keeps running while gameplay
+        // is paused and is the correct affinity for all remote game mutations.
+        gameHost.UpdateThread.Scheduler.Add(() =>
         {
             try
             {

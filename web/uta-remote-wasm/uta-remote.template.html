@@ -34,8 +34,11 @@ const ctx=canvas.getContext('2d');
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let wasm=null,memory=null,socket=null,retryTimer=null,intentional=false,wake=null;
 let lightTheme=localStorage.getItem('uta.theme')==='light';
+let renderStyle=({modern:0,osu:1,aurora:2})[localStorage.getItem('uta.style')]??0;
 document.documentElement.dataset.theme=lightTheme?'light':'dark';
+document.documentElement.dataset.style=['modern','osu','aurora'][renderStyle];
 function applyTheme(light){lightTheme=!!light;document.documentElement.dataset.theme=lightTheme?'light':'dark';localStorage.setItem('uta.theme',lightTheme?'light':'dark')}
+function applyStyle(style){renderStyle=Math.max(0,Math.min(2,style|0));const name=['modern','osu','aurora'][renderStyle];document.documentElement.dataset.style=name;localStorage.setItem('uta.style',name)}
 const fragment=new URLSearchParams(location.hash.slice(1));
 let ticket=fragment.get('ticket')||'';
 let remember=localStorage.getItem('uta.remember')!=='0';
@@ -66,7 +69,8 @@ const env={
   host_session(idPtr,idLen,secPtr,secLen){sessionId=read(idPtr,idLen);secret=read(secPtr,secLen);ticket='';history.replaceState(null,'',location.pathname);sessionStorage.setItem('uta.session',sessionId);sessionStorage.setItem('uta.secret',secret);if(remember){localStorage.setItem('uta.session',sessionId);localStorage.setItem('uta.secret',secret)}},
   host_seq(value){sessionStorage.setItem('uta.sequence',String(value))},
   host_remember(enabled){remember=!!enabled;localStorage.setItem('uta.remember',remember?'1':'0');if(remember){if(sessionId)localStorage.setItem('uta.session',sessionId);if(secret)localStorage.setItem('uta.secret',secret)}else{localStorage.removeItem('uta.session');localStorage.removeItem('uta.secret')}},
-  host_theme(light){applyTheme(!!light)}
+  host_theme(light){applyTheme(!!light)},
+  host_style(style){applyStyle(style)}
 };
 
 function wsUrl(){const scheme=location.protocol==='https:'?'wss:':'ws:';const q=new URLSearchParams();if(ticket)q.set('ticket',ticket);else{q.set('session',sessionId);q.set('secret',secret)}return scheme+'//'+location.host+'/ws?'+q}
@@ -84,6 +88,7 @@ function ptr(kind,e){const r=canvas.getBoundingClientRect();const t=e.changedTou
   wasm.start(lp,ll,reduced?1:0,Number(sessionStorage.getItem('uta.sequence')||localStorage.getItem('uta.sequence')||0)|0,remember?1:0);
   wasm.dealloc(lp,ll||1);
   wasm.set_theme(lightTheme?1:0);
+  wasm.set_style(renderStyle);
   if(fragment.get('demo')==='1')wasm.demo();
   layout();
   connect();
