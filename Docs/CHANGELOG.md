@@ -3,6 +3,23 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.16 - 2026-08-20
+
+### Localisation and settings
+
+- Localised the remaining desktop settings captions for English, Simplified
+  Chinese and Japanese through the same lazer locale binding used by Uta panels.
+- Completed settings reset coverage and searchable captions/descriptions; every
+  slider exposes lazer's native revert action and the display, playback and
+  microphone groups expose explicit reset actions.
+- Clarified the currently unsupported video dim, blur and offset controls in
+  their setting descriptions pending native video drawable binding.
+
+### Validation
+
+- 167 automated tests pass against the local Nix osu! references; format,
+  overlay audit and whitespace checks pass.
+
 ## 0.8.15 - 2026-08-20
 
 ### Performance

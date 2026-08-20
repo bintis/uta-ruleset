@@ -114,7 +114,7 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     HintText = "Show authored readings or furigana above lyric tokens.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.LyricsShowReading),
                 }),
-                slider("Lyrics panel opacity", "Opacity of the protected lyrics readability surface.",
+                slider(UtaStrings.Get("settings.lyrics_opacity", language), "Opacity of the protected lyrics readability surface.",
                     config.GetBindable<float>(UtaRulesetSetting.LyricsPanelOpacity), value => $"{value:P0}", 0.05f),
                 new SettingsItemV2(new FormEnumDropdown<UtaLyricsProgressStyle>
                 {
@@ -128,7 +128,7 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     HintText = "Choose a constrained pitch panel size without changing its gameplay time window.",
                     Current = config.GetBindable<UtaPitchHudSize>(UtaRulesetSetting.PitchHudSize),
                 }),
-                slider("Pitch HUD opacity", "Opacity of the pitch panel while preserving critical cues.",
+                slider(UtaStrings.Get("settings.pitch_hud_opacity", language), "Opacity of the pitch panel while preserving critical cues.",
                     config.GetBindable<float>(UtaRulesetSetting.PitchHudOpacity), value => $"{value:P0}", 0.05f),
                 new SettingsItemV2(new FormEnumDropdown<UtaPitchHudLayout>
                 {
@@ -136,7 +136,7 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     HintText = "Use responsive inset bounds or an explicit full-width panel.",
                     Current = config.GetBindable<UtaPitchHudLayout>(UtaRulesetSetting.PitchHudLayout),
                 }),
-                slider("HUD safe area padding", "Additional inset reserved around uta! gameplay HUD elements.",
+                slider(UtaStrings.Get("settings.safe_area", language), "Additional inset reserved around uta! gameplay HUD elements.",
                     config.GetBindable<float>(UtaRulesetSetting.HudSafeAreaPadding), value => $"{value:0} px", 1),
                 new SettingsItemV2(new PitchCurveDisplayDropdown
                 {
@@ -169,17 +169,17 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     HintText = "Allow the lazer-native video event included by the imported .utz package. Video dim, blur and offset remain unavailable until drawable binding is implemented.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.VideoVisible),
                 }),
-                slider("Video dim", "Unavailable until ruleset video drawable binding is implemented.",
+                slider(UtaStrings.Get("settings.video_dim", language), "Unavailable until ruleset video drawable binding is implemented.",
                     config.GetBindable<float>(UtaRulesetSetting.VideoDim), value => $"{value:P0}", 0.05f),
-                slider("Video blur", "Unavailable until ruleset video drawable binding is implemented.",
+                slider(UtaStrings.Get("settings.video_blur", language), "Unavailable until ruleset video drawable binding is implemented.",
                     config.GetBindable<float>(UtaRulesetSetting.VideoBlur), value => $"{value:P0}", 0.05f),
-                slider("Video offset", "Unavailable until ruleset video drawable binding is implemented.",
+                slider(UtaStrings.Get("settings.video_offset", language), "Unavailable until ruleset video drawable binding is implemented.",
                     config.GetBindable<float>(UtaRulesetSetting.VideoOffset), value => $"{value:+0;-0;0} ms", 1),
-                slider("Particle intensity", "Intensity of optional singing/scoring feedback; zero disables it.",
+                slider(UtaStrings.Get("settings.particle_intensity", language), "Intensity of optional singing/scoring feedback; zero disables it.",
                     config.GetBindable<float>(UtaRulesetSetting.ParticleIntensity), value => $"{value:P0}", 0.05f),
                 new SettingsItemV2(new FormEnumDropdown<UtaScoreHudPosition>
                 {
-                    Caption = "Score HUD position",
+                    Caption = UtaStrings.Get("settings.score_position", language),
                     HintText = "Corner of the screen the live score panel is anchored to. Press S in-game to hide or show it.",
                     Current = config.GetBindable<UtaScoreHudPosition>(UtaRulesetSetting.ScoreHudPosition),
                 }),
@@ -198,7 +198,7 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     Text = UtaStrings.Get("settings.configure_microphone", language),
                     Action = showMicrophoneSettings,
                 },
-                slider("Background music", "Volume of the instrumental track during Uta gameplay.",
+                slider(UtaStrings.Get("settings.background_music", language), "Volume of the instrumental track during Uta gameplay.",
                     config.GetBindable<double>(UtaRulesetSetting.BackgroundMusicVolume), value => $"{value:P0}", 0.05f),
                 new SettingsItemV2(new FormCheckBox
                 {
@@ -206,7 +206,7 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     HintText = "Keep the packaged vocal track on across song changes. The VOX mod also turns this on. The slider below is level only.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.OriginalVocalsEnabled),
                 }),
-                slider("Original vocals", "Level of the original vocal track. Does not turn the track on by itself.",
+                slider(UtaStrings.Get("settings.original_vocals", language), "Level of the original vocal track. Does not turn the track on by itself.",
                     config.GetBindable<float>(UtaRulesetSetting.OriginalVocalsVolume), value => $"{value:P0}", 0.05f),
                 resetPlaybackButton = new SettingsButton
                 {
@@ -219,17 +219,17 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     Action = hideMicrophoneSettings,
                 },
                 output(UtaStrings.Get("settings.monitor_output", language), "Hardware output used for live microphone monitoring.", config.GetBindable<string>(UtaRulesetSetting.MicrophoneOutputDevice)),
-                slider("Microphone input gain", "Software gain applied before pitch detection and monitoring.",
+                slider(UtaStrings.Get("settings.input_gain", language), "Software gain applied before pitch detection and monitoring.",
                     config.GetBindable<float>(UtaRulesetSetting.MicrophoneInputGain), value => $"{value:0.00}×", 0.05f),
-                slider("Pitch sampling interval", "Time between pitch analyses. Lower values update faster but use more CPU.",
+                slider(UtaStrings.Get("settings.sampling_interval", language), "Time between pitch analyses. Lower values update faster but use more CPU.",
                     config.GetBindable<float>(UtaRulesetSetting.PitchSamplingInterval), value => $"{value:0} ms", 1),
-                slider("Ear monitor", "Hear your microphone through the active output. Headphones are recommended.",
+                slider(UtaStrings.Get("settings.ear_monitor", language), "Hear your microphone through the active output. Headphones are recommended.",
                     config.GetBindable<float>(UtaRulesetSetting.MicrophoneMonitorVolume), value => $"{value:P0}", 0.05f),
-                slider("Microphone latency", "Positive values compare detected voice with an earlier point in the song.",
+                slider(UtaStrings.Get("settings.microphone_latency", language), "Positive values compare detected voice with an earlier point in the song.",
                     config.GetBindable<float>(UtaRulesetSetting.MicrophoneLatency), value => $"{value:+0;-0;0} ms", 1),
                 latencyCalibrationButton = new SettingsButton
                 {
-                    Text = "Auto-measure microphone latency",
+                    Text = UtaStrings.Get("settings.auto_measure", language),
                     Action = runLatencyCalibration,
                 },
                 inputLevelDiagnostic = diagnostic("Input level: run auto-measure to sample"),
