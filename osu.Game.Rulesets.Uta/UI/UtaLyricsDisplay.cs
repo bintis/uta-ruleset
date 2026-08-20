@@ -271,6 +271,16 @@ internal partial class UtaLyricsRenderer : CompositeDrawable
             InternalChildren = new Drawable[]
             {
                 content,
+                new Sprite
+                {
+                    Anchor = Anchor.CentreLeft,
+                    Origin = Anchor.CentreRight,
+                    X = -4,
+                    Size = new Vector2(next ? 7 : 6),
+                    Texture = next ? visualStyle.Assets.LyricsUpcomingMarker
+                        : showReading ? visualStyle.Assets.LyricsReadingMarker : null,
+                    Alpha = next || showReading ? 0.8f : 0,
+                },
                 progress = new Box
                 {
                     Anchor = Anchor.BottomLeft,
@@ -286,7 +296,12 @@ internal partial class UtaLyricsRenderer : CompositeDrawable
                     Origin = Anchor.BottomLeft,
                     RelativeSizeAxes = Axes.X,
                     Height = style.ProgressThickness,
-                    Texture = visualStyle.Assets.LyricsProgress ?? visualStyle.Assets.LyricsUnderline,
+                    Texture = progressStyle switch
+                    {
+                        UtaLyricsProgressStyle.Fill => visualStyle.Assets.LyricsProgress,
+                        UtaLyricsProgressStyle.Marker => visualStyle.Assets.LyricsReadingMarker,
+                        _ => visualStyle.Assets.LyricsUnderline,
+                    },
                     FillMode = FillMode.Stretch,
                     Alpha = 0,
                 },
@@ -308,7 +323,10 @@ internal partial class UtaLyricsRenderer : CompositeDrawable
                     this.progress.Width = amount;
                     this.progress.Height = 1;
                     this.progress.Alpha = amount * 0.18f;
-                    progressTexture.Alpha = 0;
+                    progressTexture.RelativeSizeAxes = Axes.Both;
+                    progressTexture.Width = amount;
+                    progressTexture.Height = 1;
+                    progressTexture.Alpha = progressTexture.Texture == null ? 0 : amount * 0.72f;
                     break;
 
                 case UtaLyricsProgressStyle.Marker:
@@ -318,13 +336,21 @@ internal partial class UtaLyricsRenderer : CompositeDrawable
                     this.progress.Width = 3;
                     this.progress.Height = style.CurrentSize;
                     this.progress.Alpha = amount;
-                    progressTexture.Alpha = 0;
+                    progressTexture.RelativeSizeAxes = Axes.None;
+                    progressTexture.RelativePositionAxes = Axes.X;
+                    progressTexture.X = amount;
+                    progressTexture.Width = 8;
+                    progressTexture.Height = style.CurrentSize;
+                    progressTexture.Alpha = progressTexture.Texture == null ? 0 : amount;
                     break;
 
                 default:
                     this.progress.Width = amount;
                     this.progress.Alpha = progressTexture.Texture == null ? amount : 0;
+                    progressTexture.RelativeSizeAxes = Axes.X;
+                    progressTexture.RelativePositionAxes = Axes.None;
                     progressTexture.Width = amount;
+                    progressTexture.Height = style.ProgressThickness;
                     progressTexture.Alpha = progressTexture.Texture == null ? 0 : amount;
                     break;
             }

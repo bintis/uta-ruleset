@@ -14,7 +14,7 @@ This design targets:
 - uta-ruleset `main` commit `72cfb9f0fbd4142f44fa7253a093978173c3a6c0`;
 - osu!lazer `2026.804.2-lazer` runtime/API behaviour;
 - uta.pitch scoring engine v2;
-- uta.song 0.1 and 0.2 note kinds.
+- uta.song 0.3.x vocal-chart note kinds.
 
 The foundation primitives were previously dormant. This runtime integration activates
 them as one coordinated change so drawable results, native score units, health and
@@ -441,7 +441,7 @@ recording corpus.
 - fixed-grid batch/stream equivalence;
 - frame order and sampling-density invariance;
 - Transpose and OCT;
-- every uta.song 0.1/0.2 note kind;
+- every uta.song 0.3.x vocal-chart note kind;
 - Perfect/Great/Good/Bad/Miss thresholds;
 - Bad + High/Low/Unstable diagnostics;
 - Pitch-gated profiles;

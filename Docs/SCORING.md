@@ -62,7 +62,7 @@ CPU stalls from changing the score.
 
 ## Scoring targets
 
-The current package understands all note kinds used by uta.song 0.1 and 0.2:
+The current package understands all note kinds used by the `uta.song 0.3.x` vocal chart:
 
 | Kind | Pitch-scored | Weight |
 |---|---:|---:|

@@ -55,17 +55,6 @@ public sealed class UtzManifest
     [JsonPropertyName("provenance")]
     public UtzProvenance Provenance { get; init; } = new();
 
-    /// <summary>
-    /// UTZ 0.2 replaces the three parallel 0.1 chart assets with a single vocal
-    /// chart and demotes pitch analysis to optional evidence; readers branch on
-    /// this to know which chart shape to expect. 0.3 only adds optional,
-    /// defaulted fields on top of the 0.2 manifest shape, so it takes the same
-    /// branch.
-    /// </summary>
-    [JsonIgnore]
-    public bool IsFormatV2 => FormatVersion.StartsWith("0.2.", StringComparison.Ordinal)
-                               || FormatVersion.StartsWith("0.3.", StringComparison.Ordinal);
-
     [JsonIgnore]
     public IEnumerable<UtzAsset> Assets
     {
@@ -73,14 +62,7 @@ public sealed class UtzManifest
         {
             yield return Audio.Instrumental;
 
-            if (Charts.Transcript != null)
-                yield return Charts.Transcript;
-            if (Charts.PitchTrack != null)
-                yield return Charts.PitchTrack;
-            if (Charts.PitchNotes != null)
-                yield return Charts.PitchNotes;
-            if (Charts.Vocal != null)
-                yield return Charts.Vocal;
+            yield return Charts.Vocal;
             if (Analysis?.PitchEvidence != null)
                 yield return Analysis.PitchEvidence;
 
@@ -134,7 +116,7 @@ public sealed class UtzSongMetadata
     [JsonPropertyName("year")]
     public int? Year { get; init; }
 
-    /// <summary>Chart author credited by the 0.2 song block, distinct from the recording artist.</summary>
+    /// <summary>Chart author, distinct from the recording artist.</summary>
     [JsonPropertyName("creator")]
     public string? Creator { get; init; }
 
@@ -157,11 +139,7 @@ public sealed class UtzAudioAssets
     [JsonPropertyName("original")]
     public UtzAsset? Original { get; init; }
 
-    /// <summary>0.1 only; 0.2 bakes any shift into authored note times instead.</summary>
-    [JsonPropertyName("audio_offset_seconds")]
-    public double? AudioOffsetSeconds { get; init; }
-
-    /// <summary>0.3 only: advisory integrated loudness (EBU R 128 LUFS) per audio stem.</summary>
+    /// <summary>Advisory integrated loudness (EBU R 128 LUFS) per audio stem.</summary>
     [JsonPropertyName("loudness")]
     public UtzAudioLoudness? Loudness { get; init; }
 }
@@ -181,26 +159,15 @@ public sealed class UtzAudioLoudness
 
 public sealed class UtzChartAssets
 {
-    /// <summary>0.1 only.</summary>
-    [JsonPropertyName("transcript")]
-    public UtzAsset? Transcript { get; init; }
-
-    /// <summary>0.1 only.</summary>
-    [JsonPropertyName("pitch_track")]
-    public UtzAsset? PitchTrack { get; init; }
-
-    /// <summary>0.1 only.</summary>
-    [JsonPropertyName("pitch_notes")]
-    public UtzAsset? PitchNotes { get; init; }
-
-    /// <summary>0.2 only: the single authoritative vocal chart.</summary>
+    /// <summary>The single authoritative vocal chart.</summary>
+    [JsonRequired]
     [JsonPropertyName("vocal")]
-    public UtzAsset? Vocal { get; init; }
+    public UtzAsset Vocal { get; init; } = new();
 }
 
 public sealed class UtzAnalysisAssets
 {
-    /// <summary>0.2 only; optional frame-level evidence, never the scoring chart.</summary>
+    /// <summary>Optional frame-level evidence, never the scoring chart.</summary>
     [JsonPropertyName("pitch_evidence")]
     public UtzAsset? PitchEvidence { get; init; }
 }
@@ -213,7 +180,7 @@ public sealed class UtzVisualAssets
     [JsonPropertyName("video")]
     public UtzAsset? Video { get; init; }
 
-    /// <summary>0.3 only; how far into the video the audio starts, mirroring <see cref="UtzAudioAssets.AudioOffsetSeconds"/>'s old role.</summary>
+    /// <summary>How far into the video the audio starts.</summary>
     [JsonPropertyName("video_offset_seconds")]
     public double VideoOffsetSeconds { get; init; }
 }
@@ -263,16 +230,6 @@ public sealed class UtzAsset
     public long Bytes { get; init; }
 }
 
-public sealed class UtaTranscript
-{
-    [JsonPropertyName("language")]
-    public string Language { get; init; } = string.Empty;
-
-    [JsonRequired]
-    [JsonPropertyName("segments")]
-    public IReadOnlyList<UtaTranscriptSegment> Segments { get; init; } = new List<UtaTranscriptSegment>();
-}
-
 public sealed class UtaTranscriptSegment
 {
     [JsonRequired]
@@ -312,49 +269,6 @@ public sealed class UtaTranscriptWord
     public bool Estimated { get; init; }
 }
 
-public sealed class UtaPitchTrack
-{
-    [JsonRequired]
-    [JsonPropertyName("format_version")]
-    public int FormatVersion { get; init; }
-
-    [JsonPropertyName("model")]
-    public object? Model { get; init; }
-
-    [JsonRequired]
-    [JsonPropertyName("hop_seconds")]
-    public double HopSeconds { get; init; }
-
-    [JsonRequired]
-    [JsonPropertyName("frames")]
-    public IReadOnlyList<UtaPitchFrame> Frames { get; init; } = new List<UtaPitchFrame>();
-}
-
-public sealed class UtaPitchFrame
-{
-    [JsonRequired]
-    [JsonPropertyName("time")]
-    public double Time { get; init; }
-
-    [JsonPropertyName("hz")]
-    public double? Hertz { get; init; }
-
-    [JsonRequired]
-    [JsonPropertyName("confidence")]
-    public double Confidence { get; init; }
-}
-
-public sealed class UtaPitchNoteChart
-{
-    [JsonRequired]
-    [JsonPropertyName("format_version")]
-    public int FormatVersion { get; init; }
-
-    [JsonRequired]
-    [JsonPropertyName("notes")]
-    public IReadOnlyList<UtaPitchNote> Notes { get; init; } = new List<UtaPitchNote>();
-}
-
 public sealed class UtaPitchNote
 {
     [JsonRequired]
@@ -366,10 +280,8 @@ public sealed class UtaPitchNote
     public double End { get; init; }
 
     /// <summary>
-    /// Null for notes projected from a 0.2 vocal chart note that does not use
-    /// pitch scoring (rap/spoken/rhythm/none); 0.1 pitch notes always carry a value.
-    /// Not marked JsonRequired: the internal @utanote wire payload omits null
-    /// values on write (WhenWritingNull), so the key may legitimately be absent.
+    /// Null for a vocal-chart note that does not use pitch scoring
+    /// (rap/spoken/rhythm/none). The internal @utanote payload omits null values.
     /// </summary>
     [JsonPropertyName("midi")]
     public int? Midi { get; init; }
@@ -418,9 +330,7 @@ public sealed class UtaBeatmapMetadata
     public IReadOnlyList<UtaTranscriptSegment> Transcript { get; init; } = new List<UtaTranscriptSegment>();
 }
 
-// UTZ 0.2 vocal chart (vocal-chart-v1.schema.json): track -> phrase -> note,
-// with authored pitch/scoring/lyric-token data replacing the 0.1 transcript,
-// pitch-track and pitch-notes trio. See format/utz-v0.2.md for the prose spec.
+// Current vocal chart (vocal-chart-v1.schema.json): track -> phrase -> note.
 
 public sealed class UtaVocalChart
 {

@@ -8,6 +8,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Primitives;
 using osu.Framework.Graphics.Shapes;
+using osu.Framework.Graphics.Textures;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Scoring;
@@ -33,7 +34,15 @@ internal abstract partial class UtaBoundedParticleLayer : CompositeDrawable
             AddInternal(particles[i] = new Particle());
     }
 
-    protected void SetStyle(UtaVisualStyle style) => Style = style;
+    protected void SetStyle(UtaVisualStyle style)
+    {
+        Style = style;
+        Texture? texture = ParticleTexture(style);
+        foreach (Particle particle in particles)
+            particle.Texture = texture;
+    }
+
+    protected abstract Texture? ParticleTexture(UtaVisualStyle style);
 
     protected void Emit(Vector2 position, Color4 colour, float intensity, int configuredLimit)
     {
@@ -55,12 +64,19 @@ internal abstract partial class UtaBoundedParticleLayer : CompositeDrawable
 
     private sealed partial class Particle : CircularContainer
     {
+        private readonly UtaTexturedPrimitive primitive;
+
+        public Texture? Texture
+        {
+            set => primitive.Texture = value;
+        }
+
         public Particle()
         {
             Size = new Vector2(7);
             Masking = true;
             Alpha = 0;
-            Child = new Box { RelativeSizeAxes = Axes.Both };
+            Child = primitive = new UtaTexturedPrimitive { RelativeSizeAxes = Axes.Both };
         }
     }
 }
@@ -77,6 +93,8 @@ internal sealed partial class UtaSingingParticleLayer : UtaBoundedParticleLayer
         : base(18)
     {
     }
+
+    protected override Texture? ParticleTexture(UtaVisualStyle style) => style.Assets.ParticleSing;
 
     [BackgroundDependencyLoader]
     private void load(DrawableRuleset drawableRuleset, UtaRulesetConfigManager config, UtaVisualStyleProvider styleProvider)
@@ -127,6 +145,8 @@ internal sealed partial class UtaScoringFeedbackLayer : UtaBoundedParticleLayer
         : base(24)
     {
     }
+
+    protected override Texture? ParticleTexture(UtaVisualStyle style) => style.Assets.ParticleScore;
 
     [BackgroundDependencyLoader]
     private void load(UtaGameplayScoringController scoringController, UtaRulesetConfigManager config, UtaVisualStyleProvider styleProvider)

@@ -27,7 +27,8 @@ See [CHANGELOG.md](Docs/CHANGELOG.md) for completed work from 0.1.0 onward.
 - Reference notes, real-time microphone Pitch detection, singing history and
   clear visual feedback for whether the voice is high, low or on target.
 - A colour-blind-friendly dark Pitch guide with distinct target, packaged-vocal
-  and live-microphone layers.
+  and live-microphone layers, fully integrated with the active lazer skin via
+  the documented [uta! skin contract](Docs/SKINNING.md).
 - Independent BGM, packaged-vocal and microphone-monitor volume controls and
   output routing, with one shared mix bus per selected hardware device.
 - Configurable microphone device, input gain, monitoring, analysis sampling and
@@ -131,10 +132,8 @@ This list is only what is still open.
 
 ### 0.9.0 - Skins, video and interface polish
 
-- [ ] Replace every existing hard-coded pitch/lyrics primitive with those skinable lookups (grid, notes, curves, playhead, lyrics, scoring feedback).
 - [ ] Bind those video settings to the exact target lazer background/video drawable.
 - [ ] Keep video synchronised through speed changes, seeks, loops and pauses once the ruleset binding exists (imported packages already inherit lazer's native video clock).
-- [ ] Add optional singing and scoring particles; reduced-motion and intensity settings already exist.
 - [ ] Finish the native two-level settings navigation and remove remaining button/control inconsistencies.
 - [ ] Add search terms, tooltips, reset behaviour and disabled-state explanations to every setting.
 - [ ] Improve narrow-window, touch, keyboard and controller navigation.
@@ -151,7 +150,6 @@ This list is only what is still open.
 - [ ] Recover cleanly when an audio route, video decoder, recording target or remote service fails.
 - [ ] Verify long sessions, repeated mode changes and thousands of seek/loop operations do not accumulate resources.
 - [ ] Add configuration migrations for every renamed or type-changed setting since 0.3.0.
-- [ ] Define compatibility behaviour for older `uta.song 0.1.x` packages and unsupported future schemas.
 - [ ] Expand deterministic tests for import, clocks, scoring, recording, MOD combinations and remote commands.
 - [ ] Run the supported desktop-platform build matrix or explicitly document any platform limitation before 1.0.
 - [ ] Keep Nix osu! as the local API source of truth and maintain a reproducible CI fallback.
@@ -178,7 +176,7 @@ After 1.0, additional song formats, online services, editor features and experim
 ## Scope
 
 - osu!lazer compatibility target: Nix-installed `2026.804.2`.
-- Accepted package contract: `uta.song` format `0.1.x` with `uta.pitch` scoring schema version 1.
+- Accepted package contract: `uta.song` format `0.3.x` with `vocal-chart/1`. Older and future package versions are rejected.
 
 ## Acknowledgements
 

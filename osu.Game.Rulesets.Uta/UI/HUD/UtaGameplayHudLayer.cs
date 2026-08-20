@@ -27,6 +27,7 @@ internal sealed partial class UtaGameplayHudLayer : CompositeDrawable
     private readonly UtaPitchHudHost? pitchHost;
     private readonly UtaLyricsHudHost? lyricsHost;
     private readonly UtaSingingParticleLayer? singingParticles;
+    private readonly UtaScoringFeedbackLayer? scoringFeedback;
     private readonly UtaScoringHud? scoreHud;
     private readonly Bindable<UtaLyricsPosition> lyricsPosition = new();
     private readonly BindableBool reducedMotion = new();
@@ -46,6 +47,9 @@ internal sealed partial class UtaGameplayHudLayer : CompositeDrawable
     private UtaHudDensity lastDensity = (UtaHudDensity)(-1);
     private ISkinSource? skinSource;
 
+    internal bool HasSingingParticles => singingParticles != null;
+    internal bool HasScoringFeedback => scoringFeedback != null;
+
     public UtaGameplayHudLayer(bool showPitch, bool showLyrics, bool showScore, bool showPractice, bool showRecording)
     {
         this.showPitch = showPitch;
@@ -62,7 +66,10 @@ internal sealed partial class UtaGameplayHudLayer : CompositeDrawable
         if (showPitch)
             AddInternal(singingParticles = new UtaSingingParticleLayer());
         if (showScore)
+        {
+            AddInternal(scoringFeedback = new UtaScoringFeedbackLayer());
             AddInternal(scoreHud = new UtaScoringHud());
+        }
         if (showPractice)
             AddInternal(new UtaPracticeHud());
         if (showRecording)
@@ -143,6 +150,7 @@ internal sealed partial class UtaGameplayHudLayer : CompositeDrawable
         lyricsHost?.ApplyLayout(layout.LyricsBounds);
         singingParticles?.ApplyLayout(layout.PitchBounds);
         scoreHud?.ApplyLayout(layout.ScoreBounds);
+        scoringFeedback?.ApplyLayout(layout.ScoreBounds);
     }
 
     private void invalidateLayout() => lastSize = new Vector2(float.NaN);

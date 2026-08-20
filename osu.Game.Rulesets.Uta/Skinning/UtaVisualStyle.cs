@@ -3,6 +3,7 @@
 
 using System;
 using osu.Framework.Graphics.Textures;
+using osu.Game.Rulesets.Uta.Scoring;
 using osu.Game.Rulesets.Uta.UI.HUD;
 using osuTK.Graphics;
 
@@ -80,6 +81,9 @@ public sealed record UtaSkinAssets(
     Texture? TargetFreestyle,
     Texture? TargetRap,
     Texture? TargetSpoken,
+    Texture? TargetGoldenFreestyle,
+    Texture? TargetGoldenRap,
+    Texture? TargetGoldenSpoken,
     Texture? Playhead,
     Texture? GridMajor,
     Texture? GridMinor,
@@ -90,11 +94,50 @@ public sealed record UtaSkinAssets(
     Texture? LyricsUnderline,
     Texture? LyricsReadingMarker,
     Texture? LyricsProgress,
-    Texture? LyricsUpcomingMarker)
+    Texture? LyricsUpcomingMarker,
+    Texture? FeedbackPerfect,
+    Texture? FeedbackGreat,
+    Texture? FeedbackGood,
+    Texture? FeedbackBad,
+    Texture? FeedbackMiss,
+    Texture? FaultHigh,
+    Texture? FaultLow,
+    Texture? FaultUnstable,
+    Texture? FaultCoverage,
+    Texture? FaultInaccurate,
+    Texture? ParticleSing,
+    Texture? ParticleScore,
+    Texture? HudPanel,
+    Texture? HudAccent)
 {
+    public Texture? FeedbackFor(UtaNoteGrade grade) => grade switch
+    {
+        UtaNoteGrade.Perfect => FeedbackPerfect,
+        UtaNoteGrade.Great => FeedbackGreat,
+        UtaNoteGrade.Good => FeedbackGood,
+        UtaNoteGrade.Bad => FeedbackBad,
+        _ => FeedbackMiss,
+    };
+
+    public Texture? FaultFor(UtaPitchFault faults)
+    {
+        if (faults.HasFlag(UtaPitchFault.High)) return FaultHigh;
+        if (faults.HasFlag(UtaPitchFault.Low)) return FaultLow;
+        if (faults.HasFlag(UtaPitchFault.Unstable)) return FaultUnstable;
+        if (faults.HasFlag(UtaPitchFault.LowCoverage)) return FaultCoverage;
+        if (faults.HasFlag(UtaPitchFault.Inaccurate)) return FaultInaccurate;
+        return null;
+    }
+
     public Texture? TargetFor(string noteKind)
     {
         string normalised = noteKind.Replace('-', '_').ToLowerInvariant();
+        if (normalised.Contains("golden_freestyle", StringComparison.Ordinal))
+            return TargetGoldenFreestyle ?? TargetGolden ?? TargetFreestyle ?? TargetNormal;
+        if (normalised.Contains("golden_rap", StringComparison.Ordinal))
+            return TargetGoldenRap ?? TargetGolden ?? TargetRap ?? TargetNormal;
+        if (normalised.Contains("golden_spoken", StringComparison.Ordinal))
+            return TargetGoldenSpoken ?? TargetGolden ?? TargetSpoken ?? TargetNormal;
         if (normalised.Contains("golden", StringComparison.Ordinal))
             return TargetGolden ?? TargetNormal;
         if (normalised.Contains("freestyle", StringComparison.Ordinal))

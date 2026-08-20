@@ -180,7 +180,7 @@ public class UtaCoreTests
     [Test]
     public void PackageConvertsToNativePlayableBeatmap()
     {
-        using var source = createPackage();
+        using var source = createLatestPackage();
         using var converted = new MemoryStream();
         UtzBeatmapSetConverter.Convert(source, converted);
         converted.Position = 0;
@@ -199,18 +199,18 @@ public class UtaCoreTests
         using var reader = new LineBufferedReader(archive.GetEntry("uta.osu")!.Open());
         Beatmap decoded = new UtaBeatmapDecoder().Decode(reader);
         var playable = (UtaBeatmap)new UtaBeatmapConverter(decoded, new UtaRuleset()).Convert();
-        UtaNote note = playable.HitObjects.OfType<UtaNote>().Single();
+        UtaNote note = playable.HitObjects.OfType<UtaNote>().OrderBy(item => item.StartTime).First();
 
         Assert.Multiple(() =>
         {
-            Assert.That(playable.PackageId, Is.EqualTo("uta:test"));
+            Assert.That(playable.PackageId, Is.EqualTo("org.example.v3test"));
             Assert.That(playable.Transcript, Has.Count.EqualTo(1));
             Assert.That(playable.GuideVocalsFile, Is.EqualTo("audio/guide-vocals.ogg"));
             Assert.That(playable.OriginalAudioFile, Is.EqualTo("audio/original.mp3"));
             Assert.That(note.Midi, Is.EqualTo(69));
             Assert.That(note.StartTime, Is.Zero);
-            Assert.That(note.Duration, Is.EqualTo(1000));
-            Assert.That(note, Is.Not.SameAs(decoded.HitObjects.OfType<UtaNote>().Single()),
+            Assert.That(note.Duration, Is.EqualTo(300));
+            Assert.That(note, Is.Not.SameAs(decoded.HitObjects.OfType<UtaNote>().OrderBy(item => item.StartTime).First()),
                 "Playable notes must be clones so a same-chart restart cannot mutate live drawable hitobjects.");
             Assert.That(decoded.BeatmapInfo.Metadata.AudioFile, Is.EqualTo("audio/instrumental.mp3"));
             Assert.That(decoded.BeatmapInfo.Metadata.BackgroundFile, Is.EqualTo("artwork/cover.jpg"));
@@ -218,9 +218,9 @@ public class UtaCoreTests
     }
 
     [Test]
-    public void PackageConvertsUtz02VocalChartToNativePlayableBeatmap()
+    public void PackageConvertsCurrentVocalChartToNativePlayableBeatmap()
     {
-        using var source = createV2Package();
+        using var source = createLatestPackage();
         using var converted = new MemoryStream();
         UtzBeatmapSetConverter.Convert(source, converted);
         converted.Position = 0;
@@ -234,7 +234,7 @@ public class UtaCoreTests
         Assert.Multiple(() =>
         {
             // Duet parts 1 and 2 both use role "lead"; part 1 (three notes) must win over part 2 (one note).
-            Assert.That(playable.PackageId, Is.EqualTo("org.example.v2test"));
+            Assert.That(playable.PackageId, Is.EqualTo("org.example.v3test"));
             Assert.That(notes, Has.Length.EqualTo(3));
 
             Assert.That(notes[0].Midi, Is.EqualTo(69));
@@ -262,35 +262,29 @@ public class UtaCoreTests
     }
 
     [Test]
-    public void PackageAcceptsUtz03FormatVersion()
+    public void PackageAcceptsCurrentFormatVersion()
     {
-        // 0.3 only adds optional, defaulted fields to the 0.2 manifest shape, so a 0.2 reader
-        // must accept and route it the same way.
-        using var source = createV2Package(formatVersion: "0.3.0");
+        using var source = createLatestPackage();
         UtzPackage package = UtzPackage.Open(source);
 
-        Assert.That(package.Manifest.IsFormatV2, Is.True);
+        Assert.That(package.Manifest.FormatVersion, Is.EqualTo("0.3.0"));
+    }
+
+    [TestCase("0.1.0")]
+    [TestCase("0.2.1")]
+    [TestCase("0.4.0")]
+    public void PackageRejectsEveryNonCurrentFormatVersion(string version)
+    {
+        using var source = createLatestPackage(formatVersion: version);
+        Assert.That(() => UtzPackage.Open(source), Throws.TypeOf<InvalidDataException>());
     }
 
     [Test]
     public void PackageAcceptsANoteWithNoLyricTokensYet()
     {
         // A wordless note is a normal authoring-in-progress state, not a format violation.
-        using var source = createV2Package(omitLyricsOnThirdNote: true);
+        using var source = createLatestPackage(omitLyricsOnThirdNote: true);
         Assert.That(() => UtzPackage.Open(source), Throws.Nothing);
-    }
-
-    [Test]
-    public void PackageWritesBreakForSkippableVocalGap()
-    {
-        using var source = createPackage(includeGap: true);
-        using var converted = new MemoryStream();
-        UtzBeatmapSetConverter.Convert(source, converted);
-        converted.Position = 0;
-
-        using var archive = new ZipArchive(converted, ZipArchiveMode.Read, true);
-        using var reader = new StreamReader(archive.GetEntry("uta.osu")!.Open());
-        Assert.That(reader.ReadToEnd(), Does.Contain("2,1000,5000"));
     }
 
     [Test]
@@ -455,76 +449,7 @@ public class UtaCoreTests
         });
     }
 
-    private static MemoryStream createPackage(bool includeGap = false)
-    {
-        string pitchNotes = includeGap
-            ? "{\"format_version\":1,\"notes\":[{\"start\":0.0,\"end\":1.0,\"midi\":69,\"confidence\":1.0,\"kind\":\"golden\"},{\"start\":5.0,\"end\":6.0,\"midi\":69,\"confidence\":1.0,\"kind\":\"normal\"}]}"
-            : "{\"format_version\":1,\"notes\":[{\"start\":0.0,\"end\":1.0,\"midi\":69,\"confidence\":1.0,\"kind\":\"golden\"}]}";
-        var files = new Dictionary<string, byte[]>
-        {
-            ["audio/instrumental.mp3"] = new byte[] { 10, 20, 30 },
-            ["audio/guide-vocals.ogg"] = new byte[] { 11, 21, 31 },
-            ["audio/original.mp3"] = new byte[] { 12, 22, 32 },
-            ["charts/transcript.json"] = Encoding.UTF8.GetBytes("{\"language\":\"ja\",\"segments\":[{\"text\":\"test\",\"start\":0.0,\"end\":1.0,\"words\":[]}] }"),
-            ["charts/pitch-track.json"] = Encoding.UTF8.GetBytes("{\"format_version\":1,\"model\":null,\"hop_seconds\":0.01,\"frames\":[]}"),
-            ["charts/pitch-notes.json"] = Encoding.UTF8.GetBytes(pitchNotes),
-            ["artwork/cover.jpg"] = new byte[] { 4, 5, 6 },
-            ["video/background.mp4"] = new byte[] { 0, 1, 2, 3 },
-        };
-
-        object asset(string path, string mediaType)
-        {
-            byte[] bytes = files[path];
-            return new
-            {
-                path,
-                media_type = mediaType,
-                sha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
-                bytes = bytes.Length,
-            };
-        }
-
-        var manifest = new
-        {
-            format = "uta.song",
-            format_version = "0.1.0",
-            package_id = "uta:test",
-            revision = 1,
-            song = new { title = "Test", artist = "Uta", duration_seconds = 1.0 },
-            audio = new
-            {
-                instrumental = asset("audio/instrumental.mp3", "audio/mpeg"),
-                guide_vocals = asset("audio/guide-vocals.ogg", "audio/ogg"),
-                original = asset("audio/original.mp3", "audio/mpeg"),
-                audio_offset_seconds = 0,
-            },
-            charts = new
-            {
-                transcript = asset("charts/transcript.json", "application/json"),
-                pitch_track = asset("charts/pitch-track.json", "application/json"),
-                pitch_notes = asset("charts/pitch-notes.json", "application/json"),
-            },
-            visuals = new
-            {
-                cover = asset("artwork/cover.jpg", "image/jpeg"),
-                video = asset("video/background.mp4", "video/mp4"),
-            },
-            scoring = new { engine = "uta.pitch", version = 1, octave_tolerance = false },
-        };
-
-        var output = new MemoryStream();
-        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
-        {
-            add(archive, "manifest.json", JsonSerializer.SerializeToUtf8Bytes(manifest));
-            foreach ((string path, byte[] bytes) in files)
-                add(archive, path, bytes);
-        }
-
-        output.Position = 0;
-        return output;
-    }
-
-    private static MemoryStream createV2Package(string formatVersion = "0.2.1", bool omitLyricsOnThirdNote = false)
+    private static MemoryStream createLatestPackage(string formatVersion = "0.3.0", bool omitLyricsOnThirdNote = false)
     {
         object textToken(string id, string text, string joinBefore, string? reading = null)
             => new { id, text, join_before = joinBefore, reading };
@@ -625,8 +550,12 @@ public class UtaCoreTests
 
         var files = new Dictionary<string, byte[]>
         {
-            ["audio/instrumental.ogg"] = new byte[] { 10, 20, 30 },
+            ["audio/instrumental.mp3"] = new byte[] { 10, 20, 30 },
+            ["audio/guide-vocals.ogg"] = new byte[] { 11, 21, 31 },
+            ["audio/original.mp3"] = new byte[] { 12, 22, 32 },
             ["charts/vocal.json"] = JsonSerializer.SerializeToUtf8Bytes(vocalChart),
+            ["artwork/cover.jpg"] = new byte[] { 4, 5, 6 },
+            ["video/background.mp4"] = new byte[] { 0, 1, 2, 3 },
         };
 
         object asset(string path, string mediaType)
@@ -645,11 +574,21 @@ public class UtaCoreTests
         {
             format = "uta.song",
             format_version = formatVersion,
-            package_id = "org.example.v2test",
+            package_id = "org.example.v3test",
             revision = 1,
             song = new { title = "Test", artist = "Uta", duration_seconds = 1.0 },
-            audio = new { instrumental = asset("audio/instrumental.ogg", "audio/ogg") },
+            audio = new
+            {
+                instrumental = asset("audio/instrumental.mp3", "audio/mpeg"),
+                guide_vocals = asset("audio/guide-vocals.ogg", "audio/ogg"),
+                original = asset("audio/original.mp3", "audio/mpeg"),
+            },
             charts = new { vocal = asset("charts/vocal.json", "application/vnd.uta.vocal-chart+json;version=1") },
+            visuals = new
+            {
+                cover = asset("artwork/cover.jpg", "image/jpeg"),
+                video = asset("video/background.mp4", "video/mp4"),
+            },
             required_features = new[] { "vocal-chart/1" },
         };
 

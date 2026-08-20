@@ -46,7 +46,7 @@ public static class UtzBeatmapSetConverter
     private static string createBeatmap(UtzPackage package)
     {
         var manifest = package.Manifest;
-        var segments = UtaLyricsTimeline.Normalize(package.Transcript.Segments);
+        var segments = UtaLyricsTimeline.Normalize(package.Transcript);
         int centreMidi = calculateCentreMidi(package.PitchNotes);
         string? cover = manifest.Visuals.Cover?.Path;
         string? video = manifest.Visuals.Video?.Path;
@@ -61,7 +61,7 @@ public static class UtzBeatmapSetConverter
             string.Empty,
             "[General]",
             $"AudioFilename: {safeValue(manifest.Audio.Instrumental.Path)}",
-            $"AudioLeadIn: {(int)Math.Round(manifest.Audio.AudioOffsetSeconds.GetValueOrDefault() * 1000)}",
+            "AudioLeadIn: 0",
             $"PreviewTime: {(int)Math.Round((previewSeconds ?? 0) * 1000)}",
             "Countdown: 0",
             "SampleSet: Normal",

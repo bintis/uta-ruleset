@@ -11,8 +11,8 @@ using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
-using osu.Framework.Graphics.Shapes;
 using osu.Framework.Logging;
+using osu.Framework.Graphics.Textures;
 using osu.Game.Beatmaps;
 using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.Uta.Configuration;
@@ -86,6 +86,8 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
     private string diagnosticLastClearReason = "none";
     private GameplayClockContainer? gameplayClock;
     private UtaPitchStyle style = UtaVisualStyle.Prism().Pitch;
+    private Texture? referenceTexture;
+    private Texture? liveTexture;
 
     public UtaPitchCurveGraph()
     {
@@ -98,9 +100,15 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         };
     }
 
-    public void ApplyStyle(UtaPitchStyle value)
+    public void ApplyStyle(UtaVisualStyle value)
     {
-        style = value;
+        style = value.Pitch;
+        referenceTexture = value.Assets.CurveReference;
+        liveTexture = value.Assets.CurveLive;
+        foreach (CurveSegment segment in referenceSegments)
+            segment.Texture = value.Assets.CurveReference;
+        foreach (CurveSegment segment in userSegments)
+            segment.Texture = value.Assets.CurveLive;
         referenceGeometryTime = double.NaN;
         userGeometryReady = false;
     }
@@ -339,7 +347,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                         continue;
                     }
 
-                    if (setSegment(getSegment(referenceSegments, referenceLayer, used), previous.Time, frame.Time,
+                    if (setSegment(getSegment(referenceSegments, referenceLayer, used, styleTexture(reference: true)), previous.Time, frame.Time,
                                    0, previous.Midi, frame.Midi, style.Reference, 0.30f, style.ReferenceCurveWeight))
                         used++;
                     previous = frame;
@@ -355,7 +363,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                     if (note.EndTime < visibleStart || note.Midi is not { } midi)
                         continue;
 
-                    if (setSegment(getSegment(referenceSegments, referenceLayer, used), note.StartTime, note.EndTime,
+                    if (setSegment(getSegment(referenceSegments, referenceLayer, used, styleTexture(reference: true)), note.StartTime, note.EndTime,
                                    0, midi, midi, style.Reference, 0.30f, style.ReferenceCurveWeight))
                         used++;
                 }
@@ -382,7 +390,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                 Color4 colour = blend(previousColour, currentColour, 0.5f);
                 float alpha = (previousWeight * AgeAlpha(i - 1, sampleCount)
                                + currentWeight * AgeAlpha(i, sampleCount)) / 2;
-                if (setSegment(getSegment(userSegments, userLayer, used),
+                if (setSegment(getSegment(userSegments, userLayer, used, styleTexture(reference: false)),
                                previous.DisplayTime, current.DisplayTime,
                                0, from, to, colour, alpha, style.LiveCurveWeight))
                     used++;
@@ -469,11 +477,13 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         from.B + (to.B - from.B) * amount,
         1);
 
-    private static CurveSegment getSegment(List<CurveSegment> segments, Container layer, int index)
+    private Texture? styleTexture(bool reference) => reference ? referenceTexture : liveTexture;
+
+    private static CurveSegment getSegment(List<CurveSegment> segments, Container layer, int index, Texture? texture)
     {
         while (segments.Count <= index)
         {
-            var segment = new CurveSegment();
+            var segment = new CurveSegment { Texture = texture };
             segments.Add(segment);
             layer.Add(segment);
         }
@@ -567,32 +577,13 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             if (manifest == null)
                 return Array.Empty<ReferenceFrame>();
 
-            return manifest.IsFormatV2
-                ? loadPitchEvidenceFrames(working, manifest)
-                : loadLegacyPitchTrackFrames(working, manifest);
+            return loadPitchEvidenceFrames(working, manifest);
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
         {
             Logger.Log($"Uta could not load the song pitch-analysis curve: {ex.GetBaseException().Message}");
             return Array.Empty<ReferenceFrame>();
         }
-    }
-
-    private static ReferenceFrame[] loadLegacyPitchTrackFrames(WorkingBeatmap working, UtzManifest manifest)
-    {
-        string? pitchStoragePath = manifest.Charts.PitchTrack?.Path is { } path ? working.BeatmapSetInfo.GetPathForFile(path) : null;
-        if (pitchStoragePath == null)
-            return Array.Empty<ReferenceFrame>();
-
-        using Stream pitchStream = working.GetStream(pitchStoragePath);
-        UtaPitchTrack? track = JsonSerializer.Deserialize<UtaPitchTrack>(pitchStream, UtzPackage.JsonOptions);
-        if (track == null)
-            return Array.Empty<ReferenceFrame>();
-
-        return track.Frames.Where(frame => frame.Hertz is { } hertz && UtaPitchMath.IsFinitePitch(hertz))
-                    .Select(frame => new ReferenceFrame(frame.Time * 1000,
-                        (float)UtaPitchMath.FrequencyToMidi(frame.Hertz!.Value)))
-                    .ToArray();
     }
 
     private static ReferenceFrame[] loadPitchEvidenceFrames(WorkingBeatmap working, UtzManifest manifest)
@@ -661,7 +652,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         base.Dispose(isDisposing);
     }
 
-    private sealed partial class CurveSegment : Box
+    private sealed partial class CurveSegment : UtaTexturedPrimitive
     {
         public CurveSegment()
         {

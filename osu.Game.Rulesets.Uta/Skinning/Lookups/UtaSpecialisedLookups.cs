@@ -14,6 +14,9 @@ public enum UtaTargetNoteKind
     Freestyle,
     Rap,
     Spoken,
+    GoldenFreestyle,
+    GoldenRap,
+    GoldenSpoken,
 }
 
 public enum UtaTargetNoteState
@@ -66,3 +69,11 @@ public enum UtaFeedbackFaults
 }
 
 public readonly record struct UtaScoringFeedbackLookup(UtaNoteGrade Grade, UtaFeedbackFaults Faults) : ISkinComponentLookup;
+
+public enum UtaParticleRole
+{
+    Singing,
+    Scoring,
+}
+
+public readonly record struct UtaParticleLookup(UtaParticleRole Role) : ISkinComponentLookup;

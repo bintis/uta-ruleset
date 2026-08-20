@@ -4,6 +4,8 @@
 using System;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics.Textures;
+using osu.Game.Rulesets.Uta.Scoring;
+using osu.Game.Rulesets.Uta.Skinning.Lookups;
 using osu.Game.Rulesets.Uta.UI.HUD;
 using osu.Game.Skinning;
 using osuTK.Graphics;
@@ -16,6 +18,11 @@ public static class UtaSkinStyleResolver
     {
         UtaVisualStyle prism = CreatePrism(density, reducedMotion);
         Color4 panel = readColour(source, UtaSkinConfiguration.SurfaceColour, prism.Pitch.Panel, UtaAccessiblePalette.Background, 1.2);
+        float lineWeight = readFloat(source, UtaSkinConfiguration.LineWeight, prism.Pitch.LiveCurveWeight, 1, 10);
+        float noteSpacing = readFloat(source, UtaSkinConfiguration.NoteSpacing, 1, 0.6f, 1.8f);
+        float animationIntensity = reducedMotion
+            ? 0
+            : readFloat(source, UtaSkinConfiguration.AnimationIntensity, prism.Motion.AnimationIntensity, 0, 1);
         var pitch = prism.Pitch with
         {
             Panel = panel,
@@ -26,9 +33,9 @@ public static class UtaSkinStyleResolver
             Playhead = readColour(source, UtaSkinConfiguration.PlayheadColour, prism.Pitch.Playhead, panel, 3),
             GridMajorWeight = readFloat(source, UtaSkinConfiguration.GridMajorWeight, prism.Pitch.GridMajorWeight, 0.5f, 4),
             GridMinorWeight = readFloat(source, UtaSkinConfiguration.GridMinorWeight, prism.Pitch.GridMinorWeight, 0.25f, 3),
-            ReferenceCurveWeight = readFloat(source, UtaSkinConfiguration.ReferenceCurveWeight, prism.Pitch.ReferenceCurveWeight, 1, 8),
-            LiveCurveWeight = readFloat(source, UtaSkinConfiguration.LiveCurveWeight, prism.Pitch.LiveCurveWeight, 1.5f, 10),
-            TargetNoteHeight = readFloat(source, UtaSkinConfiguration.TargetNoteHeight, prism.Pitch.TargetNoteHeight, 6, 24),
+            ReferenceCurveWeight = readFloat(source, UtaSkinConfiguration.ReferenceCurveWeight, lineWeight * 0.7f, 1, 8),
+            LiveCurveWeight = readFloat(source, UtaSkinConfiguration.LiveCurveWeight, lineWeight, 1.5f, 10),
+            TargetNoteHeight = readFloat(source, UtaSkinConfiguration.TargetNoteHeight, prism.Pitch.TargetNoteHeight * noteSpacing, 6, 24),
             TargetNoteBorder = readFloat(source, UtaSkinConfiguration.TargetNoteBorder, prism.Pitch.TargetNoteBorder, 0, 5),
             Opacity = Math.Clamp(pitchOpacity, 0.5f, 1),
         };
@@ -45,7 +52,25 @@ public static class UtaSkinStyleResolver
             PanelOpacity = Math.Clamp(lyricsPanelOpacity, 0, 0.95f),
         };
 
-        return prism with { Pitch = pitch, Lyrics = lyrics, Assets = resolveAssets(source) };
+        Color4 good = readColour(source, UtaSkinConfiguration.GoodFeedbackColour, prism.Feedback.Good, panel, 3);
+        Color4 bad = readColour(source, UtaSkinConfiguration.BadFeedbackColour, prism.Feedback.Bad, panel, 3);
+        var feedback = prism.Feedback with
+        {
+            Perfect = good,
+            Great = good,
+            Good = good,
+            Bad = bad,
+            Miss = bad,
+        };
+
+        UtaMotionStyle motion = prism.Motion with
+        {
+            AnimationIntensity = animationIntensity,
+            MaxSingingParticles = reducedMotion ? 0 : (int)Math.Round(prism.Motion.MaxSingingParticles * animationIntensity),
+            MaxScoringParticles = reducedMotion ? 0 : (int)Math.Round(prism.Motion.MaxScoringParticles * animationIntensity),
+        };
+
+        return prism with { Pitch = pitch, Lyrics = lyrics, Feedback = feedback, Motion = motion, Assets = resolveAssets(source) };
     }
 
     internal static UtaVisualStyle CreatePrism(UtaHudDensity density, bool reducedMotion)
@@ -101,7 +126,9 @@ public static class UtaSkinStyleResolver
         var motion = reducedMotion
             ? new UtaMotionStyle(0, 0, 0, 80, 0, 0, true)
             : new UtaMotionStyle(0.65f, 220, 220, 180, 18, 24, false);
-        return new UtaVisualStyle(pitch, lyrics, feedback, motion, new UtaSkinAssets(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null), density);
+        return new UtaVisualStyle(pitch, lyrics, feedback, motion,
+            new UtaSkinAssets(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null), density);
     }
 
     private static Color4 readColour(ISkin source, UtaSkinConfiguration role, Color4 fallback, Color4 background, double contrast)
@@ -134,6 +161,9 @@ public static class UtaSkinStyleResolver
             get("uta-target-note-freestyle"),
             get("uta-target-note-rap"),
             get("uta-target-note-spoken"),
+            get(UtaSkinAssetNames.TargetNote(UtaTargetNoteKind.GoldenFreestyle)),
+            get(UtaSkinAssetNames.TargetNote(UtaTargetNoteKind.GoldenRap)),
+            get(UtaSkinAssetNames.TargetNote(UtaTargetNoteKind.GoldenSpoken)),
             get(UtaSkinAssetNames.Playhead),
             get(UtaSkinAssetNames.GridMajor),
             get(UtaSkinAssetNames.GridMinor),
@@ -144,6 +174,20 @@ public static class UtaSkinStyleResolver
             get(UtaSkinAssetNames.LyricsUnderline),
             get(UtaSkinAssetNames.LyricsReadingMarker),
             get(UtaSkinAssetNames.LyricsProgress),
-            get(UtaSkinAssetNames.LyricsUpcomingMarker));
+            get(UtaSkinAssetNames.LyricsUpcomingMarker),
+            get(UtaSkinAssetNames.Feedback(UtaNoteGrade.Perfect)),
+            get(UtaSkinAssetNames.Feedback(UtaNoteGrade.Great)),
+            get(UtaSkinAssetNames.Feedback(UtaNoteGrade.Good)),
+            get(UtaSkinAssetNames.Feedback(UtaNoteGrade.Bad)),
+            get(UtaSkinAssetNames.Feedback(UtaNoteGrade.Miss)),
+            get(UtaSkinAssetNames.Fault(UtaPitchFault.High)),
+            get(UtaSkinAssetNames.Fault(UtaPitchFault.Low)),
+            get(UtaSkinAssetNames.Fault(UtaPitchFault.Unstable)),
+            get(UtaSkinAssetNames.Fault(UtaPitchFault.LowCoverage)),
+            get(UtaSkinAssetNames.Fault(UtaPitchFault.Inaccurate)),
+            get(UtaSkinAssetNames.ParticleSing),
+            get(UtaSkinAssetNames.ParticleScore),
+            get(UtaSkinAssetNames.HudPanel),
+            get(UtaSkinAssetNames.HudAccent));
     }
 }

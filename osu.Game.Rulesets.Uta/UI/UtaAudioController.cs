@@ -103,7 +103,7 @@ internal sealed partial class UtaAudioController : Component
     /// First play after process start is clean. Later plays must match that:
     /// destroy Uta mixers, stop MusicController if it is still playing, and
     /// stop the previous chart's track only when it is loaded and not the
-    /// incoming clock track (see Docs/AUDIO_LEFTOVER_FAILED_APPROACHES.md).
+    /// incoming clock track; creating another native track here reintroduces duplicate playback ownership.
     /// </summary>
     private void beginFreshSession(WorkingBeatmap incoming)
     {

@@ -8,7 +8,7 @@ using osu.Framework.Configuration;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Primitives;
-using osu.Framework.Graphics.Shapes;
+using osu.Framework.Graphics.Sprites;
 using osu.Framework.Input.Bindings;
 using osu.Framework.Input.Events;
 using osu.Game.Graphics;
@@ -18,6 +18,7 @@ using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Localisation;
 using osu.Game.Rulesets.Uta.Scoring;
+using osu.Game.Rulesets.Uta.Skinning;
 using osuTK.Graphics;
 
 namespace osu.Game.Rulesets.Uta.UI;
@@ -37,8 +38,14 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
     private readonly IBindable<int> lastBias = new BindableInt();
     private readonly IBindable<UtaPhraseScore?> lastPhrase = new Bindable<UtaPhraseScore?>();
 
+    private readonly UtaTexturedPrimitive background;
+    private readonly Sprite accent;
     private readonly OsuSpriteText judgementText;
     private readonly OsuSpriteText qualityText;
+    private readonly Sprite feedbackIcon;
+    private readonly Sprite faultIcon;
+    private UtaVisualStyle style = UtaVisualStyle.Prism();
+    private UtaVisualStyleProvider? styleProvider;
     private UtaUiLanguage language = UtaUiLanguage.English;
     private bool refreshPending;
     private bool hudVisible = true;
@@ -52,10 +59,17 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
 
         InternalChildren = new Drawable[]
         {
-            new Box
+            background = new UtaTexturedPrimitive
             {
                 RelativeSizeAxes = Axes.Both,
                 Colour = new Color4(10, 12, 22, 238),
+            },
+            accent = new Sprite
+            {
+                RelativeSizeAxes = Axes.Y,
+                Width = 4,
+                FillMode = FillMode.Stretch,
+                Alpha = 0,
             },
             judgementText = new OsuSpriteText
             {
@@ -71,12 +85,32 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
                 Font = OsuFont.Default.With(size: 10, weight: FontWeight.Regular),
                 Colour = new Color4(207, 212, 235, 255),
             },
+            feedbackIcon = new Sprite
+            {
+                Anchor = Anchor.CentreRight,
+                Origin = Anchor.CentreRight,
+                X = -12,
+                Size = new osuTK.Vector2(26),
+                Alpha = 0,
+            },
+            faultIcon = new Sprite
+            {
+                Anchor = Anchor.CentreRight,
+                Origin = Anchor.CentreRight,
+                X = -42,
+                Size = new osuTK.Vector2(16),
+                Alpha = 0,
+            },
         };
     }
 
     [BackgroundDependencyLoader]
-    private void load(ScoreProcessor scoreProcessor, UtaGameplayScoringController controller, FrameworkConfigManager frameworkConfig)
+    private void load(ScoreProcessor scoreProcessor, UtaGameplayScoringController controller, FrameworkConfigManager frameworkConfig,
+                      UtaVisualStyleProvider styleProvider)
     {
+        this.styleProvider = styleProvider;
+        styleProvider.StyleChanged += applyStyle;
+        applyStyle(styleProvider.Style);
         locale.BindTo(frameworkConfig.GetBindable<string>(FrameworkSetting.Locale));
         locale.BindValueChanged(value =>
         {
@@ -128,9 +162,34 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
         });
     }
 
+    private void applyStyle(UtaVisualStyle value)
+    {
+        style = value;
+        background.Colour = new Color4(value.Pitch.Panel.R, value.Pitch.Panel.G, value.Pitch.Panel.B, 0.93f);
+        background.Texture = value.Assets.HudPanel;
+        accent.Texture = value.Assets.HudAccent;
+        accent.Colour = value.Feedback.Good;
+        accent.Alpha = accent.Texture == null ? 0 : 0.9f;
+        qualityText.Colour = value.Lyrics.Upcoming;
+        refresh();
+    }
+
     private void refresh()
     {
         string faults = lastFaults.Value == UtaPitchFault.None ? string.Empty : $" · {formatFaults(lastFaults.Value)}";
+        feedbackIcon.Texture = style.Assets.FeedbackFor(lastGrade.Value);
+        feedbackIcon.Alpha = feedbackIcon.Texture == null || lastGrade.Value == UtaNoteGrade.Ignored ? 0 : 0.9f;
+        faultIcon.Texture = style.Assets.FaultFor(lastFaults.Value);
+        faultIcon.Alpha = faultIcon.Texture == null ? 0 : 0.9f;
+        judgementText.Colour = lastGrade.Value switch
+        {
+            UtaNoteGrade.Perfect => style.Feedback.Perfect,
+            UtaNoteGrade.Great => style.Feedback.Great,
+            UtaNoteGrade.Good => style.Feedback.Good,
+            UtaNoteGrade.Bad => style.Feedback.Bad,
+            UtaNoteGrade.Miss => style.Feedback.Miss,
+            _ => style.Lyrics.Current,
+        };
         string bias = lastGrade.Value == UtaNoteGrade.Ignored ? string.Empty : $" · {lastBias.Value:+0;-0;0}c";
         judgementText.Text = $"{UtaStrings.Get("hud.current_note", language)} {lastGrade.Value}{bias}{faults}   ·   "
                              + $"{UtaStrings.Get("hud.combo", language)} {nativeCombo.Value:N0}";
@@ -184,6 +243,8 @@ internal sealed partial class UtaScoringHud : CompositeDrawable, IKeyBindingHand
         lastFaults.UnbindAll();
         lastBias.UnbindAll();
         lastPhrase.UnbindAll();
+        if (styleProvider != null)
+            styleProvider.StyleChanged -= applyStyle;
         base.Dispose(isDisposing);
     }
 }

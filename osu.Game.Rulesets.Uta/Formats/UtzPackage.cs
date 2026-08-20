@@ -28,11 +28,9 @@ public sealed partial class UtzPackage
 
     public UtzManifest Manifest { get; }
 
-    public UtaVocalChart? VocalChart { get; }
+    public UtaVocalChart VocalChart { get; }
 
-    public UtaTranscript Transcript { get; }
-
-    public UtaPitchTrack PitchTrack { get; }
+    public IReadOnlyList<UtaTranscriptSegment> Transcript { get; }
 
     public IReadOnlyList<UtaPitchNote> PitchNotes { get; }
 
@@ -41,23 +39,9 @@ public sealed partial class UtzPackage
         Manifest = manifest;
         this.files = files;
 
-        if (manifest.IsFormatV2)
-        {
-            UtzAsset vocalAsset = manifest.Charts.Vocal ?? throw invalid("charts.vocal is missing");
-            VocalChart = parseJson<UtaVocalChart>(vocalAsset, "vocal chart");
-            validateVocalChart(VocalChart);
-
-            (PitchNotes, IReadOnlyList<UtaTranscriptSegment> segments) = projectVocalChart(VocalChart);
-            Transcript = new UtaTranscript { Segments = segments };
-            PitchTrack = new UtaPitchTrack();
-        }
-        else
-        {
-            Transcript = parseJson<UtaTranscript>(manifest.Charts.Transcript ?? throw invalid("charts.transcript is missing"), "transcript");
-            PitchTrack = parseJson<UtaPitchTrack>(manifest.Charts.PitchTrack ?? throw invalid("charts.pitch_track is missing"), "pitch track");
-            PitchNotes = parseJson<UtaPitchNoteChart>(manifest.Charts.PitchNotes ?? throw invalid("charts.pitch_notes is missing"), "pitch notes").Notes;
-        }
-
+        VocalChart = parseJson<UtaVocalChart>(manifest.Charts.Vocal, "vocal chart");
+        validateVocalChart(VocalChart);
+        (PitchNotes, Transcript) = projectVocalChart(VocalChart);
         validateCharts();
     }
 
@@ -148,19 +132,11 @@ public sealed partial class UtzPackage
 
     private void validateCharts()
     {
-        if (!Manifest.IsFormatV2)
-        {
-            if (!double.IsFinite(PitchTrack.HopSeconds) || PitchTrack.HopSeconds <= 0)
-                throw invalid("pitch track hop_seconds must be positive");
-            if (!PitchTrack.Frames.Zip(PitchTrack.Frames.Skip(1)).All(pair => pair.First.Time <= pair.Second.Time))
-                throw invalid("pitch track frames are not time ordered");
-        }
-
         if (PitchNotes.Any(note => !double.IsFinite(note.Start) || !double.IsFinite(note.End) || note.End <= note.Start || note.Midi is < 0 or > 127))
             throw invalid("pitch notes contain an invalid interval or MIDI value");
         if (!PitchNotes.Zip(PitchNotes.Skip(1)).All(pair => pair.First.Start <= pair.Second.Start))
             throw invalid("pitch notes are not time ordered");
-        if (Transcript.Segments.Any(segment => !double.IsFinite(segment.Start) || !double.IsFinite(segment.End) || segment.End < segment.Start))
+        if (Transcript.Any(segment => !double.IsFinite(segment.Start) || !double.IsFinite(segment.End) || segment.End < segment.Start))
             throw invalid("transcript contains an invalid interval");
     }
 
@@ -212,10 +188,8 @@ public sealed partial class UtzPackage
     }
 
     /// <summary>
-    /// Flattens one playable track of a 0.2 vocal chart into the same
-    /// pitch-note/transcript shape 0.1 packages already produce, so the rest
-    /// of the pipeline (beatmap conversion, lyrics timeline) does not need to
-    /// know which format version a package came from.
+    /// Projects one playable vocal track into the ruleset's beatmap-note and
+    /// lyric timeline representation.
     /// </summary>
     private static (IReadOnlyList<UtaPitchNote> Notes, IReadOnlyList<UtaTranscriptSegment> Segments) projectVocalChart(UtaVocalChart chart)
     {
@@ -319,27 +293,13 @@ public sealed partial class UtzPackage
         if (manifest.Revision < 1 || !double.IsFinite(manifest.Song.DurationSeconds) || manifest.Song.DurationSeconds < 0)
             throw invalid("revision or song duration is invalid");
 
-        if (manifest.IsFormatV2)
-        {
-            if (manifest.Charts.Vocal == null)
-                throw invalid("charts.vocal is required for UTZ 0.2 packages");
-            if (!manifest.RequiredFeatures.Contains("vocal-chart/1"))
-                throw invalid("required_features must include vocal-chart/1");
+        if (!manifest.RequiredFeatures.Contains("vocal-chart/1"))
+            throw invalid("required_features must include vocal-chart/1");
 
-            foreach (string feature in manifest.RequiredFeatures)
-            {
-                if (!supported_features.Contains(feature))
-                    throw invalid($"unsupported required feature: {feature}");
-            }
-        }
-        else
+        foreach (string feature in manifest.RequiredFeatures)
         {
-            if (manifest.Charts.Transcript == null || manifest.Charts.PitchTrack == null || manifest.Charts.PitchNotes == null)
-                throw invalid("charts.transcript, pitch_track, and pitch_notes are required for UTZ 0.1 packages");
-            // 0.1's scoring block is required and its engine/version are load-bearing; 0.2's is
-            // optional and advisory (a consumer MUST NOT reject a package over an unknown engine).
-            if (manifest.Scoring == null || manifest.Scoring.Engine != "uta.pitch" || manifest.Scoring.Version != 1)
-                throw invalid($"unsupported scoring engine {manifest.Scoring?.Engine} version {manifest.Scoring?.Version}");
+            if (!supported_features.Contains(feature))
+                throw invalid($"unsupported required feature: {feature}");
         }
 
         var paths = new HashSet<string>(StringComparer.Ordinal);
@@ -403,7 +363,7 @@ public sealed partial class UtzPackage
 
     private static JsonSerializerOptions jsonOptions => JsonOptions;
 
-    [GeneratedRegex("^0\\.[123]\\.[0-9]+$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^0\\.3\\.[0-9]+$", RegexOptions.CultureInvariant)]
     private static partial Regex versionRegex();
 
     [GeneratedRegex("^1\\.[0-9]+\\.[0-9]+$", RegexOptions.CultureInvariant)]

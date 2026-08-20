@@ -64,7 +64,7 @@ contracts.
 | double-valued weights and profile totals | quantised fixed-point units and permille qualities at the scoring boundary |
 | stability/technique bonus could reward stable off-pitch singing | per-note pitch-quality gate |
 | Technique profile gave zero credit to short notes | short/non-technique notes fall back to Faithful within the Technique profile |
-| uta.song 0.1 note kinds only | nullable MIDI and all 0.1/0.2 note kinds |
+| pitch-only note targets | nullable MIDI and all current vocal-chart note kinds |
 | long-tone technique only | long tone plus detrended periodic-vibrato quality |
 | latest-only Pitch callback path | separate latest-only display mailbox and bounded formal scoring queue |
 | direct `Time.Current - latency` mapping | segmented monotonic capture-time mapper with rate/seek epochs |

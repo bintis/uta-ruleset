@@ -24,6 +24,7 @@ public enum UtaSkinComponents
     LyricsPanel,
     ScoringFeedback,
     SingingParticle,
+    ScoringParticle,
 }
 
 public sealed class UtaSkinConfigurationLookup

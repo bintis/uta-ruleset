@@ -33,7 +33,7 @@ public sealed class UtaSkinTransformer : SkinTransformer
             return supplied ?? createFallback(utaLookup.Component);
         }
 
-        if (lookup is UtaTargetNoteLookup or UtaCurveLookup or UtaGridLookup or UtaLyricsDecorationLookup or UtaScoringFeedbackLookup)
+        if (lookup is UtaTargetNoteLookup or UtaCurveLookup or UtaGridLookup or UtaLyricsDecorationLookup or UtaScoringFeedbackLookup or UtaParticleLookup)
         {
             Drawable? supplied = base.GetDrawableComponent(lookup);
             return supplied ?? createFallback(componentFor(lookup));
@@ -123,6 +123,8 @@ public sealed class UtaSkinTransformer : SkinTransformer
         UtaGridLookup => UtaSkinComponents.Grid,
         UtaLyricsDecorationLookup => UtaSkinComponents.LyricsPanel,
         UtaScoringFeedbackLookup => UtaSkinComponents.ScoringFeedback,
+        UtaParticleLookup { Role: UtaParticleRole.Scoring } => UtaSkinComponents.ScoringParticle,
+        UtaParticleLookup => UtaSkinComponents.SingingParticle,
         _ => UtaSkinComponents.Grid,
     };
 
@@ -137,6 +139,7 @@ public sealed class UtaSkinTransformer : SkinTransformer
             UtaSkinComponents.Playhead => UtaAccessiblePalette.Playhead,
             UtaSkinComponents.ScoringFeedback => UtaAccessiblePalette.Good,
             UtaSkinComponents.SingingParticle => UtaAccessiblePalette.LiveCurve,
+            UtaSkinComponents.ScoringParticle => UtaAccessiblePalette.Good,
             _ => UtaAccessiblePalette.Background,
         };
 

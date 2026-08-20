@@ -20,6 +20,7 @@ using osu.Game.Rulesets.Uta.Playback;
 using osu.Game.Rulesets.Uta.Queue;
 using osu.Game.Rulesets.Uta.Recording;
 using osu.Game.Rulesets.Uta.Remote;
+using osu.Game.Rulesets.Uta.Scoring;
 using osu.Game.Rulesets.Uta.Skinning;
 using osu.Game.Rulesets.Uta.Skinning.Lookups;
 using osu.Game.Rulesets.Uta.UI.HUD;
@@ -169,11 +170,20 @@ public sealed class UtaReleaseRegressionTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(Enum.GetValues<UtaSkinComponents>().Select(value => (int)value), Is.EqualTo(Enumerable.Range(0, 8)));
+            Assert.That(Enum.GetValues<UtaSkinComponents>().Select(value => (int)value), Is.EqualTo(Enumerable.Range(0, 9)));
             Assert.That((int)UtaSkinConfiguration.AnimationIntensity, Is.EqualTo(9));
             Assert.That((int)UtaSkinConfiguration.SurfaceColour, Is.EqualTo(10));
             Assert.That(UtaSkinAssetNames.Marker, Is.EqualTo("uta-skin-marker"));
             Assert.That(UtaSkinAssetNames.TargetNote(UtaTargetNoteKind.Golden), Is.EqualTo("uta-target-note-golden"));
+            Assert.That(UtaSkinAssetNames.TargetNote(UtaTargetNoteKind.GoldenFreestyle), Is.EqualTo("uta-target-note-golden-freestyle"));
+            Assert.That(UtaSkinAssetNames.TargetNote(UtaTargetNoteKind.GoldenRap), Is.EqualTo("uta-target-note-golden-rap"));
+            Assert.That(UtaSkinAssetNames.TargetNote(UtaTargetNoteKind.GoldenSpoken), Is.EqualTo("uta-target-note-golden-spoken"));
+            Assert.That(UtaSkinAssetNames.Feedback(UtaNoteGrade.Perfect), Is.EqualTo("uta-feedback-perfect"));
+            Assert.That(UtaSkinAssetNames.Fault(UtaPitchFault.LowCoverage), Is.EqualTo("uta-fault-coverage"));
+            Assert.That(UtaSkinAssetNames.IsKnown(UtaSkinAssetNames.HudPanel), Is.True);
+            Assert.That(UtaSkinAssetNames.IsKnown(UtaSkinAssetNames.HudAccent), Is.True);
+            Assert.That(UtaSkinAssetNames.IsKnown(UtaSkinAssetNames.ParticleSing), Is.True);
+            Assert.That(UtaSkinAssetNames.IsKnown(UtaSkinAssetNames.ParticleScore), Is.True);
             Assert.That(standard.Pitch.Target.A, Is.GreaterThan(0));
             Assert.That(UtaAccessiblePalette.Target.B, Is.GreaterThan(UtaAccessiblePalette.Target.R), "Default target notes stay cool ice-blue, not warning yellow.");
             Assert.That(standard.Pitch.Playhead.A, Is.GreaterThan(0));
@@ -182,6 +192,18 @@ public sealed class UtaReleaseRegressionTests
             Assert.That(reduced.Motion.MaxSingingParticles, Is.Zero);
             Assert.That(reduced.Motion.MaxScoringParticles, Is.Zero);
             Assert.That(reduced.Motion.LyricsTokenPulseMilliseconds, Is.Zero);
+        });
+    }
+
+    [Test]
+    public void TestScoringFeedbackAndParticlesAreMountedInGameplayHud()
+    {
+        using var layer = new UtaGameplayHudLayer(showPitch: true, showLyrics: true, showScore: true, showPractice: false, showRecording: false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(layer.HasSingingParticles, Is.True);
+            Assert.That(layer.HasScoringFeedback, Is.True);
         });
     }
 

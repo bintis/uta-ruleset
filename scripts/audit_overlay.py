@@ -15,7 +15,10 @@ REQUIRED = {
     "osu.Game.Rulesets.Uta/Recording/UtaPcmCaptureQueue.cs": ["Interlocked.Exchange", "disposeTask", "ArrayPool<float>.Shared.Return"],
     "osu.Game.Rulesets.Uta/Core/UtaAutoplayFrameFactory.cs": ["UtaPitchFrame", "MidiToFrequency"],
     "osu.Game.Rulesets.Uta/Import/UtaImportDiagnostics.cs": ["capacity = 32", "sanitise"],
-    "osu.Game.Rulesets.Uta/Skinning/UtaSkinComponents.cs": ["TargetNote", "LivePitchCurve", "ScoringFeedback"],
+    "osu.Game.Rulesets.Uta/Skinning/UtaSkinComponents.cs": ["TargetNote", "LivePitchCurve", "ScoringFeedback", "ScoringParticle"],
+    "osu.Game.Rulesets.Uta/Skinning/UtaTexturedPrimitive.cs": ["always-present ruleset fallback", "Texture? Texture"],
+    "osu.Game.Rulesets.Uta/Skinning/UtaSkinStyleResolver.cs": ["GoldenFreestyle", "ParticleScore", "HudPanel"],
+    "osu.Game.Rulesets.Uta/UI/HUD/UtaGameplayHudLayer.cs": ["UtaSingingParticleLayer", "UtaScoringFeedbackLayer"],
     "osu.Game.Rulesets.Uta.Tests/UtaReleaseRegressionTests.cs": ["TestPairingTicketIsSingleUse", "TestPcmQueueCompletion"],
 }
 

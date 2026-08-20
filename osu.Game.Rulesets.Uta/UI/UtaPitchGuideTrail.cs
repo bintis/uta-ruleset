@@ -8,7 +8,7 @@ using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
-using osu.Framework.Graphics.Shapes;
+using osu.Framework.Graphics.Textures;
 using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Skinning;
@@ -35,8 +35,8 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
 
     private readonly Container glowLayer;
     private readonly Container traceLayer;
-    private readonly List<Box> glowSegments = new(256);
-    private readonly List<Box> traceSegments = new(256);
+    private readonly List<UtaTexturedPrimitive> glowSegments = new(256);
+    private readonly List<UtaTexturedPrimitive> traceSegments = new(256);
     private readonly List<TrailSample> samples = new(256);
     private readonly BindableBool enabled = new();
     private readonly BindableFloat detectedPitchMidi = new();
@@ -55,6 +55,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
     private float geometryHeight = -1;
     private GameplayClockContainer? gameplayClock;
     private UtaPitchStyle style = UtaVisualStyle.Prism().Pitch;
+    private Texture? trailTexture;
 
     public UtaPitchGuideTrail()
     {
@@ -66,9 +67,14 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         };
     }
 
-    public void ApplyStyle(UtaPitchStyle value)
+    public void ApplyStyle(UtaVisualStyle value)
     {
-        style = value;
+        style = value.Pitch;
+        trailTexture = value.Assets.CurveTrail;
+        foreach (UtaTexturedPrimitive segment in traceSegments)
+            segment.Texture = trailTexture;
+        foreach (UtaTexturedPrimitive segment in glowSegments)
+            segment.Texture = trailTexture;
         geometryReady = false;
     }
 
@@ -195,10 +201,10 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
             float similarity = (previous.Similarity + sample.Similarity) / 2;
             Color4 colour = trailColour(similarity, sample.HasTarget);
 
-            Box segment = getSegment(traceSegments, traceLayer, used);
+            UtaTexturedPrimitive segment = getSegment(traceSegments, traceLayer, used, trailTexture);
             setSegment(segment, start, delta, colour, style.TrailWeight, 0.76f + similarity * 0.24f);
 
-            Box glow = getSegment(glowSegments, glowLayer, used);
+            UtaTexturedPrimitive glow = getSegment(glowSegments, glowLayer, used, trailTexture);
             setSegment(glow, start, delta, colour, style.TrailGlow, 0.08f + similarity * 0.22f);
             used++;
         }
@@ -207,7 +213,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         hideUnused(glowSegments, used);
     }
 
-    private static void setSegment(Box segment, Vector2 start, Vector2 delta, Color4 colour, float height, float alpha)
+    private static void setSegment(UtaTexturedPrimitive segment, Vector2 start, Vector2 delta, Color4 colour, float height, float alpha)
     {
         segment.Position = start;
         segment.Width = Math.Max(1, delta.Length);
@@ -217,15 +223,16 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         segment.Alpha = alpha;
     }
 
-    private static Box getSegment(List<Box> segments, Container layer, int index)
+    private static UtaTexturedPrimitive getSegment(List<UtaTexturedPrimitive> segments, Container layer, int index, Texture? texture)
     {
         while (segments.Count <= index)
         {
-            var segment = new Box
+            var segment = new UtaTexturedPrimitive
             {
                 Anchor = Anchor.TopLeft,
                 Origin = Anchor.CentreLeft,
                 Alpha = 0,
+                Texture = texture,
             };
             segments.Add(segment);
             layer.Add(segment);
@@ -234,7 +241,7 @@ internal sealed partial class UtaPitchGuideTrail : CompositeDrawable
         return segments[index];
     }
 
-    private static void hideUnused(List<Box> segments, int used)
+    private static void hideUnused(List<UtaTexturedPrimitive> segments, int used)
     {
         for (int i = used; i < segments.Count; i++)
             segments[i].Alpha = 0;

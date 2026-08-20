@@ -41,12 +41,12 @@ internal partial class UtaPitchGuideRenderer : CompositeDrawable
     private readonly Container axisLayer;
     private readonly Box panel;
     private readonly Sprite panelTexture;
-    private readonly Box playhead;
+    private readonly UtaTexturedPrimitive playhead;
     private readonly UtaPitchCurveGraph curveGraph;
     private readonly UtaPitchGuideTrail trail;
     private readonly List<TargetNote> targetNotes = new();
     private TargetNote[] commitOrder = Array.Empty<TargetNote>();
-    private readonly List<Box> gridLines = new((int)VIEW_SPAN + 1);
+    private readonly List<UtaTexturedPrimitive> gridLines = new((int)VIEW_SPAN + 1);
     private readonly Dictionary<int, OsuSpriteText> pitchLabels = new(5);
     private readonly BindableFloat keyShiftSemitones = new();
 
@@ -83,7 +83,7 @@ internal partial class UtaPitchGuideRenderer : CompositeDrawable
             curveGraph = new UtaPitchCurveGraph(),
             noteLayer = new Container { RelativeSizeAxes = Axes.Both },
             trail = new UtaPitchGuideTrail(),
-            playhead = new Box
+            playhead = new UtaTexturedPrimitive
             {
                 Anchor = Anchor.TopLeft,
                 Origin = Anchor.TopCentre,
@@ -121,7 +121,7 @@ internal partial class UtaPitchGuideRenderer : CompositeDrawable
 
         for (int i = 0; i <= (int)VIEW_SPAN; i++)
         {
-            var line = new Box
+            var line = new UtaTexturedPrimitive
             {
                 RelativePositionAxes = Axes.Y,
                 RelativeSizeAxes = Axes.X,
@@ -195,8 +195,9 @@ internal partial class UtaPitchGuideRenderer : CompositeDrawable
         panelTexture.Alpha = value.Assets.PitchPanel == null ? 0 : value.Pitch.Opacity;
         playhead.Colour = value.Pitch.Playhead;
         playhead.Width = Math.Max(2, value.Pitch.LiveCurveWeight * 0.65f);
-        curveGraph.ApplyStyle(value.Pitch);
-        trail.ApplyStyle(value.Pitch);
+        playhead.Texture = value.Assets.Playhead;
+        curveGraph.ApplyStyle(value);
+        trail.ApplyStyle(value);
 
         foreach (TargetNote target in targetNotes)
             target.ApplyStyle(value);
@@ -286,6 +287,7 @@ internal partial class UtaPitchGuideRenderer : CompositeDrawable
             gridLines[i].Colour = labelled ? style.Pitch.GridMajor : style.Pitch.GridMinor;
             gridLines[i].Height = labelled ? style.Pitch.GridMajorWeight : style.Pitch.GridMinorWeight;
             gridLines[i].Alpha = labelled ? 0.16f : pitchClass is 1 or 3 or 6 or 8 or 10 ? 0.032f : 0.055f;
+            gridLines[i].Texture = labelled ? style.Assets.GridMajor : style.Assets.GridMinor;
         }
 
         foreach (var (midi, label) in pitchLabels)
@@ -471,7 +473,8 @@ internal partial class UtaPitchGuideRenderer : CompositeDrawable
                 criticalCue.Alpha = 0.22f;
             }
             texture.Texture = value.Assets.TargetFor(Note.NoteKind);
-            texture.Alpha = 0;
+            texture.Colour = Color4.White;
+            texture.Alpha = texture.Texture == null ? 0 : 1;
             criticalCue.Height = 1.15f;
         }
 
@@ -503,7 +506,7 @@ internal partial class UtaPitchGuideRenderer : CompositeDrawable
             criticalCue.FadeColour(colour, 180, Easing.OutQuint);
             criticalCue.FadeTo(0.95f, 180, Easing.OutQuint);
             texture.Colour = colour;
-            texture.FadeTo(texture.Texture == null ? 0 : 0.55f, 180, Easing.OutQuint);
+            texture.FadeTo(texture.Texture == null ? 0 : 1, 180, Easing.OutQuint);
             outlineTop.FadeColour(colour, 180, Easing.OutQuint);
             outlineBottom.FadeColour(colour, 180, Easing.OutQuint);
             outlineLeft.FadeColour(colour, 180, Easing.OutQuint);

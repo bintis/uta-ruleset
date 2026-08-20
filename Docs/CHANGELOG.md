@@ -3,6 +3,30 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.3 - 2026-08-20
+
+### Added
+
+- Completed active-skin rendering for pitch panels, all target-note kinds,
+  major/minor grids, reference/live/trail curves, playhead, lyric decorations,
+  judgement/fault feedback, HUD chrome and singing/scoring particles.
+- Added always-visible accessible fallbacks beneath skin textures, including
+  fully transparent assets, and regression coverage for particle/feedback HUD
+  mounting and the complete asset-name contract.
+
+### Changed
+
+- The package reader now accepts only the current `uta.song 0.3.x` contract
+  with `vocal-chart/1`; legacy manifest/chart models and loading paths were
+  removed.
+
+### Validation
+
+- 135 automated tests pass against both the local Nix osu! references and the
+  NuGet fallback.
+- The transparent-fallback skin contains every documented base asset and keeps
+  all gameplay-critical semantic fallbacks visible.
+
 ## 0.8.2 - 2026-08-20
 
 Audio lifecycle and gameplay HUD hardening. Song switching now has an
