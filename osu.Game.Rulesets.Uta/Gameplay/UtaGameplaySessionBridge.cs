@@ -183,6 +183,12 @@ internal sealed partial class UtaGameplaySessionBridge : Component, IUtaGameplay
 
         osu.Framework.Logging.Logger.Log($"Uta queue leaving gameplay for {target.BeatmapInfo.ID}");
         UtaAudioController.DestroyAllPlayback();
+
+        // Results is a child of Player. Remote queue commands remain available on
+        // that screen, but ScreenStack rejects Player.Exit while the child exists.
+        // Make Player current first (popping Results), then leave it normally.
+        if (!currentPlayer.IsCurrentScreen())
+            currentPlayer.MakeCurrent();
         currentPlayer.Exit();
         return true;
     }
