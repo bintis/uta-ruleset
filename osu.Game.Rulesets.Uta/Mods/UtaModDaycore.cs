@@ -1,6 +1,8 @@
 // Copyright (c) bintis. Licensed under the GPL Licence.
 // See the LICENSE file in the repository root for full licence text.
 
+using System;
+using System.Linq;
 using osu.Game.Rulesets.Mods;
 
 namespace osu.Game.Rulesets.Uta.Mods;
@@ -12,4 +14,7 @@ namespace osu.Game.Rulesets.Uta.Mods;
 /// </summary>
 public sealed class UtaModDaycore : ModDaycore
 {
+    public override Type[] IncompatibleMods => base.IncompatibleMods.Append(typeof(UtaModNightcore))
+                                                    .Concat(UtaModTranspose.AllTransposeModTypes)
+                                                    .ToArray();
 }

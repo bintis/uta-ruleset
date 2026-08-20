@@ -37,7 +37,7 @@ internal static class UtaAudioDevices
 
     /// <summary>
     /// Prefer an already-initialised BASS output. A device named Default that
-    /// osu already opened is valid; an uninitialised MARANTZ index is not
+    /// osu already opened is valid; an uninitialised named-device index is not
     /// (second-device Init on Pulse is Parameter / Init).
     /// </summary>
     public static int SkipPlaceholder(int device)

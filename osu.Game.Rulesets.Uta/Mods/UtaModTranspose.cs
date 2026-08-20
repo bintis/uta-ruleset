@@ -1,6 +1,9 @@
 // Copyright (c) bintis. Licensed under the GPL Licence.
 // See the LICENSE file in the repository root for full licence text.
 
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Localisation;
 using osu.Game.Rulesets.Mods;
@@ -9,6 +12,25 @@ namespace osu.Game.Rulesets.Uta.Mods;
 
 public abstract class UtaModTranspose : Mod, IApplicableMod
 {
+    private static readonly Type[] transpose_mod_types =
+    {
+        typeof(UtaModTransposeMinus6),
+        typeof(UtaModTransposeMinus5),
+        typeof(UtaModTransposeMinus4),
+        typeof(UtaModTransposeMinus3),
+        typeof(UtaModTransposeMinus2),
+        typeof(UtaModTransposeMinus1),
+        typeof(UtaModTransposeOriginal),
+        typeof(UtaModTransposePlus1),
+        typeof(UtaModTransposePlus2),
+        typeof(UtaModTransposePlus3),
+        typeof(UtaModTransposePlus4),
+        typeof(UtaModTransposePlus5),
+        typeof(UtaModTransposePlus6),
+    };
+
+    internal static IReadOnlyList<Type> AllTransposeModTypes => transpose_mod_types;
+
     public int Semitones { get; }
 
     public override string Name => Semitones switch
@@ -30,6 +52,15 @@ public abstract class UtaModTranspose : Mod, IApplicableMod
         : $"Transpose the accompaniment, vocals, target notes and scoring pitch by {Semitones:+0;-0} semitones.";
     public override IconUsage? Icon => FontAwesome.Solid.Music;
     public override ModType Type => ModType.Conversion;
+
+    /// <summary>
+    /// A key can only have one transpose value. Declaring the concrete sibling
+    /// types makes lazer disable them in the MOD selector as soon as one is on.
+    /// </summary>
+    public override Type[] IncompatibleMods => transpose_mod_types.Where(type => type != GetType())
+                                                                       .Append(typeof(UtaModDaycore))
+                                                                       .Append(typeof(UtaModNightcore))
+                                                                       .ToArray();
 
     protected UtaModTranspose(int semitones)
     {

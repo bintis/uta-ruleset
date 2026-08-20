@@ -76,6 +76,8 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
     private UtaRuntimeModeState? runtimeModes;
     private readonly BindableFloat microphoneLatency = new();
     private readonly BindableFloat keyShiftSemitones = new();
+    private readonly Bindable<string> effectiveMonitorOutput = new();
+    private UtaAudioSettingsState? audioSettings;
     private GameplayClockContainer? gameplayClock;
     private UtaGameplayScoringController scoringController = null!;
     private UtaRecordingRuntime recordingRuntime = null!;
@@ -94,6 +96,7 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
     {
         audioRouter.Initialise(audioManager);
         this.beatmap = beatmap;
+        this.audioSettings = audioSettings;
         this.gameplayClock = gameplayClock;
         this.scoringController = scoringController;
         this.recordingRuntime = recordingRuntime;
@@ -112,12 +115,41 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
         microphone = new UtaMicrophoneHandler(UtaMicrophoneDevices.Resolve(audioSettings.MicrophoneDevice.Value), audioRouter);
         microphone.InputGain.BindTo(audioSettings.MicrophoneInputGain);
         microphone.MonitorVolume.BindTo(audioSettings.MicrophoneMonitorVolume);
-        microphone.OutputDevice.BindTo(audioSettings.MicrophoneOutputDevice);
+        audioSettings.MicrophoneDevice.ValueChanged += updateEffectiveMonitorOutput;
+        audioSettings.MicrophoneOutputDevice.ValueChanged += updateEffectiveMonitorOutput;
+        audioSettings.BackgroundMusicOutputDevice.ValueChanged += updateEffectiveMonitorOutput;
+        audioSettings.OriginalVocalsOutputDevice.ValueChanged += updateEffectiveMonitorOutput;
+        updateEffectiveMonitorOutput();
+        microphone.OutputDevice.BindTo(effectiveMonitorOutput);
         microphone.DebugDiagnostics.BindTo(audioSettings.DebugDiagnostics);
         microphone.PitchSamplingInterval.BindTo(audioSettings.PitchSamplingInterval);
         microphone.PcmCaptureSink = recordingRuntime.RecordingEnabled ? recordingRuntime : null;
         microphone.PitchDetected += onPitchDetected;
         AddHandler(microphone);
+    }
+
+    private void updateEffectiveMonitorOutput(ValueChangedEvent<string> _)
+        => updateEffectiveMonitorOutput();
+
+    private void updateEffectiveMonitorOutput()
+    {
+        if (audioSettings == null)
+            return;
+
+        string requested = audioSettings.MicrophoneOutputDevice.Value;
+        string resolved = UtaAudioSettingsState.ResolveSafeMonitorOutput(
+            audioSettings.MicrophoneDevice.Value,
+            requested,
+            audioSettings.BackgroundMusicOutputDevice.Value,
+            audioSettings.OriginalVocalsOutputDevice.Value);
+        effectiveMonitorOutput.Value = resolved;
+
+        if (!string.Equals(requested, resolved, StringComparison.OrdinalIgnoreCase))
+        {
+            osu.Framework.Logging.Logger.Log(
+                $"Uta repaired capture device used as monitor output: capture='{audioSettings.MicrophoneDevice.Value}' "
+                + $"requested='{requested}' effective='{resolved}'.");
+        }
     }
 
     protected override void Update()
@@ -282,8 +314,16 @@ public sealed partial class UtaInputManager : RulesetInputManager<UtaAction>
             gameplayClock.OnSeek -= onSeek;
         if (runtimeModes != null)
             runtimeModes.OctaveFoldEnabled.ValueChanged -= onOctaveFoldChanged;
+        if (audioSettings != null)
+        {
+            audioSettings.MicrophoneDevice.ValueChanged -= updateEffectiveMonitorOutput;
+            audioSettings.MicrophoneOutputDevice.ValueChanged -= updateEffectiveMonitorOutput;
+            audioSettings.BackgroundMusicOutputDevice.ValueChanged -= updateEffectiveMonitorOutput;
+            audioSettings.OriginalVocalsOutputDevice.ValueChanged -= updateEffectiveMonitorOutput;
+        }
         microphoneLatency.UnbindAll();
         keyShiftSemitones.UnbindAll();
+        effectiveMonitorOutput.UnbindAll();
         base.Dispose(isDisposing);
     }
 }

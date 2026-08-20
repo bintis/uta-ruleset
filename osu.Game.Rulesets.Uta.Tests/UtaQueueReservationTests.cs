@@ -140,7 +140,7 @@ public sealed class UtaQueueReservationTests
         var options = new UtaQueuePlaybackOptions(1, 2, new[] { "PR", "OCT" });
 
         Assert.That(UtaPlaybackCoordinator.TryComposeReservationMods(options, current, out var next, out string error), Is.True, error);
-        Assert.That(next.Any(mod => mod is UtaModNightcore), Is.True);
+        Assert.That(next.Any(mod => mod is UtaModNightcore), Is.False);
         Assert.That(next.Any(mod => mod is UtaModNoFail), Is.False);
         Assert.That(next.Any(mod => mod is UtaModPractice), Is.True);
         Assert.That(next.Any(mod => mod is UtaModOctaveFold), Is.True);

@@ -14,6 +14,7 @@ using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Gameplay;
 using osu.Game.Rulesets.Uta.Library;
+using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Rulesets.Uta.Playback;
 using osu.Game.Rulesets.Uta.Queue;
 using osu.Game.Screens.Select;
@@ -55,6 +56,9 @@ internal sealed class UtaRulesetRuntime : IDisposable
     /// 切歌 are not an off switch (AUDIO leftover doc §24).
     /// </summary>
     public bool OriginalVocalsPreferred { get; private set; }
+    public int? SelectedTranspose { get; private set; }
+    public double? SelectedCoreRate { get; private set; }
+    public bool AuthoritativeModSelectionKnown => authoritativeSelectionKnown;
 
     private bool originalVocalsPreferenceSeeded;
 
@@ -62,8 +66,11 @@ internal sealed class UtaRulesetRuntime : IDisposable
     private Bindable<WorkingBeatmap>? gameWideBeatmap;
     private bool watchingSongSelectBeatmap;
     private bool screenExitHooked;
+    private ScreenStack? screenStack;
     private MusicController? musicController;
     private Bindable<IReadOnlyList<Mod>>? selectedMods;
+    private bool songSelectSelectionActive;
+    private bool authoritativeSelectionKnown;
 
     private static readonly FieldInfo? user_pause_requested_field = typeof(MusicController).GetField(
         "<UserPauseRequested>k__BackingField",
@@ -107,9 +114,8 @@ internal sealed class UtaRulesetRuntime : IDisposable
 
     /// <summary>
     /// Observe the process-wide mod selection beyond the lifetime of the first
-    /// DrawableRuleset. PlayerLoader can later construct with mods=[] even though
-    /// the user selected VOX in song select; the positive edge is authoritative.
-    /// Explicit off remains available through the checkbox/remote command.
+    /// DrawableRuleset. SongSelect changes are authoritative, while narrowed
+    /// PlayerLoader values may only contribute positive state during gameplay.
     /// </summary>
     public void AttachSelectedMods(Bindable<IReadOnlyList<Mod>>? mods)
     {
@@ -121,22 +127,85 @@ internal sealed class UtaRulesetRuntime : IDisposable
 
         selectedMods = mods;
         selectedMods.ValueChanged += onSelectedModsChanged;
-        Logger.Log($"Uta attached game-wide selected mods: [{formatMods(selectedMods.Value)}].");
+        rememberPositiveModState(selectedMods.Value);
+        Logger.Log(
+            $"Uta attached game-wide selected mods: [{formatMods(selectedMods.Value)}] "
+            + $"rememberedTranspose={SelectedTranspose?.ToString() ?? "none"} coreRate={SelectedCoreRate?.ToString("0.00") ?? "unknown"}.");
     }
 
     private void onSelectedModsChanged(ValueChangedEvent<IReadOnlyList<Mod>> change)
     {
-        bool vox = change.NewValue.Any(mod => mod is Mods.UtaModOriginalVocals);
-        if (vox)
-            RememberOriginalVocals(true);
+        bool vox = change.NewValue.Any(mod => mod is UtaModOriginalVocals);
+        if (songSelectSelectionActive)
+            rememberAuthoritativeModState(change.NewValue);
+        else
+            rememberPositiveModState(change.NewValue);
 
         Logger.Log(
             $"Uta game-wide selected mods changed: [{formatMods(change.OldValue)}] -> [{formatMods(change.NewValue)}] "
-            + $"vox={vox} preferred={OriginalVocalsPreferred}.");
+            + $"authoritative={songSelectSelectionActive} vox={vox} preferred={OriginalVocalsPreferred} "
+            + $"rememberedTranspose={SelectedTranspose?.ToString() ?? "none"} coreRate={SelectedCoreRate?.ToString("0.00") ?? "unknown"}.");
+    }
+
+    private void rememberPositiveModState(IReadOnlyList<Mod> mods)
+    {
+        if (authoritativeSelectionKnown)
+            return;
+
+        (bool vocals, int? transpose) = ResolveRememberedModState(
+            false, OriginalVocalsPreferred, SelectedTranspose, mods);
+        RememberOriginalVocals(vocals);
+        SelectedTranspose = transpose;
+        SelectedCoreRate = ResolveRememberedCoreRate(false, SelectedCoreRate, mods);
+    }
+
+    private void rememberAuthoritativeModState(IReadOnlyList<Mod> mods)
+    {
+        (bool vocals, int? transpose) = ResolveRememberedModState(
+            true, OriginalVocalsPreferred, SelectedTranspose, mods);
+        RememberOriginalVocals(vocals);
+        SelectedTranspose = transpose;
+        SelectedCoreRate = ResolveRememberedCoreRate(true, SelectedCoreRate, mods);
+        authoritativeSelectionKnown = true;
+    }
+
+    internal static double? ResolveRememberedCoreRate(bool authoritative, double? previousRate, IReadOnlyList<Mod> mods)
+    {
+        double? selectedRate = mods.Any(mod => mod is UtaModNightcore)
+            ? 1.5
+            : mods.Any(mod => mod is UtaModDaycore)
+                ? 0.75
+                : null;
+
+        return authoritative ? selectedRate ?? 1 : previousRate ?? selectedRate;
+    }
+
+    internal static (bool OriginalVocals, int? Transpose) ResolveRememberedModState(
+        bool authoritative,
+        bool previousOriginalVocals,
+        int? previousTranspose,
+        IReadOnlyList<Mod> mods)
+    {
+        bool hasOriginalVocals = mods.Any(mod => mod is UtaModOriginalVocals);
+        UtaModTranspose? transpose = mods.OfType<UtaModTranspose>().FirstOrDefault();
+
+        return authoritative
+            ? (hasOriginalVocals, transpose?.Semitones)
+            : (previousOriginalVocals || hasOriginalVocals, transpose?.Semitones ?? previousTranspose);
     }
 
     private static string formatMods(IReadOnlyList<Mod>? mods)
         => mods == null ? string.Empty : string.Join(",", mods.Select(mod => mod.Acronym));
+
+    private sealed class ModIdentityComparer : IEqualityComparer<Mod>
+    {
+        public static readonly ModIdentityComparer Instance = new();
+
+        public bool Equals(Mod? x, Mod? y)
+            => ReferenceEquals(x, y) || (x != null && y != null && x.GetType() == y.GetType() && x.Acronym == y.Acronym);
+
+        public int GetHashCode(Mod obj) => HashCode.Combine(obj.GetType(), obj.Acronym);
+    }
 
     /// <summary>
     /// ScreenStack fires this after PlayerLoader UnbindAll (lease back) and
@@ -148,20 +217,82 @@ internal sealed class UtaRulesetRuntime : IDisposable
         if (screenExitHooked || stack == null)
             return;
 
+        screenStack = stack;
+        stack.ScreenPushed += onScreenPushed;
         stack.ScreenExited += onScreenExited;
         screenExitHooked = true;
-        Logger.Log("Uta hooked ScreenStack.ScreenExited for leftover leave.");
+        Logger.Log("Uta hooked ScreenStack push/exit events for SongSelect and leftover leave.");
     }
 
-    private void onScreenExited(IScreen _, IScreen next)
+    private void onScreenPushed(IScreen previous, IScreen next)
     {
-        if (next is not SongSelect songSelect)
+        if (previous is SongSelect songSelect && next is not SongSelect)
+        {
+            rememberAuthoritativeModState(songSelect.Mods.Value);
+            reconcilePushedScreenMods(next);
+            songSelectSelectionActive = false;
+        }
+
+        if (next is SongSelect nextSongSelect)
+            attachSongSelect(nextSongSelect, false);
+    }
+
+    private void onScreenExited(IScreen exited, IScreen next)
+    {
+        if (exited is SongSelect)
+        {
+            songSelectSelectionActive = false;
+            AttachSongSelectBeatmap(null, gameWideBeatmap);
+        }
+
+        if (next is SongSelect songSelect)
+            attachSongSelect(songSelect, true);
+    }
+
+    private void attachSongSelect(SongSelect songSelect, bool stopLeftoverPlayback)
+    {
+        songSelectSelectionActive = true;
+        AttachSelectedMods(songSelect.Mods);
+        rememberAuthoritativeModState(songSelect.Mods.Value);
+        AttachSongSelectBeatmap(songSelect.Beatmap, gameWideBeatmap);
+
+        if (stopLeftoverPlayback)
+        {
+            UI.UtaAudioController.DestroyAllPlayback();
+            StopLeftoverOnLeave();
+        }
+    }
+
+    private void reconcilePushedScreenMods(IScreen screen)
+    {
+        if (!authoritativeSelectionKnown)
             return;
 
-        AttachSelectedMods(songSelect.Mods);
-        AttachSongSelectBeatmap(songSelect.Beatmap, gameWideBeatmap);
-        UI.UtaAudioController.DestroyAllPlayback();
-        StopLeftoverOnLeave();
+        try
+        {
+            PropertyInfo? property = screen.GetType().GetProperty("Mods", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property?.GetValue(screen) is not Bindable<IReadOnlyList<Mod>> mods)
+                return;
+
+            IReadOnlyList<Mod> reconciled = DrawableUtaRuleset.ReconcileConstructorMods(
+                mods.Value,
+                SelectedCoreRate,
+                true,
+                SelectedTranspose);
+
+            if (mods.Value.SequenceEqual(reconciled, ModIdentityComparer.Instance))
+                return;
+
+            string oldMods = formatMods(mods.Value);
+            mods.Value = reconciled;
+            Logger.Log(
+                $"Uta reconciled pushed screen mods: [{oldMods}] -> [{formatMods(reconciled)}] "
+                + $"authoritativeTranspose={SelectedTranspose?.ToString() ?? "none"} coreRate={SelectedCoreRate?.ToString("0.00") ?? "unknown"}.");
+        }
+        catch (Exception exception)
+        {
+            Logger.Log($"Uta could not reconcile pushed screen mods: {exception.Message}");
+        }
     }
 
     public void AttachSongSelectBeatmap(Bindable<WorkingBeatmap>? songSelect, Bindable<WorkingBeatmap>? gameWide = null)
@@ -447,6 +578,11 @@ internal sealed class UtaRulesetRuntime : IDisposable
             songSelectBeatmap.ValueChanged -= onSongSelectBeatmapChanged;
         if (selectedMods != null)
             selectedMods.ValueChanged -= onSelectedModsChanged;
+        if (screenStack != null)
+        {
+            screenStack.ScreenPushed -= onScreenPushed;
+            screenStack.ScreenExited -= onScreenExited;
+        }
         Queue.Changed -= broadcastQueue;
         RemoteServerController.Dispose();
         Queue.Dispose();

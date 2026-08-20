@@ -66,7 +66,7 @@ internal sealed partial class UtaPerformanceDiagnostics : Component
             $"latency-accompaniment={settings.AccompanimentLatency.Value:+0;-0;0}ms " +
             $"latency-lyrics={settings.LyricsLatency.Value:+0;-0;0}ms " +
             $"volume-bgm={settings.BackgroundMusicVolume.Value:P0} volume-vocals={settings.OriginalVocalsVolume.Value:P0} " +
-            $"volume-monitor={settings.MicrophoneMonitorVolume.Value:P0} " +
+            $"volume-monitor={settings.MicrophoneMonitorVolume.Value:P0} input-gain={settings.MicrophoneInputGain.Value:0.00}x " +
             $"mic='{device(settings.MicrophoneDevice.Value)}' mic-output='{device(settings.MicrophoneOutputDevice.Value)}' " +
             $"bgm-output='{device(settings.BackgroundMusicOutputDevice.Value)}' vocals-output='{device(settings.OriginalVocalsOutputDevice.Value)}'");
 

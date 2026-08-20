@@ -671,10 +671,12 @@ internal sealed class UtaMicrophoneHandler : InputHandler
         int inputPeakMilli = Interlocked.Exchange(ref diagnosticInputPeakMilli, 0);
         double averageMs = processed == 0 ? 0 : totalTicks * 1000.0 / Stopwatch.Frequency / processed;
         double maximumMs = maximumTicks * 1000.0 / Stopwatch.Frequency;
+        int monitorQueuedBytes = monitorStream == 0 ? 0 : Bass.ChannelGetData(monitorStream, IntPtr.Zero, (int)DataFlags.Available);
+        double monitorQueuedMs = monitorQueuedBytes <= 0 ? 0 : monitorQueuedBytes * 1000.0 / (frequency * channels * sizeof(float));
         Logger.Log(
             $"Uta debug microphone: queued={queued} processed={processed} dropped={dropped} " +
             $"analysis-avg={averageMs:0.00}ms analysis-max={maximumMs:0.00}ms " +
-            $"input-peak={inputPeakMilli / 1000f:0.000} monitor-volume={monitorVolume:P0} " +
+            $"input-peak={inputPeakMilli / 1000f:0.000} monitor-volume={monitorVolume:P0} monitor-buffer={monitorQueuedMs:0.0}ms " +
             $"frequency={frequency}Hz channels={channels} interval={pitchSamplingInterval:0}ms active={recordingActive}");
     }
 

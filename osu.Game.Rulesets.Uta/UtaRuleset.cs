@@ -122,8 +122,6 @@ public sealed partial class UtaRuleset : Ruleset
         {
             ModType.DifficultyIncrease => new Mod[]
             {
-                new UtaModHidePitchGuide(),
-                new UtaModHideLyrics(),
                 new UtaModNightcore(),
             },
             ModType.DifficultyReduction => new Mod[]

@@ -486,7 +486,13 @@ public sealed partial class UtaPlaybackCoordinator : Component
         }
 
         if (UtaModTranspose.Create(options.Transpose) is Mod transpose)
+        {
+            // Explicit key selection and NC/DC's rate-derived pitch are mutually
+            // exclusive in the native MOD selector. Preserve that invariant for
+            // queued starts as well, where the selection is composed directly.
+            next.RemoveAll(mod => mod is UtaModNightcore or UtaModDaycore);
             next.Add(transpose);
+        }
 
         if (!ModUtils.CheckValidForGameplay(next, out _))
         {
@@ -541,8 +547,6 @@ public sealed partial class UtaPlaybackCoordinator : Component
         () => new UtaModRelax(),
         () => new UtaModOriginalVocals(),
         () => new UtaModOctaveFold(),
-        () => new UtaModHidePitchGuide(),
-        () => new UtaModHideLyrics(),
         () => new UtaModAutoplay(),
         () => new UtaModRecording(),
         () => new UtaModPractice(),

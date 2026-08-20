@@ -10,14 +10,13 @@ proprietary total-score formula.
 
 ## Status
 
-The package contains a deterministic scoring kernel, a streaming wrapper, native
-lazer integration primitives, vibrato analysis, report-only RMS analysis and a
-filesystem performance archive.
+The deterministic kernel, streaming wrapper, microphone-to-gameplay bridge,
+native judgements and score processor are active in the current runtime. Vibrato,
+report-only RMS analysis, performance archives and optional recording share the
+same quantised input and timeline-epoch contracts described below.
 
-The native primitives are intentionally **not activated automatically**. The current
-runtime still needs the microphone-to-session and drawable-to-judgement wiring
-specified in `SCORING_INTEGRATION.md` before `UtaScoreProcessor` should replace the
-existing placeholder scoring path.
+Runs that change scoring-affecting options or seek across committed notes are
+marked non-comparable rather than silently mixing incompatible scoring epochs.
 
 ## Deterministic input contract
 

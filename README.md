@@ -73,13 +73,16 @@ the runtime without a defined release target.
 
 ## Build and test
 
+The consolidated build, automated-test, real-game debug and delivery procedure is
+in [Docs/TESTING.md](Docs/TESTING.md).
+
 GitHub Releases publish an installable `uta-ruleset-v*.zip` with
 `osu.Game.Rulesets.Uta.dll`, `libbassflac.so` and `BASSFLAC.txt`. Copy those
 three files into lazer's `rulesets` directory.
 
 To build from source, use .NET 8 and the locally installed Nix osu! package.
 The Nix installation is the source of truth for osu! API and dependency
-versions; the currently detected target is osu! `2026.804.2`. Resolve the
+versions; the currently detected target is osu! `2026.726.0`. Resolve the
 active store path rather than committing a Nix store hash:
 
 ```sh
@@ -108,74 +111,42 @@ as a standard archive, so lazer owns storage and media decoding.
 
 ## Roadmap / TODO
 
-Finished items from 0.1.0 onward are in [CHANGELOG.md](Docs/CHANGELOG.md).
-This list is only what is still open.
+Completed work is recorded in [CHANGELOG.md](Docs/CHANGELOG.md); test and
+acceptance procedures live in [TESTING.md](Docs/TESTING.md). Only current open
+work is listed here.
 
-### 0.5.1 - Scoring follow-up
+### Runtime hardening
 
-- [ ] Verify scoring combinations for Transpose, OCT, HT, DT, latency and
-      phrase looping in a single matrix.
-
-### 0.6.0 - Recording and comparison
-
-- [ ] Verify long recordings, repeated retries and device changes do not leak streams or lose samples.
-
-### 0.7.2 - Known issue
-
-- [ ] The microphone monitor output setting does not reliably survive to the
-      next play session. It applies live and correctly re-routes audio
-      immediately when changed, but can read back as unset the next time
-      gameplay starts. An explicit `config.Save()` on the settings panel
-      closing did not resolve it - needs a fresh log-driven pass to find
-      what resets it (or confirm it is a lazer-side `RulesetConfigManager`
-      persistence issue).
-
-### 0.9.0 - Skins, video and interface polish
-
-- [ ] Bind those video settings to the exact target lazer background/video drawable.
-- [ ] Keep video synchronised through speed changes, seeks, loops and pauses once the ruleset binding exists (imported packages already inherit lazer's native video clock).
-- [ ] Finish the native two-level settings navigation and remove remaining button/control inconsistencies.
-- [ ] Add search terms, tooltips, reset behaviour and disabled-state explanations to every setting.
-- [ ] Improve narrow-window, touch, keyboard and controller navigation.
-- [ ] Move remaining user-facing strings to localisation resources and provide English, Japanese and Chinese coverage (Score HUD, Practice HUD and the mobile remote already cover this; settings labels, tooltips and other desktop panels remain).
-
-### 0.10.0 - Optimisation and release hardening
-
-- [ ] Consolidate playback, seek, rate and latency ownership into one documented clock architecture.
-- [ ] Remove duplicate settings and audio state paths left by the 0.3-0.8 feature work.
-- [ ] Profile update, draw, audio, microphone, recording and remote-control workloads with direct measurements.
-- [ ] Add selectable low, balanced and high analysis-quality presets while retaining manual sampling control.
-- [ ] Keep microphone and recording queues bounded under sustained CPU or storage pressure.
+- [x] Verify the complete scoring matrix for Transpose, OCT, NC/DC, latency and loops.
+- [x] Soak-test long recordings, repeated retries, device changes and storage-write failure.
 - [ ] Add device hot-plug recovery for microphone, monitor, BGM and vocal routes.
-- [ ] Recover cleanly when an audio route, video decoder, recording target or remote service fails.
-- [ ] Verify long sessions, repeated mode changes and thousands of seek/loop operations do not accumulate resources.
-- [ ] Add configuration migrations for every renamed or type-changed setting since 0.3.0.
-- [ ] Expand deterministic tests for import, clocks, scoring, recording, MOD combinations and remote commands.
-- [ ] Run the supported desktop-platform build matrix or explicitly document any platform limitation before 1.0.
-- [ ] Keep Nix osu! as the local API source of truth and maintain a reproducible CI fallback.
-- [ ] Document performance measurements and remaining platform-specific limitations.
+- [ ] Consolidate playback, seek, rate and latency ownership into one clock architecture.
+- [x] Profile audio, microphone, scoring, recording and remote-control hot paths with bounded-buffer regression workloads.
+- [x] Verify long sessions and repeated mode changes do not leak streams, listeners or buffers in deterministic runtime workloads.
 
-### 1.0.0 - Stable release
+### Interface and media
 
-- [ ] Freeze the documented `.utz` playback, configuration, score and recording metadata compatibility promises.
-- [ ] Verify upgrades preserve settings and imported songs from every supported pre-1.0 release.
-- [ ] Complete end-to-end install, upgrade, troubleshooting, recording-privacy and mobile-pairing documentation.
-- [ ] Complete keyboard, controller, touch, colour-blind and reduced-motion accessibility passes.
-- [ ] Verify every supported MOD combination has deterministic timing and scoring behaviour.
-- [ ] Verify BGM, VOX, lyrics, video, Pitch, scoring and recordings remain synchronised after rate and seek changes.
-- [ ] Verify microphone and audio devices can be changed or disconnected without restarting osu!.
-- [ ] Verify recordings cannot be started invisibly and can be located, exported and deleted by the user.
-- [ ] Verify remote control is disabled by default and leaves no active listener after it is turned off.
-- [ ] Complete a long-session soak run covering gameplay, practice, scoring, recording and remote control.
-- [ ] Resolve all known crash, data-loss, unsafe-network-access and persistent desynchronisation defects.
-- [ ] Build and verify a portable ruleset DLL against official NuGet API references without depending on Nix store paths.
-- [ ] Publish versioned installation assets and release notes for the supported platform matrix.
+- [ ] Bind video visibility, dim, blur and offset to the supported lazer video drawable.
+- [ ] Perform real-runtime verification that native video-event synchronisation survives pause, seek, loop and rate changes (the converter regression verifies that the native video event is emitted).
+- [ ] Finish keyboard, controller, touch, narrow-window, colour-blind and reduced-motion passes.
+- [ ] Complete English, Japanese and Chinese localisation of desktop strings.
+- [ ] Add consistent search terms, tooltips, reset actions and disabled-state explanations.
 
-After 1.0, additional song formats, online services, editor features and experimental MODs should be planned independently rather than expanding the stable playback contract implicitly.
+### Release readiness
+
+- [ ] Add migrations for renamed or type-changed pre-1.0 settings.
+- [x] Expand deterministic import, clock, scoring, recording and MOD-combination tests.
+- [x] Run and document the supported desktop-platform build matrix.
+- [ ] Complete install, upgrade, troubleshooting, recording-privacy and pairing documentation.
+- [ ] Freeze the `.utz`, score, configuration and recording compatibility contracts for 1.0.
+- [ ] Publish verified versioned assets only after crash, data-loss, network and desync gates pass.
+
+Additional song formats, online services and editor features remain outside the
+stable playback contract until planned separately.
 
 ## Scope
 
-- osu!lazer compatibility target: Nix-installed `2026.804.2`.
+- osu!lazer compatibility target: Nix-installed `2026.726.0`.
 - Accepted package contract: `uta.song` format `0.3.x` with `vocal-chart/1`. Older and future package versions are rejected.
 
 ## Acknowledgements

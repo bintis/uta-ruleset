@@ -235,7 +235,7 @@ internal partial class UtaPitchGuideRenderer : CompositeDrawable
             UtaPitchTargetGeometry geometry = UtaPitchTimelineGeometry.Target(
                 note.StartTime,
                 note.EndTime,
-                note.Midi!.Value,
+                UtaPitchTimelineGeometry.TransposeMidi(note.Midi!.Value, keyShiftSemitones.Value),
                 current,
                 shiftedCentre,
                 DrawWidth);

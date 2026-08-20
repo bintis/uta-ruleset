@@ -348,7 +348,10 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                     }
 
                     if (setSegment(getSegment(referenceSegments, referenceLayer, used, styleTexture(reference: true)), previous.Time, frame.Time,
-                                   0, previous.Midi, frame.Midi, style.Reference, 0.30f, style.ReferenceCurveWeight))
+                                   0,
+                                   UtaPitchTimelineGeometry.TransposeMidi(previous.Midi, keyShiftSemitones.Value),
+                                   UtaPitchTimelineGeometry.TransposeMidi(frame.Midi, keyShiftSemitones.Value),
+                                   style.Reference, 0.30f, style.ReferenceCurveWeight))
                         used++;
                     previous = frame;
                 }
@@ -364,7 +367,10 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                         continue;
 
                     if (setSegment(getSegment(referenceSegments, referenceLayer, used, styleTexture(reference: true)), note.StartTime, note.EndTime,
-                                   0, midi, midi, style.Reference, 0.30f, style.ReferenceCurveWeight))
+                                   0,
+                                   UtaPitchTimelineGeometry.TransposeMidi(midi, keyShiftSemitones.Value),
+                                   UtaPitchTimelineGeometry.TransposeMidi(midi, keyShiftSemitones.Value),
+                                   style.Reference, 0.30f, style.ReferenceCurveWeight))
                         used++;
                 }
             }

@@ -30,7 +30,7 @@ public sealed class UtaRemoteServer : IAsyncDisposable
 
     private readonly IUtaRemoteCommandTarget commandTarget;
     private readonly Func<UtaRemoteSnapshot> snapshotProvider;
-    private readonly UtaRemoteCredentialStore credentials = new(UtaStoragePaths.RemoteDevicesFile);
+    private readonly UtaRemoteCredentialStore credentials;
     private readonly ConcurrentDictionary<string, ClientConnection> clients = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim lifecycleGate = new(1, 1);
     private readonly object statusSync = new();
@@ -60,9 +60,15 @@ public sealed class UtaRemoteServer : IAsyncDisposable
     }
 
     public UtaRemoteServer(IUtaRemoteCommandTarget commandTarget, Func<UtaRemoteSnapshot> snapshotProvider)
+        : this(commandTarget, snapshotProvider, new UtaRemoteCredentialStore(UtaStoragePaths.RemoteDevicesFile))
+    {
+    }
+
+    internal UtaRemoteServer(IUtaRemoteCommandTarget commandTarget, Func<UtaRemoteSnapshot> snapshotProvider, UtaRemoteCredentialStore credentials)
     {
         this.commandTarget = commandTarget ?? throw new ArgumentNullException(nameof(commandTarget));
         this.snapshotProvider = snapshotProvider ?? throw new ArgumentNullException(nameof(snapshotProvider));
+        this.credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
     }
 
     public async Task StartAsync(int requestedPort = UtaRemoteNetworkPolicy.DEFAULT_PORT, CancellationToken cancellationToken = default)
@@ -206,6 +212,7 @@ public sealed class UtaRemoteServer : IAsyncDisposable
             IPAddress? remoteAddress = context.Request.RemoteEndPoint?.Address;
             if (remoteAddress == null || !UtaRemoteNetworkPolicy.IsPrivateOrLoopback(remoteAddress))
             {
+                osu.Framework.Logging.Logger.Log($"Uta remote rejected non-private request from {remoteAddress?.ToString() ?? "unknown"}.");
                 await rejectAsync(context, HttpStatusCode.Forbidden, "Private-network clients only.").ConfigureAwait(false);
                 return;
             }
@@ -213,11 +220,13 @@ public sealed class UtaRemoteServer : IAsyncDisposable
             if (!UtaRemoteNetworkPolicy.IsHostAllowed(context.Request.Headers["Host"], allowedHosts, port)
                 || !UtaRemoteNetworkPolicy.IsOriginAllowed(context.Request.Headers["Origin"], allowedHosts, port))
             {
+                osu.Framework.Logging.Logger.Log($"Uta remote rejected Host/Origin request from {remoteAddress}.");
                 await rejectAsync(context, HttpStatusCode.Forbidden, "Host or Origin rejected.").ConfigureAwait(false);
                 return;
             }
 
             string path = context.Request.Url?.AbsolutePath ?? "/";
+            osu.Framework.Logging.Logger.Log($"Uta remote HTTP {context.Request.HttpMethod} {path} from {remoteAddress}.");
             switch (path)
             {
                 case "/":

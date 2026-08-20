@@ -55,9 +55,18 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
     internal UtaRuntimeModeState RuntimeModes => runtimeModes;
 
     public DrawableUtaRuleset(Ruleset ruleset, IBeatmap beatmap, IReadOnlyList<Mod>? mods)
-        : base(ruleset, prepareBeatmap(beatmap, mods), mods)
+        : this(ruleset, beatmap, ReconcileConstructorMods(
+            mods,
+            UtaRulesetRuntime.Instance.SelectedCoreRate,
+            UtaRulesetRuntime.Instance.AuthoritativeModSelectionKnown,
+            UtaRulesetRuntime.Instance.SelectedTranspose), true)
     {
-        selectedMods = mods ?? [];
+    }
+
+    private DrawableUtaRuleset(Ruleset ruleset, IBeatmap beatmap, IReadOnlyList<Mod> reconciledMods, bool _)
+        : base(ruleset, prepareBeatmap(beatmap, reconciledMods), reconciledMods)
+    {
+        selectedMods = reconciledMods;
         scoringEnabled = selectedMods.All(mod => mod is not UtaModRelax);
         recordingEnabled = selectedMods.Any(mod => mod is UtaModRecording);
         practiceEnabled = selectedMods.Any(mod => mod is UtaModPractice);
@@ -89,8 +98,8 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
             immersiveQueueEnabled);
         Overlays.Add(gameplaySessionBridge);
         Overlays.Add(new UtaGameplayHudLayer(
-            selectedMods.All(mod => mod is not UtaModHidePitchGuide),
-            selectedMods.All(mod => mod is not UtaModHideLyrics),
+            true,
+            true,
             scoringEnabled,
             practiceEnabled,
             recordingEnabled));
@@ -107,6 +116,39 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
             Overlays.Add(new UtaImmersiveRemotePrompt(gameplayServices.RemoteServerController, gameplayServices.Playback));
     }
 
+    internal static IReadOnlyList<Mod> ReconcileConstructorMods(
+        IReadOnlyList<Mod>? mods,
+        double? authoritativeRate,
+        bool authoritativeTransposeKnown,
+        int? authoritativeTranspose)
+    {
+        IReadOnlyList<Mod> source = mods ?? [];
+        bool needsRateReconcile = authoritativeRate.HasValue;
+        bool needsTransposeReconcile = authoritativeTransposeKnown;
+
+        if (!needsRateReconcile && !needsTransposeReconcile)
+            return source;
+
+        var reconciled = source.Where(mod => (!needsRateReconcile || mod is not UtaModNightcore and not UtaModDaycore)
+                                             && (!needsTransposeReconcile || mod is not UtaModTranspose)).ToList();
+
+        if (needsRateReconcile)
+        {
+            if (Math.Abs(authoritativeRate!.Value - 1.5) < 0.000001)
+                reconciled.Add(new UtaModNightcore());
+            else if (Math.Abs(authoritativeRate.Value - 0.75) < 0.000001)
+                reconciled.Add(new UtaModDaycore());
+        }
+
+        if (needsTransposeReconcile && authoritativeTranspose.HasValue && UtaModTranspose.Create(authoritativeTranspose.Value) is Mod transpose)
+            reconciled.Add(transpose);
+
+        return reconciled;
+    }
+
+    internal static IReadOnlyList<Mod> ReconcileCoreRateMods(IReadOnlyList<Mod>? mods, double? authoritativeRate)
+        => ReconcileConstructorMods(mods, authoritativeRate, false, null);
+
     private static IBeatmap prepareBeatmap(IBeatmap beatmap, IReadOnlyList<Mod>? mods)
     {
         bool scoringEnabled = mods?.Any(mod => mod is UtaModRelax) != true;
@@ -120,9 +162,11 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
     {
         var dependencies = new DependencyContainer(base.CreateChildDependencies(parent));
         audioSettings.Initialise((UtaRulesetConfigManager)Config);
-        audioSettings.KeyShiftSemitones.Value = selectedMods.OfType<UtaModTranspose>().SingleOrDefault()?.Semitones ?? 0;
-        runtimeModes.OriginalVocalsEnabled.Value = UtaRulesetRuntime.Instance.ShouldPlayOriginalVocals(
-            selectedMods.Any(mod => mod is UtaModOriginalVocals) || audioSettings.OriginalVocalsEnabled.Value);
+        bool selectedOriginalVocals = selectedMods.Any(mod => mod is UtaModOriginalVocals);
+
+        runtimeModes.OriginalVocalsEnabled.Value = ResolveInitialOriginalVocals(
+            selectedOriginalVocals,
+            UtaRulesetRuntime.Instance.OriginalVocalsPreferred);
         dependencies.CacheAs((UtaBeatmap)Beatmap);
         dependencies.CacheAs(KeyBindingInputManager);
         dependencies.CacheAs(audioRouter);
@@ -156,8 +200,8 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         }
 
         liveMods.BindValueChanged(onLiveModsChanged, true);
-        gameWideMods?.BindValueChanged(_ => applyOriginalVocalsFromMods(), true);
-        audioSettings.OriginalVocalsEnabled.BindValueChanged(_ => applyOriginalVocalsFromMods());
+        gameWideMods?.BindValueChanged(_ => applyRuntimeModsFromMods(), true);
+        audioSettings.OriginalVocalsEnabled.BindValueChanged(onOriginalVocalsSettingChanged);
     }
 
     private void onLiveModsChanged(ValueChangedEvent<IReadOnlyList<Mod>> change)
@@ -170,6 +214,83 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
             audioSettings.OriginalVocalsEnabled.Value = false;
         }
 
+        applyRuntimeModsFromMods();
+    }
+
+    private void applyRuntimeModsFromMods()
+    {
+        applyOriginalVocalsFromMods();
+
+        int transpose = ResolveRuntimeTranspose(
+            UtaRulesetRuntime.Instance.AuthoritativeModSelectionKnown,
+            UtaRulesetRuntime.Instance.SelectedTranspose,
+            gameWideMods?.Value,
+            liveMods.Value,
+            selectedMods);
+        if (MathF.Round(audioSettings.KeyShiftSemitones.Value) != transpose)
+        {
+            Logger.Log(
+                $"Uta transpose synced to {transpose:+0;-0;0}st "
+                + $"authoritative={UtaRulesetRuntime.Instance.AuthoritativeModSelectionKnown} "
+                + $"remembered={UtaRulesetRuntime.Instance.SelectedTranspose?.ToString() ?? "none"} "
+                + $"constructor=[{formatMods(selectedMods)}] "
+                + $"live=[{formatMods(liveMods.Value)}] "
+                + $"game=[{formatMods(gameWideMods?.Value)}]");
+            audioSettings.KeyShiftSemitones.Value = transpose;
+        }
+
+        double selectedRate = ResolveCoreRate(selectedMods);
+        double desiredRate = UtaRulesetRuntime.Instance.SelectedCoreRate
+                             ?? ResolveCoreRate(gameWideMods?.Value, liveMods.Value, selectedMods);
+        double correction = desiredRate / selectedRate;
+        if (Math.Abs(audioSettings.RuntimeModFrequency.Value - correction) > 0.000001)
+        {
+            Logger.Log(
+                $"Uta core rate synced to {desiredRate:0.00}x (correction={correction:0.00}x) "
+                + $"constructor=[{formatMods(selectedMods)}] "
+                + $"live=[{formatMods(liveMods.Value)}] "
+                + $"game=[{formatMods(gameWideMods?.Value)}]");
+            audioSettings.RuntimeModFrequency.Value = correction;
+        }
+    }
+
+    internal static int ResolveInitialTranspose(IReadOnlyList<Mod> selectedMods, int? rememberedTranspose)
+        => selectedMods.OfType<UtaModTranspose>().SingleOrDefault()?.Semitones ?? rememberedTranspose ?? 0;
+
+    internal static int? ResolveTranspose(params IReadOnlyList<Mod>?[] modLists)
+    {
+        foreach (IReadOnlyList<Mod>? mods in modLists)
+        {
+            UtaModTranspose? transpose = mods?.OfType<UtaModTranspose>().FirstOrDefault();
+            if (transpose != null)
+                return transpose.Semitones;
+        }
+
+        return null;
+    }
+
+    internal static int? ResolveTransposeOrRemembered(int? remembered, params IReadOnlyList<Mod>?[] modLists)
+        => ResolveTranspose(modLists) ?? remembered;
+
+    internal static int ResolveRuntimeTranspose(bool authoritativeKnown, int? authoritativeTranspose, params IReadOnlyList<Mod>?[] modLists)
+        => authoritativeKnown ? authoritativeTranspose ?? 0 : ResolveTranspose(modLists) ?? authoritativeTranspose ?? 0;
+
+    internal static double ResolveCoreRate(params IReadOnlyList<Mod>?[] modLists)
+    {
+        foreach (IReadOnlyList<Mod>? mods in modLists)
+        {
+            if (mods?.Any(mod => mod is UtaModNightcore) == true)
+                return 1.5;
+            if (mods?.Any(mod => mod is UtaModDaycore) == true)
+                return 0.75;
+        }
+
+        return 1;
+    }
+
+    private void onOriginalVocalsSettingChanged(ValueChangedEvent<bool> change)
+    {
+        UtaRulesetRuntime.Instance.RememberOriginalVocals(change.NewValue);
         applyOriginalVocalsFromMods();
     }
 
@@ -178,11 +299,7 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         bool fromMods = hasOriginalVocals(selectedMods)
                         || hasOriginalVocals(liveMods.Value)
                         || hasOriginalVocals(gameWideMods?.Value);
-        if (fromMods)
-            audioSettings.OriginalVocalsEnabled.Value = true;
-
-        bool enabled = UtaRulesetRuntime.Instance.ShouldPlayOriginalVocals(
-            fromMods || audioSettings.OriginalVocalsEnabled.Value);
+        bool enabled = UtaRulesetRuntime.Instance.ShouldPlayOriginalVocals(fromMods);
         if (runtimeModes.OriginalVocalsEnabled.Value == enabled)
             return;
 
@@ -195,6 +312,12 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
         runtimeModes.OriginalVocalsEnabled.Value = enabled;
     }
 
+    internal static bool ResolveInitialOriginalVocals(bool selectedOriginalVocals, bool rememberedOriginalVocals)
+        => selectedOriginalVocals || rememberedOriginalVocals;
+
+    internal static bool ShouldClearPersistedOriginalVocals(bool selectedOriginalVocals, bool rememberedOriginalVocals)
+        => !selectedOriginalVocals && !rememberedOriginalVocals;
+
     private static bool hasOriginalVocals(IReadOnlyList<Mod>? mods)
         => mods?.Any(mod => mod is UtaModOriginalVocals) == true;
 
@@ -205,6 +328,14 @@ public sealed partial class DrawableUtaRuleset : DrawableRuleset<UtaHitObject>
     {
         base.LoadComplete();
         UtaGameplaySeeker.DisableFrameStability(this);
+
+        audioSettings.KeyShiftSemitones.Value = ResolveInitialTranspose(
+            selectedMods,
+            UtaRulesetRuntime.Instance.SelectedTranspose);
+
+        bool selectedOriginalVocals = selectedMods.Any(mod => mod is UtaModOriginalVocals);
+        if (ShouldClearPersistedOriginalVocals(selectedOriginalVocals, UtaRulesetRuntime.Instance.OriginalVocalsPreferred))
+            audioSettings.OriginalVocalsEnabled.Value = false;
     }
 
     protected override Playfield CreatePlayfield() => new UtaPlayfield();

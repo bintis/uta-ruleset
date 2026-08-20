@@ -36,6 +36,7 @@ internal sealed partial class UtaAudioController : Component
     private readonly Bindable<string> vocalsOutput = new();
     private readonly BindableDouble mainTrackVolumeAdjustment = new(1);
     private readonly BindableDouble playbackTempo = new(1);
+    private readonly BindableDouble runtimeModFrequency = new(1);
     private readonly BindableDouble transposeFrequency = new(1);
     private readonly BindableDouble transposeTempo = new(1);
     private readonly BindableDouble vocalsEffectiveVolume = new();
@@ -180,6 +181,7 @@ internal sealed partial class UtaAudioController : Component
         vocalsVolume.BindTo(audioSettings.OriginalVocalsVolume);
         vocalsOutput.BindTo(audioSettings.OriginalVocalsOutputDevice);
         playbackTempo.BindTo(audioSettings.PlaybackTempo);
+        runtimeModFrequency.BindTo(audioSettings.RuntimeModFrequency);
         keyShiftSemitones.BindTo(audioSettings.KeyShiftSemitones);
         originalVocalsEnabled.BindTo(runtimeModes.OriginalVocalsEnabled);
         accompanimentLatency.BindTo(audioSettings.AccompanimentLatency);
@@ -188,6 +190,7 @@ internal sealed partial class UtaAudioController : Component
 
         mainTrack.AddAdjustment(AdjustableProperty.Volume, mainTrackVolumeAdjustment);
         mainTrack.AddAdjustment(AdjustableProperty.Tempo, playbackTempo);
+        mainTrack.AddAdjustment(AdjustableProperty.Frequency, runtimeModFrequency);
         mainTrack.AddAdjustment(AdjustableProperty.Frequency, transposeFrequency);
         mainTrack.AddAdjustment(AdjustableProperty.Tempo, transposeTempo);
         adjustmentsApplied = true;
@@ -301,6 +304,7 @@ internal sealed partial class UtaAudioController : Component
                 vocalsTrack.BindAdjustments(gameplayClock.AdjustmentsFromMods);
                 vocalsTrack.AddAdjustment(AdjustableProperty.Volume, vocalsEffectiveVolume);
                 vocalsTrack.AddAdjustment(AdjustableProperty.Tempo, playbackTempo);
+                vocalsTrack.AddAdjustment(AdjustableProperty.Frequency, runtimeModFrequency);
                 vocalsTrack.AddAdjustment(AdjustableProperty.Frequency, transposeFrequency);
                 vocalsTrack.AddAdjustment(AdjustableProperty.Tempo, transposeTempo);
                 if (gameplayClock is MasterGameplayClockContainer master)
@@ -639,6 +643,7 @@ internal sealed partial class UtaAudioController : Component
                 mainTrack.Stop();
             mainTrack.RemoveAdjustment(AdjustableProperty.Volume, mainTrackVolumeAdjustment);
             mainTrack.RemoveAdjustment(AdjustableProperty.Tempo, playbackTempo);
+            mainTrack.RemoveAdjustment(AdjustableProperty.Frequency, runtimeModFrequency);
             mainTrack.RemoveAdjustment(AdjustableProperty.Frequency, transposeFrequency);
             mainTrack.RemoveAdjustment(AdjustableProperty.Tempo, transposeTempo);
         }
@@ -648,12 +653,20 @@ internal sealed partial class UtaAudioController : Component
         backgroundMusicOutput.UnbindAll();
         vocalsOutput.UnbindAll();
         playbackTempo.UnbindAll();
+        runtimeModFrequency.UnbindAll();
         keyShiftSemitones.UnbindAll();
         originalVocalsEnabled.UnbindAll();
         accompanimentLatency.UnbindAll();
         debugDiagnostics.UnbindAll();
         if (gameplayPaused != null)
             gameplayPaused.ValueChanged -= onGameplayPausedChanged;
+
+        // PlayerLoader can be cancelled after this component has loaded but before
+        // UtaGameplaySessionBridge reaches LoadComplete. In that path the normal
+        // screen-leave hook never runs, while halt() has already stopped the shared
+        // WorkingBeatmap track. Repair the exact SongSelect bindable before it resumes
+        // or PrepareTrackForPreview/PlayerLoader will access an unloaded Track.
+        UtaRulesetRuntime.Instance.StopLeftoverOnLeave();
         base.Dispose(isDisposing);
     }
 

@@ -6,7 +6,7 @@ The browser loads one embedded HTML resource over HTTP and opens `/ws` on the sa
 
 The desktop overlay (`UtaRemoteControlOverlay`) renders the pairing URL both as text and as a QR code (`UtaRemoteQrDisplay`, backed by a vendored copy of Manuel Bleichenbacher's QR code generator in `Remote/QrCodeGenerator/`, see its files for MIT attribution). Scanning the code with a phone camera opens the URL directly; the ticket and role travel in the URL fragment, which `uta-remote.html` reads on load to connect immediately, so no manual typing or extra pairing step is required.
 
-Every command is JSON:
+For debugging and compatibility, the server also accepts the equivalent JSON command form:
 
 ```json
 {"type":"command","sequence":17,"command":"speed","value":1.1}

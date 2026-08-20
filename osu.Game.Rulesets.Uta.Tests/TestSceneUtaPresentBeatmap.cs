@@ -145,19 +145,22 @@ public partial class TestSceneUtaPresentBeatmap : OsuGameTestScene
         config.SetValue(UtaRulesetSetting.DebugDiagnostics, true);
         config.SetValue(UtaRulesetSetting.AccompanimentLatency, -411f);
 
-        string? output = UtaAudioDevices.Enumerate()
-            .Select(device => device.Name)
-            .FirstOrDefault(name => name.Contains("MARANTZ", StringComparison.OrdinalIgnoreCase))
-            ?? UtaAudioDevices.Enumerate()
+        AudioManager audioManager = Game.Dependencies.Get<AudioManager>();
+        string? output = audioManager.AudioDevice.Value;
+        if (UtaAudioDevices.IsPlaceholderOutput(output)
+            || !UtaAudioDevices.Enumerate().Any(device => device.Name == output))
+        {
+            output = UtaAudioDevices.Enumerate()
                 .Select(device => device.Name)
                 .FirstOrDefault(name => !UtaAudioDevices.IsPlaceholderOutput(name));
+        }
 
         if (!string.IsNullOrEmpty(output))
         {
             config.SetValue(UtaRulesetSetting.BackgroundMusicOutputDevice, output);
             config.SetValue(UtaRulesetSetting.OriginalVocalsOutputDevice, output);
             config.SetValue(UtaRulesetSetting.MicrophoneOutputDevice, output);
-            Game.Dependencies.Get<AudioManager>().AudioDevice.Value = output;
+            audioManager.AudioDevice.Value = output;
         }
 
         string? microphone = UtaMicrophoneDevices.Enumerate()

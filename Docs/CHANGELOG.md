@@ -3,6 +3,45 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.4 - 2026-08-20
+
+### Fixed
+
+- Reconciled VOX, Transpose, Nightcore and Daycore across SongSelect and
+  PlayerLoader mod snapshots without applying rate or transpose twice. Stale
+  constructor NC/DC is now replaced with the authoritative SongSelect rate mod
+  before base gameplay clocks are created, covering NC removal and NC → DC.
+- Prevented stale PlayerLoader, constructor and live SelectedMods from reapplying
+  removed DC/NC or Transpose on the next play after SongSelect has cleared them.
+- Prevented stale persisted VOX and Transpose values from enabling vocals or
+  shifting key when only Nightcore is selected.
+- Kept AKG as the microphone capture device while rejecting it as the monitor
+  output whenever a distinct configured playback route is available.
+- Restored SongSelect preview ownership when gameplay loading is cancelled, and
+  reattached newly-created SongSelect screens after returning through the main menu.
+
+### Documentation
+
+- Consolidated build, automated-test, real-game debug and delivery procedures
+  in `Docs/TESTING.md`, and removed superseded progress and integration notes.
+- Refreshed the roadmap to retain only current open work.
+
+### Validation
+
+- 165 automated tests pass against the local Nix osu! references; format,
+  overlay audit and whitespace checks pass. The remote pairing regression starts
+  the listener, loads the generated fragment-based pairing URL and completes a
+  WebSocket controller pairing over its LAN address. Runtime-hardening tests
+  cover score/rate/latency/epoch combinations, retry/storage-failure recording,
+  ten-minute equivalent streaming buffers and repeated remote listener cleanup.
+- Automated real-game launch `1787199768.runtime.log` verifies VOX disabled at
+  0% with no vocal track, key reset to 0, AKG capture, configured monitor/BGM/VOX
+  routing, zero microphone-analysis drops and stable BGM clock drift.
+- Runtime remote probe bound `10.1.1.20:27835`, returned `/health` 200, served
+  the 218715-byte embedded phone page and completed a binary (`U`) WebSocket
+  welcome frame using the QR URL's fragment ticket. Final deployed DLL SHA-256:
+  `89d6429126e5176daf014541c182b306f1d72582abe35bb82c0425354bef8dbd`.
+
 ## 0.8.3 - 2026-08-20
 
 ### Added
@@ -20,10 +59,6 @@ Completed work from 0.1.0 onward. Open items stay in the
   with `vocal-chart/1`; legacy manifest/chart models and loading paths were
   removed.
 
-### Validation
-
-- 135 automated tests pass against both the local Nix osu! references and the
-  NuGet fallback.
 - The transparent-fallback skin contains every documented base asset and keeps
   all gameplay-critical semantic fallbacks visible.
 
@@ -205,8 +240,7 @@ or crash the desktop after a switch.
 - CI verifies the embedded remote page is a single self-contained HTML file
   and rebuilds the WASM helper on the release-hardening workflow.
 - Real-device LAN, firewall/URL-ACL and mobile-browser acceptance passed
-  (pairing, private-network bind policy and the phone client on a live
-  session). See [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md).
+  (pairing, private-network bind policy and the phone client on a live session).
 
 ### Known issues
 

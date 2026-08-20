@@ -418,6 +418,12 @@ public static class UtaRemoteNetworkPolicy
 
     public static bool IsPrivateOrLoopback(IPAddress address)
     {
+        // HttpListener may report an IPv4 client through an IPv4-mapped IPv6 endpoint.
+        // Treat it exactly like its IPv4 form, otherwise a phone can load the page but its
+        // WebSocket is rejected as a non-private client.
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
         if (IPAddress.IsLoopback(address))
             return true;
         if (address.AddressFamily != AddressFamily.InterNetwork)

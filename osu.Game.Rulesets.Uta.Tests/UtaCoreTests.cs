@@ -91,7 +91,7 @@ public class UtaCoreTests
             Assert.That(UtaAudioDevices.IsPlaceholderOutput("Default"), Is.True);
             Assert.That(UtaAudioDevices.IsPlaceholderOutput("No Sound"), Is.True);
             Assert.That(UtaAudioDevices.IsPlaceholderOutput("Default Audio Device"), Is.True);
-            Assert.That(UtaAudioDevices.IsPlaceholderOutput("MARANTZ M4U: USB Audio"), Is.False);
+            Assert.That(UtaAudioDevices.IsPlaceholderOutput("Configured USB playback"), Is.False);
             Assert.That(UtaAudioDevices.IsPlaceholderOutput("AKG C44-USB Microphone: USB Audio"), Is.False);
         });
     }
@@ -148,10 +148,7 @@ public class UtaCoreTests
             Assert.That(ruleset.ShortName, Is.EqualTo("uta"));
             Assert.That(ruleset.Description, Is.EqualTo("uta!"));
             Assert.That(inputManager.UseParentInput, Is.True);
-            Assert.That(difficultyIncreaseMods,
-                Has.Exactly(1).TypeOf<UtaModHideLyrics>()
-                   .And.Exactly(1).TypeOf<UtaModHidePitchGuide>()
-                   .And.Exactly(1).TypeOf<UtaModNightcore>());
+            Assert.That(difficultyIncreaseMods, Has.Exactly(1).TypeOf<UtaModNightcore>());
             Assert.That(difficultyReductionMods, Has.Exactly(1).TypeOf<UtaModRelax>()
                                                        .And.Exactly(1).TypeOf<UtaModOriginalVocals>()
                                                        .And.Exactly(1).TypeOf<UtaModOctaveFold>().And.Exactly(1).TypeOf<UtaModDaycore>());
@@ -195,6 +192,12 @@ public class UtaCoreTests
             Assert.That(archive.GetEntry("artwork/cover.jpg"), Is.Not.Null);
             Assert.That(archive.GetEntry("video/background.mp4"), Is.Not.Null);
         });
+
+        string osuText;
+        using (var eventReader = new StreamReader(archive.GetEntry("uta.osu")!.Open()))
+            osuText = eventReader.ReadToEnd();
+        Assert.That(osuText, Does.Contain("Video,0,\"video/background.mp4\""),
+            "The converted package must use lazer's native video event so pause, seek, loop and rate follow its gameplay clock.");
 
         using var reader = new LineBufferedReader(archive.GetEntry("uta.osu")!.Open());
         Beatmap decoded = new UtaBeatmapDecoder().Decode(reader);

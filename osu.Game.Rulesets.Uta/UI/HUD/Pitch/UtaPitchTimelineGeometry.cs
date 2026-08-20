@@ -23,7 +23,10 @@ public static class UtaPitchTimelineGeometry
     public static float MidiToY(float midi, float centreMidi)
         => (centreMidi + VIEW_SPAN / 2 - midi) / VIEW_SPAN;
 
-    public static UtaPitchTargetGeometry Target(double startTime, double endTime, int midi, double currentTime, float centreMidi, float drawWidth)
+    public static float TransposeMidi(float midi, float semitones)
+        => midi + MathF.Round(semitones);
+
+    public static UtaPitchTargetGeometry Target(double startTime, double endTime, float midi, double currentTime, float centreMidi, float drawWidth)
     {
         float start = TimeToX(startTime, currentTime);
         float end = TimeToX(endTime, currentTime);

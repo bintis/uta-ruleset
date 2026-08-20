@@ -2,14 +2,12 @@
 
 ## 本包的定位
 
-本包把此前讨论的评分公式、osu!lazer 原生评分接入、Bad 判定、实时麦克风
-时序、颤音与 RMS 分析，以及文件夹式历史回放/录音归档，整理为一套一致的
-**基础实现**。
+当前版本已将评分公式、osu!lazer 原生评分接入、Bad 判定、实时麦克风时序、
+颤音与 RMS 分析，以及文件夹式历史回放/录音归档整合为一套运行时实现。
 
-它已经提供可编译纳入项目的内核、数据模型、lazer 接入原语、归档读写器与
-测试，但暂时不自动替换现有 gameplay 评分路径。实时麦克风、drawable
-judgement、HUD 和 results 的启用必须按 `IMPLEMENTATION_PLAN.md` 分阶段完成，
-避免出现外观正常但固定点分量为空的错误成绩。
+实时麦克风帧会经过有界队列、时间轴映射和 streaming session，提交到 native
+judgement、HUD、results 与 performance archive。改变评分选项或跨已提交音符
+seek 时会切换 timeline epoch，并把本次游玩标记为不可比较，避免混合不同合同。
 
 ## 最终评分语义
 
@@ -116,7 +114,6 @@ SHA-256 和完成标记。归档失败不阻止 lazer 原生成绩保存。
 ## 详细文档
 
 - `SCORING.md`：评分合同和公式；
-- `SCORING_INTEGRATION.md`：lazer gameplay、judgement、score、HUD、results、
-  health 的接入；
 - `PERFORMANCE_ARCHIVE.md`：历史回放与录音目录协议；
-- `IMPLEMENTATION_PLAN.md`：哪些已实现、哪些尚未启用及推荐 PR 顺序。
+- `TESTING.md`：自动测试、真实游戏验证和交付门槛；
+- `CHANGELOG.md`：各版本已完成的运行时接入记录。

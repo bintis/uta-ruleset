@@ -2,9 +2,13 @@
 // See the LICENSE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,10 +16,12 @@ using NUnit.Framework;
 using Net.Codecrete.QrCodeGenerator;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics.Primitives;
+using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Uta.Configuration;
 using osu.Game.Rulesets.Uta.Core;
 using osu.Game.Rulesets.Uta.Gameplay;
 using osu.Game.Rulesets.Uta.Library;
+using osu.Game.Rulesets.Uta.Mods;
 using osu.Game.Rulesets.Uta.Playback;
 using osu.Game.Rulesets.Uta.Queue;
 using osu.Game.Rulesets.Uta.Recording;
@@ -100,6 +106,249 @@ public sealed class UtaReleaseRegressionTests
     }
 
     [Test]
+    public void TestLiveTransposeSurvivesOriginalVocalsAndEmptyConstructorMods()
+    {
+        Mod[] constructor = Array.Empty<Mod>();
+        Mod[] live = { new UtaModOriginalVocals(), new UtaModTransposePlus4() };
+        Mod[] game = { new UtaModOriginalVocals() };
+
+        Assert.That(DrawableUtaRuleset.ResolveTranspose(game, live, constructor), Is.EqualTo(4));
+    }
+
+    [Test]
+    public void TestNightcoreOnlyClearsVoxConfigPollutedByPreviousModSelection()
+    {
+        Assert.That(DrawableUtaRuleset.ResolveInitialOriginalVocals(false, false), Is.False);
+        Assert.That(DrawableUtaRuleset.ShouldClearPersistedOriginalVocals(false, false), Is.True);
+        Assert.That(DrawableUtaRuleset.ShouldClearPersistedOriginalVocals(true, false), Is.False);
+        Assert.That(DrawableUtaRuleset.ShouldClearPersistedOriginalVocals(false, true), Is.False);
+    }
+
+    [Test]
+    public void TestCaptureDeviceIsNeverUsedAsMonitorWhenAnotherOutputIsConfigured()
+    {
+        const string capture = "AKG C44-USB Microphone: USB Audio";
+        const string playback = "Configured USB playback";
+
+        Assert.That(UtaAudioSettingsState.ResolveSafeMonitorOutput(capture, capture, playback, playback), Is.EqualTo(playback));
+        Assert.That(UtaAudioSettingsState.ResolveSafeMonitorOutput(capture, playback, playback, playback), Is.EqualTo(playback));
+    }
+
+    [Test]
+    public void TestRemovingVoxInSongSelectDisablesRememberedOriginalVocals()
+    {
+        Mod[] nightcoreOnly = { new UtaModNightcore() };
+
+        (bool vocals, int? transpose) = UtaRulesetRuntime.ResolveRememberedModState(
+            true, true, -5, nightcoreOnly);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(vocals, Is.False);
+            Assert.That(transpose, Is.Null);
+        });
+    }
+
+    [Test]
+    public void TestPlayerLoaderFilteringDoesNotDisableRememberedCombination()
+    {
+        Mod[] nightcoreOnly = { new UtaModNightcore() };
+
+        (bool vocals, int? transpose) = UtaRulesetRuntime.ResolveRememberedModState(
+            false, true, -5, nightcoreOnly);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(vocals, Is.True);
+            Assert.That(transpose, Is.EqualTo(-5));
+        });
+    }
+
+    [Test]
+    public void TestRememberedTransposeSurvivesPlayerLoaderFilteringComboToNightcore()
+    {
+        Mod[] filteredConstructor = { new UtaModNightcore() };
+
+        Assert.That(
+            DrawableUtaRuleset.ResolveTransposeOrRemembered(-5, filteredConstructor),
+            Is.EqualTo(-5));
+        Assert.That(DrawableUtaRuleset.ResolveInitialTranspose(filteredConstructor, -5), Is.EqualTo(-5));
+    }
+
+    [Test]
+    public void TestNightcoreOnlyResetsStaleConfiguredTranspose()
+    {
+        Mod[] nightcoreOnly = { new UtaModNightcore() };
+
+        Assert.That(DrawableUtaRuleset.ResolveInitialTranspose(nightcoreOnly, null), Is.Zero);
+    }
+
+    [TestCase(true, 1.5)]
+    [TestCase(false, 0.75)]
+    public void TestCoreRateSurvivesOriginalVocalsAndEmptyConstructorMods(bool nightcore, double expected)
+    {
+        Mod rate = nightcore ? new UtaModNightcore() : new UtaModDaycore();
+        Mod[] constructor = Array.Empty<Mod>();
+        Mod[] live = { new UtaModOriginalVocals(), new UtaModTransposePlus4(), rate };
+        Mod[] game = { new UtaModOriginalVocals() };
+
+        Assert.That(DrawableUtaRuleset.ResolveCoreRate(game, live, constructor), Is.EqualTo(expected));
+    }
+
+    [TestCase(1.0, null)]
+    [TestCase(0.75, typeof(UtaModDaycore))]
+    [TestCase(1.5, typeof(UtaModNightcore))]
+    public void TestStaleNightcoreConstructorIsReconciledBeforeGameplay(double authoritativeRate, Type? expectedRateMod)
+    {
+        Mod[] staleConstructor = { new UtaModOriginalVocals(), new UtaModNightcore() };
+        IReadOnlyList<Mod> reconciled = DrawableUtaRuleset.ReconcileCoreRateMods(staleConstructor, authoritativeRate);
+        Mod[] rateMods = reconciled.Where(mod => mod is UtaModNightcore or UtaModDaycore).ToArray();
+
+        Assert.That(reconciled.Count(mod => mod is UtaModOriginalVocals), Is.EqualTo(1));
+        if (expectedRateMod == null)
+            Assert.That(rateMods, Is.Empty);
+        else
+            Assert.That(rateMods, Has.Length.EqualTo(1).And.All.TypeOf(expectedRateMod));
+    }
+
+    [Test]
+    public void TestAuthoritativeDaycoreCannotBeOverwrittenByStaleGameplayNightcore()
+    {
+        double? selected = UtaRulesetRuntime.ResolveRememberedCoreRate(
+            false, 0.75, new Mod[] { new UtaModNightcore() });
+
+        Assert.That(selected, Is.EqualTo(0.75));
+    }
+
+    [Test]
+    public void TestAuthoritativeNightcoreRemovalResetsRememberedRate()
+    {
+        double? selected = UtaRulesetRuntime.ResolveRememberedCoreRate(
+            true, 1.5, Array.Empty<Mod>());
+        double constructorRate = DrawableUtaRuleset.ResolveCoreRate(new Mod[] { new UtaModNightcore() });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(selected, Is.EqualTo(1));
+            Assert.That(selected / constructorRate, Is.EqualTo(2.0 / 3.0).Within(0.000001));
+        });
+    }
+
+    [Test]
+    public void TestFilteredPlayerLoaderCannotClearRememberedNightcoreRate()
+    {
+        double? selected = UtaRulesetRuntime.ResolveRememberedCoreRate(
+            false, 1.5, Array.Empty<Mod>());
+
+        Assert.That(selected, Is.EqualTo(1.5));
+    }
+
+    [Test]
+    public void TestConstructorCoreRateDoesNotGetAppliedTwice()
+    {
+        Mod[] constructor = { new UtaModNightcore() };
+        double selected = DrawableUtaRuleset.ResolveCoreRate(constructor);
+        double desired = DrawableUtaRuleset.ResolveCoreRate(Array.Empty<Mod>(), constructor);
+
+        Assert.That(desired / selected, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void TestGameWideTransposeWinsDuringModReconciliation()
+    {
+        Mod[] constructor = { new UtaModTransposeMinus1() };
+        Mod[] live = { new UtaModOriginalVocals(), new UtaModTransposePlus4() };
+        Mod[] game = { new UtaModOriginalVocals(), new UtaModTransposeMinus3() };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(DrawableUtaRuleset.ResolveTranspose(game, live, constructor), Is.EqualTo(-3));
+            Assert.That(DrawableUtaRuleset.ResolveTranspose(Array.Empty<Mod>(), Array.Empty<Mod>()), Is.Null);
+            Assert.That(DrawableUtaRuleset.ResolveTranspose(new Mod[] { new UtaModTransposeOriginal() }), Is.Zero);
+        });
+    }
+
+    [Test]
+    public void TestDaycoreAndNightcoreAreMutuallyExclusiveInTheModSelector()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(new UtaModDaycore().IncompatibleMods, Does.Contain(typeof(UtaModNightcore)));
+            Assert.That(new UtaModNightcore().IncompatibleMods, Does.Contain(typeof(UtaModDaycore)));
+            Assert.That(new UtaModDaycore().IncompatibleMods, Does.Contain(typeof(UtaModTransposePlus3)));
+            Assert.That(new UtaModNightcore().IncompatibleMods, Does.Contain(typeof(UtaModTransposePlus3)));
+        });
+    }
+
+    [Test]
+    public void TestTransposeModsAreMutuallyExclusiveInTheModSelector()
+    {
+        var transpose = new UtaModTransposePlus3();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(transpose.IncompatibleMods, Does.Contain(typeof(UtaModTransposePlus6)));
+            Assert.That(transpose.IncompatibleMods, Does.Contain(typeof(UtaModTransposeOriginal)));
+            Assert.That(transpose.IncompatibleMods, Does.Contain(typeof(UtaModDaycore)));
+            Assert.That(transpose.IncompatibleMods, Does.Contain(typeof(UtaModNightcore)));
+            Assert.That(transpose.IncompatibleMods, Does.Not.Contain(typeof(UtaModTransposePlus3)));
+        });
+    }
+
+    [Test]
+    public void TestAuthoritativeRuntimeTransposeRemovalIgnoresStaleLiveBindables()
+    {
+        Mod[] staleLive = { new UtaModDaycore(), new UtaModTransposeMinus4() };
+        Mod[] staleGame = { new UtaModDaycore(), new UtaModTransposeMinus4() };
+
+        Assert.That(
+            DrawableUtaRuleset.ResolveRuntimeTranspose(true, null, staleGame, staleLive, Array.Empty<Mod>()),
+            Is.Zero);
+    }
+
+    [Test]
+    public void TestNonAuthoritativeRuntimeTransposeCanUseLiveBindables()
+    {
+        Mod[] live = { new UtaModTransposePlus4() };
+
+        Assert.That(
+            DrawableUtaRuleset.ResolveRuntimeTranspose(false, null, live, Array.Empty<Mod>()),
+            Is.EqualTo(4));
+    }
+
+    [Test]
+    public void TestAuthoritativeTransposeRemovalDropsStaleConstructorMod()
+    {
+        Mod[] constructor = { new UtaModTransposePlus4(), new UtaModNightcore() };
+
+        IReadOnlyList<Mod> reconciled = DrawableUtaRuleset.ReconcileConstructorMods(
+            constructor,
+            1,
+            true,
+            null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(reconciled.OfType<UtaModTranspose>(), Is.Empty);
+            Assert.That(reconciled.Any(mod => mod is UtaModNightcore or UtaModDaycore), Is.False);
+        });
+    }
+
+    [Test]
+    public void TestAuthoritativeTransposeReplacesStaleConstructorMod()
+    {
+        Mod[] constructor = { new UtaModTransposePlus4() };
+
+        IReadOnlyList<Mod> reconciled = DrawableUtaRuleset.ReconcileConstructorMods(
+            constructor,
+            null,
+            true,
+            -2);
+
+        Assert.That(reconciled.OfType<UtaModTranspose>().Single().Semitones, Is.EqualTo(-2));
+    }
+
+    [Test]
     public void TestHistoricalConfigKeysRemainStable()
     {
         int[] values = Enum.GetValues<UtaRulesetSetting>().Select(setting => (int)setting).ToArray();
@@ -149,6 +398,13 @@ public sealed class UtaReleaseRegressionTests
     public void TestPitchTimelineGeometryPreservesGameplayContract()
     {
         UtaPitchTargetGeometry target = UtaPitchTimelineGeometry.Target(10000, 11000, 60, 10000, 60, 400);
+        UtaPitchTargetGeometry transposed = UtaPitchTimelineGeometry.Target(
+            10000,
+            11000,
+            UtaPitchTimelineGeometry.TransposeMidi(60, 4),
+            10000,
+            64,
+            400);
         Assert.Multiple(() =>
         {
             Assert.That(UtaPitchTimelineGeometry.LOOK_BEHIND, Is.EqualTo(1750));
@@ -159,6 +415,8 @@ public sealed class UtaReleaseRegressionTests
             Assert.That(target.Width, Is.EqualTo(1f / 7).Within(0.0001));
             Assert.That(target.Y, Is.EqualTo(0.5f).Within(0.0001));
             Assert.That(target.Visible, Is.True);
+            Assert.That(transposed.Y, Is.EqualTo(target.Y).Within(0.0001),
+                "A transposed target and viewport centre must move together.");
         });
     }
 
@@ -296,6 +554,7 @@ public sealed class UtaReleaseRegressionTests
     [TestCase("172.16.0.1", true)]
     [TestCase("172.32.0.1", false)]
     [TestCase("192.168.20.4", true)]
+    [TestCase("::ffff:192.168.20.4", true)]
     [TestCase("8.8.8.8", false)]
     public void TestPrivateNetworkPolicy(string address, bool expected)
         => Assert.That(UtaRemoteNetworkPolicy.IsPrivateOrLoopback(IPAddress.Parse(address)), Is.EqualTo(expected));
@@ -365,6 +624,64 @@ public sealed class UtaReleaseRegressionTests
         Assert.That(
             UtaPlaybackCoordinator.IsStaleTransition(now, UtaPlaybackTransitionState.Failed, now),
             Is.True);
+    }
+
+    [Test]
+    public async Task TestPairingUrlLoadsRemoteAndPairsOverTheNetworkListener()
+    {
+        int port = reserveFreeTcpPort();
+        using var credentials = new UtaRemoteCredentialStore();
+        await using var server = new UtaRemoteServer(new AcceptAllRemoteTarget(), () => UtaRemoteSnapshot.Empty(), credentials);
+        await server.StartAsync(port);
+
+        UtaRemotePairingTicket ticket = server.CreatePairingTicket(UtaRemoteRole.Controller);
+        var pairingUrl = new Uri(server.GetPairingUrl(ticket));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pairingUrl.Scheme, Is.EqualTo(Uri.UriSchemeHttp));
+            Assert.That(pairingUrl.Query, Is.Empty);
+            Assert.That(pairingUrl.Fragment, Does.Contain("ticket="));
+            Assert.That(pairingUrl.Fragment, Does.Contain("role=controller"));
+        });
+
+        using var http = new HttpClient(new HttpClientHandler { UseProxy = false });
+        string html = await http.GetStringAsync(pairingUrl);
+        Assert.That(html, Does.Contain("uta! remote"));
+
+        var socketUri = new UriBuilder(pairingUrl)
+        {
+            Scheme = Uri.UriSchemeWs,
+            Path = "/ws",
+            Query = pairingUrl.Fragment.TrimStart('#'),
+            Fragment = string.Empty,
+        }.Uri;
+        using var socket = new ClientWebSocket();
+        await socket.ConnectAsync(socketUri, CancellationToken.None);
+
+        var received = new ArraySegment<byte>(new byte[4096]);
+        WebSocketReceiveResult welcome = await socket.ReceiveAsync(received, CancellationToken.None);
+        Assert.Multiple(() =>
+        {
+            Assert.That(welcome.MessageType, Is.EqualTo(WebSocketMessageType.Binary));
+            Assert.That(welcome.Count, Is.GreaterThan(0));
+            Assert.That(server.ActiveClientCount, Is.EqualTo(1));
+        });
+
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Test complete", CancellationToken.None);
+    }
+
+    private static int reserveFreeTcpPort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        return ((IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
+    private sealed class AcceptAllRemoteTarget : IUtaRemoteCommandTarget
+    {
+        public ValueTask<UtaRemoteCommandResult> ExecuteAsync(UtaRemoteCommand command, CancellationToken cancellationToken)
+            => ValueTask.FromResult(UtaRemoteCommandResult.Ok());
     }
 
     [TestCase("http://192.168.1.42:27835/#ticket=aB3dEfGhIjKlMnOpQrStUvWxYz012345&role=controller")]
