@@ -86,31 +86,31 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                 },
                 new SettingsItemV2(new FormEnumDropdown<UtaLyricsPosition>
                 {
-                    Caption = "Lyrics position",
+                    Caption = UtaStrings.Get("settings.lyrics_position", language),
                     HintText = "Place lyrics at the top, centre or bottom of the playfield.",
                     Current = config.GetBindable<UtaLyricsPosition>(UtaRulesetSetting.LyricsPosition),
                 }),
                 new SettingsItemV2(new FormEnumDropdown<UtaLyricsSize>
                 {
-                    Caption = "Lyrics size",
+                    Caption = UtaStrings.Get("settings.lyrics_size", language),
                     HintText = "Scale the current line, reading text and upcoming line together.",
                     Current = config.GetBindable<UtaLyricsSize>(UtaRulesetSetting.LyricsSize),
                 }),
                 new SettingsItemV2(new LyricsTypefaceDropdown
                 {
-                    Caption = "Lyrics font",
+                    Caption = UtaStrings.Get("settings.lyrics_font", language),
                     HintText = "Use one of lazer's bundled typefaces; missing glyphs still use its fallback fonts.",
                     Current = config.GetBindable<UtaLyricsTypeface>(UtaRulesetSetting.LyricsTypeface),
                 }),
                 new SettingsItemV2(new FormCheckBox
                 {
-                    Caption = "Show upcoming lyrics",
+                    Caption = UtaStrings.Get("settings.upcoming_lyrics", language),
                     HintText = "Show the next lyric line when the responsive HUD has room.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.LyricsShowUpcoming),
                 }),
                 new SettingsItemV2(new FormCheckBox
                 {
-                    Caption = "Show lyric readings",
+                    Caption = UtaStrings.Get("settings.lyric_readings", language),
                     HintText = "Show authored readings or furigana above lyric tokens.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.LyricsShowReading),
                 }),
@@ -140,40 +140,40 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     config.GetBindable<float>(UtaRulesetSetting.HudSafeAreaPadding), value => $"{value:0} px", 1),
                 new SettingsItemV2(new PitchCurveDisplayDropdown
                 {
-                    Caption = "Pitch curves",
+                    Caption = UtaStrings.Get("settings.pitch_curves", language),
                     HintText = "Show the song analysis, your detected pitch, both curves, or neither.",
                     Current = config.GetBindable<UtaPitchCurveDisplay>(UtaRulesetSetting.PitchCurveDisplay),
                 }),
                 new SettingsItemV2(new FormCheckBox
                 {
-                    Caption = "Singing guide trail",
+                    Caption = UtaStrings.Get("settings.guide_trail", language),
                     HintText = "Show the thicker glowing trail used by the earlier pitch guide.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.ShowPitchGuideTrail),
                 }),
                 new SettingsItemV2(new FormCheckBox
                 {
-                    Caption = "Debug performance logging",
+                    Caption = UtaStrings.Get("settings.debug_logging", language),
                     HintText = "Write Uta frame, memory, microphone and curve metrics to the runtime log every five seconds.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics),
                 }),
                 new UtaImportDiagnosticsView(),
                 new SettingsItemV2(new FormCheckBox
                 {
-                    Caption = "Reduced motion",
+                    Caption = UtaStrings.Get("settings.reduced_motion", language),
                     HintText = "Disable optional singing/scoring particles and minimise non-essential animation.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.ReducedMotion),
                 }),
                 new SettingsItemV2(new FormCheckBox
                 {
-                    Caption = "Show background video",
-                    HintText = "Allow the lazer-native video event included by the imported .utz package.",
+                    Caption = UtaStrings.Get("settings.video", language),
+                    HintText = "Allow the lazer-native video event included by the imported .utz package. Video dim, blur and offset remain unavailable until drawable binding is implemented.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.VideoVisible),
                 }),
-                slider("Video dim", "Additional ruleset video/background dim level.",
+                slider("Video dim", "Unavailable until ruleset video drawable binding is implemented.",
                     config.GetBindable<float>(UtaRulesetSetting.VideoDim), value => $"{value:P0}", 0.05f),
-                slider("Video blur", "Additional ruleset video/background blur level.",
+                slider("Video blur", "Unavailable until ruleset video drawable binding is implemented.",
                     config.GetBindable<float>(UtaRulesetSetting.VideoBlur), value => $"{value:P0}", 0.05f),
-                slider("Video offset", "Ruleset-specific correction added to the packaged video offset.",
+                slider("Video offset", "Unavailable until ruleset video drawable binding is implemented.",
                     config.GetBindable<float>(UtaRulesetSetting.VideoOffset), value => $"{value:+0;-0;0} ms", 1),
                 slider("Particle intensity", "Intensity of optional singing/scoring feedback; zero disables it.",
                     config.GetBindable<float>(UtaRulesetSetting.ParticleIntensity), value => $"{value:P0}", 0.05f),
@@ -183,11 +183,11 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                     HintText = "Corner of the screen the live score panel is anchored to. Press S in-game to hide or show it.",
                     Current = config.GetBindable<UtaScoreHudPosition>(UtaRulesetSetting.ScoreHudPosition),
                 }),
-                output("BGM output", "Hardware output used by the instrumental track.", config.GetBindable<string>(UtaRulesetSetting.BackgroundMusicOutputDevice)),
-                output("Vocals output", "Hardware output used by the original or guide-vocal track.", config.GetBindable<string>(UtaRulesetSetting.OriginalVocalsOutputDevice)),
+                output(UtaStrings.Get("settings.bgm_output", language), "Hardware output used by the instrumental track.", config.GetBindable<string>(UtaRulesetSetting.BackgroundMusicOutputDevice)),
+                output(UtaStrings.Get("settings.vocals_output", language), "Hardware output used by the original or guide-vocal track.", config.GetBindable<string>(UtaRulesetSetting.OriginalVocalsOutputDevice)),
                 new SettingsItemV2(new MicrophoneDropdown
                 {
-                    Caption = "Microphone",
+                    Caption = UtaStrings.Get("settings.microphone", language),
                     HintText = "The input device used for live pitch detection.",
                     // Items must be assigned before Current - see buildDeviceItems().
                     Items = UtaDeviceItems.Build(microphoneDevice.Value, UtaMicrophoneDevices.Enumerate().Select(device => device.Name)),
@@ -195,14 +195,14 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
                 }),
                 new SettingsButton
                 {
-                    Text = "Configure microphone",
+                    Text = UtaStrings.Get("settings.configure_microphone", language),
                     Action = showMicrophoneSettings,
                 },
                 slider("Background music", "Volume of the instrumental track during Uta gameplay.",
                     config.GetBindable<double>(UtaRulesetSetting.BackgroundMusicVolume), value => $"{value:P0}", 0.05f),
                 new SettingsItemV2(new FormCheckBox
                 {
-                    Caption = "Play original vocals",
+                    Caption = UtaStrings.Get("settings.play_vocals", language),
                     HintText = "Keep the packaged vocal track on across song changes. The VOX mod also turns this on. The slider below is level only.",
                     Current = config.GetBindable<bool>(UtaRulesetSetting.OriginalVocalsEnabled),
                 }),
@@ -215,10 +215,10 @@ public sealed partial class UtaSettingsSubsection : RulesetSettingsSubsection
             microphoneSettings = page(
                 new SettingsButton
                 {
-                    Text = "Back to uta! settings",
+                    Text = UtaStrings.Get("settings.back", language),
                     Action = hideMicrophoneSettings,
                 },
-                output("Microphone monitor output", "Hardware output used for live microphone monitoring.", config.GetBindable<string>(UtaRulesetSetting.MicrophoneOutputDevice)),
+                output(UtaStrings.Get("settings.monitor_output", language), "Hardware output used for live microphone monitoring.", config.GetBindable<string>(UtaRulesetSetting.MicrophoneOutputDevice)),
                 slider("Microphone input gain", "Software gain applied before pitch detection and monitoring.",
                     config.GetBindable<float>(UtaRulesetSetting.MicrophoneInputGain), value => $"{value:0.00}×", 0.05f),
                 slider("Pitch sampling interval", "Time between pitch analyses. Lower values update faster but use more CPU.",
