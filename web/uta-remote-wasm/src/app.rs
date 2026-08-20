@@ -546,8 +546,13 @@ impl App {
                         }
                     }
                     DragKind::Slider => {
-                        if let Some(action) = self.hit_at(x, y) {
-                            self.fire(action);
+                        // Mixer/latency sliders sit on the Info page where vertical
+                        // scrolling is common. Do not alter a setting until this is a
+                        // deliberate horizontal drag rather than a landing tap.
+                        if dx.abs() >= 8.0 {
+                            if let Some(action) = self.hit_at(x, y) {
+                                self.fire(action);
+                            }
                         }
                     }
                     DragKind::Reorder => {
@@ -579,9 +584,16 @@ impl App {
                             let page = self.current_page() as usize;
                             self.scroll_vel[page] = if vel.abs() > 120.0 { vel } else { 0.0 };
                         }
-                        DragKind::Seek | DragKind::Slider => {
+                        DragKind::Seek => {
                             if let Some(action) = self.hit_at(x, y) {
                                 self.fire(action);
+                            }
+                        }
+                        DragKind::Slider => {
+                            if dx.abs() >= 8.0 {
+                                if let Some(action) = self.hit_at(x, y) {
+                                    self.fire(action);
+                                }
                             }
                         }
                         DragKind::Reorder => {
@@ -1597,20 +1609,23 @@ impl App {
         );
 
         fill_text(pad, y + 192.0, 12.0, MUTED, 0, 0, t(self.lang, "mods"));
-        let mut mx = pad;
+        // Fixed two-column, 44px controls are deliberately less dense than the old
+        // word-width chips. They keep every MOD target thumb-sized and prevent a
+        // layout shift (for example after NC/DC arrives) from changing what a tap hits.
+        let gap = 8.0;
+        let mod_w = (self.width - pad * 2.0 - gap) * 0.5;
         let mut my = y + 206.0;
-        for (acronym, name, on) in mods {
-            let label = format!("{acronym} {name}");
-            let w = (measure(12.0, 1, &label) + 18.0).min(self.width - pad * 2.0);
-            if mx + w > self.width - pad {
-                mx = pad;
-                my += 36.0;
+        for (index, (acronym, name, on)) in mods.iter().enumerate() {
+            let column = (index % 2) as f32;
+            if index > 0 && index % 2 == 0 {
+                my += 52.0;
             }
-            fill_rect(mx, my, w, 28.0, if *on { 0x33E846A0 } else { PANEL2 }, 6.0);
-            stroke_rect(mx, my, w, 28.0, if *on { PINK } else { LINE }, 6.0, 1.0);
-            fill_text(mx + w * 0.5, my + 14.0, 12.0, if *on { PINK } else { TEXT }, 1, 1, &label);
-            self.hit(mx, my, w, 28.0, Action::ToggleMod(acronym.clone()));
-            mx += w + 8.0;
+            let mx = pad + column * (mod_w + gap);
+            fill_rect(mx, my, mod_w, 44.0, if *on { 0x33E846A0 } else { PANEL2 }, 8.0);
+            stroke_rect(mx, my, mod_w, 44.0, if *on { PINK } else { LINE }, 8.0, 1.0);
+            fill_text(mx + 10.0, my + 16.0, 13.0, if *on { PINK } else { TEXT }, 0, 1, acronym);
+            fill_text(mx + 10.0, my + 32.0, 10.0, MUTED, 0, 1, &ellipsize(10.0, 1, name, mod_w - 20.0));
+            self.hit(mx, my, mod_w, 44.0, Action::ToggleMod(acronym.clone()));
         }
 
         let by = self.height - 64.0 - self.inset_b;
