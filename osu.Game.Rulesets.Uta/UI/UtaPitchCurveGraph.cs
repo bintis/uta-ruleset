@@ -125,14 +125,16 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                        .ToArray();
         maximumNoteDuration = notes.Length == 0 ? 0 : notes.Max(note => note.Duration);
         centreMidi.BindTo(pitchViewport.CentreMidi);
-        referenceFrames = loadReferenceFrames(workingBeatmap.Value);
         timelineEndTime = workingBeatmap.Value.Track.Length;
         if (!double.IsFinite(timelineEndTime))
             timelineEndTime = 0;
         if (notes.Length > 0)
             timelineEndTime = Math.Max(timelineEndTime, notes[^1].EndTime);
-        if (referenceFrames.Length > 0)
-            timelineEndTime = Math.Max(timelineEndTime, referenceFrames[^1].Time);
+
+        // Evidence is optional visual detail. It must never be allowed to extend or
+        // destabilise the authoritative note/playback timeline; unsupported or
+        // malformed evidence falls back to the stable chart-note reference line.
+        referenceFrames = loadReferenceFrames(workingBeatmap.Value, timelineEndTime);
         timelineEndTime += UtaPitchTimelineGeometry.LOOK_AHEAD;
         display.BindTo(config.GetBindable<UtaPitchCurveDisplay>(UtaRulesetSetting.PitchCurveDisplay));
         debugDiagnostics.BindTo(config.GetBindable<bool>(UtaRulesetSetting.DebugDiagnostics));
@@ -570,7 +572,7 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         return low;
     }
 
-    private static ReferenceFrame[] loadReferenceFrames(WorkingBeatmap working)
+    private static ReferenceFrame[] loadReferenceFrames(WorkingBeatmap working, double chartEndTime)
     {
         try
         {
@@ -579,13 +581,19 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
                 return Array.Empty<ReferenceFrame>();
 
             using Stream manifestStream = working.GetStream(manifestPath);
-            // Imported 0.2 packages remain playable through lazer's converted beatmap even
-            // though they predate the current required `charts.vocal` manifest field. The
-            // optional analysis asset must not deserialize the full strict import manifest:
-            // doing so discarded valid pitch evidence and made the reference/history curve
-            // fall back to coarse notes (and visibly jump as the viewport moved).
-            PitchEvidenceManifest? manifest = JsonSerializer.Deserialize<PitchEvidenceManifest>(manifestStream, UtzPackage.JsonOptions);
-            return manifest?.Analysis == null ? Array.Empty<ReferenceFrame>() : loadPitchEvidenceFrames(working, manifest.Analysis);
+            // Pitch evidence is part of the current uta.song 0.3.x contract. Do not
+            // selectively accept analysis from a legacy manifest: its timebase is not a
+            // supported playback contract and can make the reference curve jump.
+            UtzManifest? manifest = JsonSerializer.Deserialize<UtzManifest>(manifestStream, UtzPackage.JsonOptions);
+            if (manifest == null)
+                return Array.Empty<ReferenceFrame>();
+
+            ReferenceFrame[] frames = loadPitchEvidenceFrames(working, manifest);
+            if (IsStableReferenceEvidence(frames, chartEndTime))
+                return frames;
+
+            Logger.Log("Uta ignored unstable pitch evidence and is using the vocal-chart reference curve.");
+            return Array.Empty<ReferenceFrame>();
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
         {
@@ -594,9 +602,9 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         }
     }
 
-    private static ReferenceFrame[] loadPitchEvidenceFrames(WorkingBeatmap working, UtzAnalysisAssets analysis)
+    private static ReferenceFrame[] loadPitchEvidenceFrames(WorkingBeatmap working, UtzManifest manifest)
     {
-        string? evidenceStoragePath = analysis.PitchEvidence?.Path is { } path ? working.BeatmapSetInfo.GetPathForFile(path) : null;
+        string? evidenceStoragePath = manifest.Analysis?.PitchEvidence?.Path is { } path ? working.BeatmapSetInfo.GetPathForFile(path) : null;
         if (evidenceStoragePath == null)
             return Array.Empty<ReferenceFrame>();
 
@@ -617,6 +625,28 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
         }
 
         return frames.ToArray();
+    }
+
+    internal static bool IsStableReferenceEvidence(ReferenceFrame[] frames, double chartEndTime)
+    {
+        if (frames.Length < 2 || !double.IsFinite(chartEndTime) || chartEndTime <= 0)
+            return false;
+
+        // Evidence timestamps are defined in song time. A full-song frame stream should
+        // begin near zero and must not run materially past the chart/audio timeline. This
+        // rejects stale converters that used a different clock or unit without guessing a
+        // corrective offset that would make the curve visibly drift during gameplay.
+        if (frames[0].Time is < -1 or > 1000 || frames[^1].Time > chartEndTime + 1000)
+            return false;
+
+        for (int i = 1; i < frames.Length; i++)
+        {
+            if (!double.IsFinite(frames[i].Time) || !float.IsFinite(frames[i].Midi)
+                || frames[i].Time <= frames[i - 1].Time)
+                return false;
+        }
+
+        return true;
     }
 
     private void onSeek() => clearSamples("seek");
@@ -668,12 +698,6 @@ internal sealed partial class UtaPitchCurveGraph : CompositeDrawable
             Origin = Anchor.CentreLeft;
             Height = line_width;
         }
-    }
-
-    private sealed class PitchEvidenceManifest
-    {
-        [System.Text.Json.Serialization.JsonPropertyName("analysis")]
-        public UtzAnalysisAssets? Analysis { get; init; }
     }
 
     private readonly record struct CurveSample(double Time, double DisplayTime, float? ReferenceMidi, float? UserMidi, float Similarity);

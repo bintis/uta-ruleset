@@ -124,6 +124,31 @@ public class UtaCoreTests
     }
 
     [Test]
+    public void PitchEvidenceFallsBackUnlessItUsesTheCurrentSongTimeline()
+    {
+        UtaPitchCurveGraph.ReferenceFrame[] stable =
+        {
+            new(0, 60),
+            new(20, 60.1f),
+            new(40, 60.2f),
+        };
+        UtaPitchCurveGraph.ReferenceFrame[] wrongUnit =
+        {
+            new(0, 60),
+            new(20_000, 60.1f),
+        };
+        UtaPitchCurveGraph.ReferenceFrame[] backwards =
+        {
+            new(0, 60),
+            new(0, 60.1f),
+        };
+
+        Assert.That(UtaPitchCurveGraph.IsStableReferenceEvidence(stable, 1000), Is.True);
+        Assert.That(UtaPitchCurveGraph.IsStableReferenceEvidence(wrongUnit, 1000), Is.False);
+        Assert.That(UtaPitchCurveGraph.IsStableReferenceEvidence(backwards, 1000), Is.False);
+    }
+
+    [Test]
     public void PitchCurveUsesNightingaleHistoryMappingAndFixedSongViewport()
     {
         var ruleset = new UtaRuleset();

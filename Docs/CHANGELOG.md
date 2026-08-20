@@ -3,6 +3,26 @@
 Completed work from 0.1.0 onward. Open items stay in the
 [README roadmap](../README.md#roadmap--todo).
 
+## 0.8.12 - 2026-08-20
+
+### Changed
+
+- Removed the 0.8.11 lenient legacy-manifest reader. Pitch evidence now requires
+  the current strict `uta.song 0.3.x` manifest contract.
+
+### Fixed
+
+- Validate optional pitch-evidence frames against the authoritative chart/audio
+  timeline before drawing. Missing, non-monotonic, wrong-unit or out-of-range
+  evidence now falls back to the stable vocal-chart note reference curve rather
+  than applying a guessed offset or allowing visual drift.
+
+### Validation
+
+- 167 automated tests pass against the local Nix osu! references, including
+  reference-evidence timeline/fallback regression cases; format, overlay audit
+  and whitespace checks pass.
+
 ## 0.8.11 - 2026-08-20
 
 ### Fixed
